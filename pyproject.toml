@@ -4,4 +4,6 @@ version = "0.1.0"
 description = "AI quality inspection cell for injection molded parts"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "motorbridge>=0.4.9",
+]
