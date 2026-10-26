@@ -1,7 +1,7 @@
 [project]
 name = "muse-qc-cell"
 version = "0.1.0"
-description = "Add your description here"
+description = "AI quality inspection cell for injection molded parts"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = []
