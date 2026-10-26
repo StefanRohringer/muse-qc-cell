@@ -22,3 +22,9 @@
   start_control_loop, disconnect calls disable_all) and added the
   "Safety notes" section to docs/SETUP.md. No hardware touched,
   nothing committed.
+- Built preflight.py (read-only start checks: competing processes, device
+  node, port access incl. dialout, port holder via fuser/lsof, exit 0 only
+  when all pass) with tests/test_preflight.py (27 tests, all green, full
+  suite 37 green). Sandbox has no /dev/ttyACM0 and no USB view, so the
+  script correctly reports FAIL here. No hardware touched, nothing
+  committed.
