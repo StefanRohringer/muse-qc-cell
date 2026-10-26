@@ -11,7 +11,7 @@ Built during the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026).
 - Commit only when the human asks.
 
 ## Stack
-- Python 3.12, uv, one virtual environment in .venv
+- Python 3.11, uv, one virtual environment in .venv
 - Hardware only through motorbridge and reBotArm_control_py (official Seeed packages, MIT)
 - AI only through Meta Model API: Muse Spark, Muse Wonder, SAM 3.1, Muse Voice Transcribe
 - API key only from .env (MODEL_API_KEY), loaded by the program, never printed

@@ -3,7 +3,11 @@ name = "muse-qc-cell"
 version = "0.1.0"
 description = "AI quality inspection cell for injection molded parts"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     "motorbridge>=0.4.9",
+    "rebotarm-control-py",
 ]
+
+[tool.uv.sources]
+rebotarm-control-py = { path = "../seeed-sdk", editable = true }

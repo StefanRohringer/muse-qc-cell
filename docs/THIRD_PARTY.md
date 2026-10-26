@@ -16,7 +16,7 @@ referenced as a package dependency.
 - License: MIT (PyPI metadata and LICENSE file in the upstream repository).
 - Installed with: `uv add "motorbridge>=0.4.9"`.
 
-## reBotArm_control_py (documented, not installed)
+## reBotArm_control_py (installed, editable)
 
 - Purpose: official Seeed Python SDK for the reBot arm (kinematics via
   Pinocchio, trajectory planning, `RebotArm` hardware abstraction with
@@ -29,11 +29,20 @@ referenced as a package dependency.
 - License: MIT (per the license badge on the official Seeed Wiki pages;
   no LICENSE file was found in the SDK repository itself, so please
   re-check upstream before redistributing).
-- Status: declared here but NOT installed. The SDK is not published on
-  PyPI, and installing it directly from the Git URL fails because of an
-  upstream setuptools packaging bug (`Multiple top-level packages
-  discovered in a flat-layout`), which is also described in Seeed's own
-  Wiki with a manual checkout workaround. Cloning the SDK into this
-  repository would violate the project rule against copying foreign code,
-  so on the hardware machine follow the official Seeed Wiki checkout
-  procedure instead.
+- Status: installed as an editable dependency from a local checkout at
+  `~/meta-hackathon/seeed-sdk` (outside this repository, so no foreign
+  code is copied in). Declared in `pyproject.toml` via
+  `[tool.uv.sources]` (`path = "../seeed-sdk", editable = true`) and
+  pinned in `uv.lock`, so `uv sync` keeps it installed. Installed with:
+  `uv add --editable ../seeed-sdk`.
+- Requires Python `>=3.10,<3.12` (no Pinocchio build for 3.12), which is
+  why this project was switched from Python 3.12 to Python 3.11.
+- Local checkout changes (kept outside this repository):
+  `pyproject.toml` gained `[tool.setuptools.packages.find]` with
+  `include = ["reBotArm_control_py*"]` to fix the upstream setuptools
+  packaging bug (`Multiple top-level packages discovered in a
+  flat-layout` for `urdf`, `config`, `reBotArm_control_py`);
+  `config/rebotarm.yaml` sets `hardware_yaml: "rebotarm_dm.yaml"`
+  (upstream default is the RS arm).
+- Verified 2026-10-26: `import reBotArm_control_py` succeeds under
+  Python 3.11. No `connect()` call, no hardware touched.
