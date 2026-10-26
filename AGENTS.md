@@ -32,3 +32,7 @@ tools.py, agent.py, planner.py, voice.py, web/, tests/, docs/
 ## Language
 - Everything that goes into the repository is written in English: code, comments, docstrings, log and error messages, commit messages, README and docs.
 - The human writes in German. Reply to the human in German in the chat, but never write German into files or commits.
+
+## Session log
+- At the end of every session, append a short entry to docs/MUSE_CODE_LOG.md (date, model, what was built, in two to three lines).
+- Do not commit.
