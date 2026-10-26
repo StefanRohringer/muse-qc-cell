@@ -28,3 +28,8 @@
   suite 37 green). Sandbox has no /dev/ttyACM0 and no USB view, so the
   script correctly reports FAIL here. No hardware touched, nothing
   committed.
+- With model Muse Spark (Muse Code), fixed check 1 in preflight.py to match
+  only the basename of argv[0] at a word start or after -, _, . or / (so
+  rosmaster/rebot_driver/motorbridge hit, gnome-shell/chrome/process miss,
+  own PID excluded) and extended tests/test_preflight.py; full suite 42
+  green. No hardware touched, port never opened, nothing committed.

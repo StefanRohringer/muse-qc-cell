@@ -18,6 +18,10 @@ from dataclasses import dataclass
 
 PORT = "/dev/ttyACM0"
 SUSPICIOUS_SUBSTRINGS = ("rebot", "ros", "motorbridge")
+# A term counts only at the start of the program name or right after
+# one of these separators. Trailing characters are allowed so names
+# like "ros2" or "rosmaster" still match, while "across" does not.
+_SUSPICIOUS_PROGRAM_RE = re.compile(r"(?:^|[-_./])(rebot|ros|motorbridge)", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -29,8 +33,25 @@ class CheckResult:
     detail: str
 
 
+def program_basename(command: str) -> str:
+    """Return the basename of the first command-line element.
+
+    Only argv[0] counts: directory parts and arguments never match.
+    """
+    first = command.strip().split(None, 1)
+    if not first:
+        return ""
+    token = first[0].strip("\"'")
+    base = token.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    return base
+
+
 def find_suspicious_processes(ps_output: str, own_pid: int) -> list[str]:
-    """Return ps lines with suspicious names, excluding our own PID."""
+    """Return ps lines with suspicious program names, excluding own PID.
+
+    Only the basename of the first command-line element counts. A
+    term matches at the start of that name or after -, _, . or /.
+    """
     found: list[str] = []
     for line in ps_output.splitlines():
         stripped = line.strip()
@@ -45,8 +66,7 @@ def find_suspicious_processes(ps_output: str, own_pid: int) -> list[str]:
             continue  # Header line such as "PID COMMAND".
         if pid == own_pid:
             continue
-        command = parts[1].lower()
-        if any(word in command for word in SUSPICIOUS_SUBSTRINGS):
+        if _SUSPICIOUS_PROGRAM_RE.search(program_basename(parts[1])):
             found.append(stripped)
     return found
 

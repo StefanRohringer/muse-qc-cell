@@ -18,11 +18,11 @@ from preflight import (
 
 CLEAN_PS = "  PID COMMAND\n    1 /sbin/init\n  100 python preflight.py\n"
 
-REBOT_PS = "  PID COMMAND\n    1 /sbin/init\n  210 /opt/rebot/driver\n"
+REBOT_PS = "  PID COMMAND\n    1 /sbin/init\n  210 /opt/rebot-driver\n"
 
 ROS_PS = "  PID COMMAND\n    1 /sbin/init\n  311 /opt/ros/humble/bin/ros2 run demo\n"
 
-BRIDGE_PS = "  PID COMMAND\n    1 /sbin/init\n  420 python -m MotorBridge.server\n"
+BRIDGE_PS = "  PID COMMAND\n    1 /sbin/init\n  420 /usr/bin/MotorBridge\n"
 
 
 def test_clean_process_list_is_ok():
@@ -46,14 +46,45 @@ def test_motorbridge_match_is_case_insensitive():
 
 
 def test_own_pid_is_excluded():
-    ps = "  PID COMMAND\n  555 /opt/rebot/driver\n"
+    ps = "  PID COMMAND\n  555 /opt/rebot-driver\n"
     assert find_suspicious_processes(ps, own_pid=555) == []
     assert check_competing_processes(ps, own_pid=555).ok
 
 
 def test_other_pid_with_same_command_is_fail():
-    ps = "  PID COMMAND\n  555 /opt/rebot/driver\n"
+    ps = "  PID COMMAND\n  555 /opt/rebot-driver\n"
     assert not check_competing_processes(ps, own_pid=999).ok
+
+
+def test_harmless_names_with_substrings_are_ok():
+    for name in ("gnome-shell", "chrome", "process"):
+        ps = f"  PID COMMAND\n  700 {name}\n"
+        assert find_suspicious_processes(ps, own_pid=1) == []
+        assert check_competing_processes(ps, own_pid=1).ok
+
+
+def test_whole_word_names_are_fail():
+    for name in ("rosmaster", "rebot_driver", "motorbridge"):
+        ps = f"  PID COMMAND\n  700 {name}\n"
+        assert not check_competing_processes(ps, own_pid=1).ok
+
+
+def test_own_pid_excluded_for_required_names():
+    for name in ("rosmaster", "rebot_driver", "motorbridge"):
+        ps = f"  PID COMMAND\n  700 {name}\n"
+        assert find_suspicious_processes(ps, own_pid=700) == []
+
+
+def test_directory_part_alone_is_ok():
+    ps = "  PID COMMAND\n  210 /opt/rebot/driver\n"
+    assert find_suspicious_processes(ps, own_pid=1) == []
+    assert check_competing_processes(ps, own_pid=1).ok
+
+
+def test_arguments_alone_do_not_match():
+    ps = "  PID COMMAND\n  420 /usr/bin/python -m MotorBridge.server\n"
+    assert find_suspicious_processes(ps, own_pid=1) == []
+    assert check_competing_processes(ps, own_pid=1).ok
 
 
 def test_missing_device_is_fail():
