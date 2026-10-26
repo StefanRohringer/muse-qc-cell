@@ -33,3 +33,19 @@
   rosmaster/rebot_driver/motorbridge hit, gnome-shell/chrome/process miss,
   own PID excluded) and extended tests/test_preflight.py; full suite 42
   green. No hardware touched, port never opened, nothing committed.
+- With model Muse Code powered by Meta Muse Spark, added diagnose_joints.py:
+  read-only joint-feedback probe using the SDK directly (connect, four raw
+  get_positions prints for arm+gripper at 0.5 s spacing, disconnect; no
+  enable/zero/mode/motion calls), verified with a fake SDK only. No hardware
+  touched, nothing committed.
+- With model Muse Code powered by Meta Muse Spark, fixed the first-read 0.0
+  issue found on hardware: read_joints/read_gripper retry get_positions up to
+  5 times at 0.2 s while any value is exactly 0.0 (configurable via
+  max_read_attempts/read_retry_delay_s), raising JointStateUnavailable only
+  when 0.0 persists. Added 4 tests (0.0-then-real passes, persistent 0.0
+  still raises after 5 attempts); full suite 46 green. No hardware touched,
+  nothing committed.
+- Human ran the first hardware check (started by the human, as required):
+  preflight.py overall OK, then Arm.read_joints/read_gripper returned real
+  angles for all 6 joints plus gripper with no JointStateUnavailable, so the
+  retry fix works on the real arm. Nothing committed.

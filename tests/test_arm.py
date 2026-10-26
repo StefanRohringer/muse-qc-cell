@@ -38,11 +38,15 @@ ALLOWED_CALLS = {"connect", "arm.get_positions", "gripper.get_positions", "disco
 class FakeGroup:
     """Mimics the SDK JointGroup read surface and traps motion commands."""
 
-    def __init__(self, log, name, joint_names, positions):
+    def __init__(self, log, name, joint_names, positions, position_frames=None):
         self._log = log
         self._name = name
         self._joint_names = list(joint_names)
         self._positions = list(positions)
+        self._frames = None
+        if position_frames is not None:
+            self._frames = [list(frame) for frame in position_frames]
+        self._calls = 0
 
     @property
     def joint_names(self):
@@ -50,7 +54,11 @@ class FakeGroup:
 
     def get_positions(self):
         self._log.append(f"{self._name}.get_positions")
-        return list(self._positions)
+        if self._frames is None:
+            return list(self._positions)
+        index = min(self._calls, len(self._frames) - 1)
+        self._calls += 1
+        return list(self._frames[index])
 
     def _forbidden(self, method):
         self._log.append(f"{self._name}.{method}")
@@ -84,12 +92,18 @@ class FakeGroup:
 class FakeRebotArm:
     """Mimics the SDK RebotArm read surface and traps motion commands."""
 
-    def __init__(self, arm_positions=None, gripper_positions=None):
+    def __init__(self, arm_positions=None, gripper_positions=None, arm_frames=None, gripper_frames=None):
         self.calls: list[str] = []
         self._groups = {
-            "arm": FakeGroup(self.calls, "arm", ARM_NAMES, arm_positions if arm_positions is not None else ARM_POSITIONS),
+            "arm": FakeGroup(
+                self.calls, "arm", ARM_NAMES, arm_positions if arm_positions is not None else ARM_POSITIONS, arm_frames
+            ),
             "gripper": FakeGroup(
-                self.calls, "gripper", GRIPPER_NAMES, gripper_positions if gripper_positions is not None else GRIPPER_POSITIONS
+                self.calls,
+                "gripper",
+                GRIPPER_NAMES,
+                gripper_positions if gripper_positions is not None else GRIPPER_POSITIONS,
+                gripper_frames,
             ),
         }
 
@@ -133,8 +147,12 @@ class FakeRebotArm:
 
 
 def make_arm(**kwargs):
+    arm_kwargs = {}
+    for key in ("max_read_attempts", "read_retry_delay_s"):
+        if key in kwargs:
+            arm_kwargs[key] = kwargs.pop(key)
     fake = FakeRebotArm(**kwargs)
-    return Arm(sdk_factory=lambda: fake), fake
+    return Arm(sdk_factory=lambda: fake, **arm_kwargs), fake
 
 
 def test_read_joints_returns_names_degrees_and_radians():
@@ -198,6 +216,51 @@ def test_single_zero_reading_raises():
             arm.read_joints()
     finally:
         arm.disconnect()
+
+
+def test_read_joints_retries_initial_zero_then_reports_real_values():
+    frames = [[0.0] * len(ARM_NAMES), list(ARM_POSITIONS)]
+    arm, fake = make_arm(arm_frames=frames, read_retry_delay_s=0)
+    arm.connect()
+    try:
+        joints = arm.read_joints()
+    finally:
+        arm.disconnect()
+    assert [joint.radians for joint in joints] == pytest.approx(ARM_POSITIONS)
+    assert fake.calls.count("arm.get_positions") == 2
+
+
+def test_read_gripper_retries_initial_zero_then_reports_real_value():
+    arm, fake = make_arm(gripper_frames=[[0.0], list(GRIPPER_POSITIONS)], read_retry_delay_s=0)
+    arm.connect()
+    try:
+        state = arm.read_gripper()
+    finally:
+        arm.disconnect()
+    assert state.radians == pytest.approx(GRIPPER_POSITIONS[0])
+    assert fake.calls.count("gripper.get_positions") == 2
+
+
+def test_persistent_zero_still_raises_after_all_attempts():
+    arm, fake = make_arm(arm_positions=[0.0] * len(ARM_NAMES), read_retry_delay_s=0)
+    arm.connect()
+    try:
+        with pytest.raises(JointStateUnavailable):
+            arm.read_joints()
+    finally:
+        arm.disconnect()
+    assert fake.calls.count("arm.get_positions") == 5
+
+
+def test_persistent_gripper_zero_still_raises_after_all_attempts():
+    arm, fake = make_arm(gripper_positions=[0.0], read_retry_delay_s=0)
+    arm.connect()
+    try:
+        with pytest.raises(JointStateUnavailable):
+            arm.read_gripper()
+    finally:
+        arm.disconnect()
+    assert fake.calls.count("gripper.get_positions") == 5
 
 
 def test_missing_gripper_state_raises():

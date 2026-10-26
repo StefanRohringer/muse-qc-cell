@@ -9,16 +9,23 @@ never move the arm.
 The SDK reports 0.0 for joints without feedback, so an exact 0.0 reading
 cannot be told apart from missing data. This module therefore raises
 JointStateUnavailable instead of ever reporting 0.0 as an angle.
+
+The first reading right after connect() may contain 0.0 values before
+real feedback arrives, so reads are retried while any value is exactly
+0.0. Only when 0.0 persists after all attempts is it reported missing.
 """
 
 from __future__ import annotations
 
 import math
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
 ARM_GROUP = "arm"
 GRIPPER_GROUP = "gripper"
+DEFAULT_MAX_READ_ATTEMPTS = 5
+DEFAULT_READ_RETRY_DELAY_S = 0.2
 
 
 class ArmError(Exception):
@@ -75,8 +82,19 @@ def _checked_angle(name: str, value: float) -> JointAngle:
 class Arm:
     """Read-only wrapper around the Seeed RebotArm SDK object."""
 
-    def __init__(self, sdk_factory: Callable[[], object] | None = None) -> None:
+    def __init__(
+        self,
+        sdk_factory: Callable[[], object] | None = None,
+        max_read_attempts: int = DEFAULT_MAX_READ_ATTEMPTS,
+        read_retry_delay_s: float = DEFAULT_READ_RETRY_DELAY_S,
+    ) -> None:
+        if max_read_attempts < 1:
+            raise ValueError("max_read_attempts must be at least 1.")
+        if read_retry_delay_s < 0:
+            raise ValueError("read_retry_delay_s must not be negative.")
         self._sdk_factory = sdk_factory or _default_sdk_factory
+        self._max_read_attempts = max_read_attempts
+        self._read_retry_delay_s = read_retry_delay_s
         self._sdk: object | None = None
 
     @property
@@ -125,16 +143,34 @@ class Arm:
             )
         return names, positions
 
+    def _read_group_with_retry(self, group_name: str) -> tuple[list[str], list[float]]:
+        """Return one group's names and positions, retrying early 0.0 reads.
+
+        Repeats the position query while any value is exactly 0.0, which
+        the SDK also reports when feedback has not arrived yet. Returns
+        the first reading without 0.0, or the last reading when 0.0
+        persists after all attempts. Reads feedback only, moves nothing.
+        """
+        names: list[str] = []
+        positions: list[float] = []
+        for attempt in range(self._max_read_attempts):
+            names, positions = self._group_positions(self._group(group_name))
+            if not any(value == 0.0 for value in positions):
+                return names, positions
+            if attempt < self._max_read_attempts - 1:
+                time.sleep(self._read_retry_delay_s)
+        return names, positions
+
     def read_joints(self) -> list[JointAngle]:
         """Return arm joint angles in radians and degrees, with names."""
-        names, positions = self._group_positions(self._group(ARM_GROUP))
+        names, positions = self._read_group_with_retry(ARM_GROUP)
         return [
             _checked_angle(name, value) for name, value in zip(names, positions)
         ]
 
     def read_gripper(self) -> GripperState:
         """Return the gripper position in radians and degrees, with name."""
-        names, positions = self._group_positions(self._group(GRIPPER_GROUP))
+        names, positions = self._read_group_with_retry(GRIPPER_GROUP)
         if not names:
             raise JointStateUnavailable("No gripper is configured.")
         if len(names) != 1:
