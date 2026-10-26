@@ -117,3 +117,45 @@ A `JointStateUnavailable` error means a joint reported exactly `0.0`
 (or a non-finite value): the SDK substitutes `0.0` for missing
 feedback, so `arm.py` never reports `0.0` as an angle. Check the bus
 connection and the motor power, then retry.
+
+## Safety notes
+
+Read-only review of the SDK file
+`reBotArm_control_py/actuator/rebotarm.py` (SDK clone at
+`~/meta-hackathon/seeed-sdk`) and of `arm.py`. No hardware was touched.
+
+- The constructor `RebotArm.__init__` (`rebotarm.py:529-550`) starts no
+  thread and sends nothing. It only loads the config, stores channel,
+  rate and joint definitions, sets `_running = False` (`:544`) and
+  `_ctrl_thread = None` (`:545`), then builds the joint groups.
+- `connect()` (`rebotarm.py:552-557`) starts no thread and sends no
+  motion commands. It only registers the motors via `_setup_motors()`
+  (`rebotarm.py:564-582`) and sets `_connected = True`.
+- The control loop runs only after an explicit `start_control_loop()`
+  call (`rebotarm.py:785-800`). That method creates the single
+  background thread (`threading.Thread`, `rebotarm.py:795-799`) and runs
+  the caller-supplied callback at `dt = 1.0 / rate`
+  (`_control_loop_impl`, `rebotarm.py:802-814`); the default rate comes
+  from the hardware config (`load_cfg`, `rebotarm.py:113`). The loop
+  itself sends nothing; motion frames only come from what the callback
+  calls (`send_mit`, `send_pos_vel` or `send_vel`,
+  `rebotarm.py:382-441`).
+- `get_positions()` (`rebotarm.py:465-485`) sends only explicit feedback
+  request frames plus receive-queue polling (`_request_feedback`,
+  `rebotarm.py:456-463`; `_poll_feedback`, `rebotarm.py:445-454`). It
+  starts no thread and commands no motion. This is the path `arm.py`
+  uses for `read_joints()` and `read_gripper()`.
+- `disconnect()` (`rebotarm.py:738-750`) stops the control loop
+  (`stop_control_loop`, `rebotarm.py:816-820`), then calls
+  `disable_all()` (`rebotarm.py:658-664`, per group
+  `rebotarm.py:294-303`), waits, and shuts the bus controllers down
+  (`shutdown()` / `close()`, `rebotarm.py:744-747`). After
+  `disable_all()` the motors no longer hold position, so the arm can sag
+  under its own weight.
+- The `arm.py` wrapper adds no thread and no bus traffic of its own:
+  `Arm.__init__` (`arm.py:78-80`) only stores the factory,
+  `Arm.connect` (`arm.py:87-93`) only calls `sdk.connect()`, and
+  `Arm.disconnect` (`arm.py:95-102`) only calls `sdk.disconnect()`.
+- Not verified: the exact bytes the `motorbridge` package
+  (`Controller.disable_all`, `shutdown`, `close`, `send_*`) puts on the
+  bus. That package was outside this review.

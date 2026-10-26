@@ -17,3 +17,8 @@
   tests/test_arm.py (11 tests with a RebotArm fake, all green) and a
   manual hardware-check section in docs/SETUP.md. No hardware touched,
   nothing committed.
+- With model muse-spark-1.3, effort medium, reviewed the SDK read-only (no
+  thread or motion from constructor/connect, loop only via
+  start_control_loop, disconnect calls disable_all) and added the
+  "Safety notes" section to docs/SETUP.md. No hardware touched,
+  nothing committed.
