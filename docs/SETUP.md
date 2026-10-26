@@ -89,4 +89,31 @@ uv run python --version  # must report Python 3.11.x
 ```
 
 `uv run pytest` is the project test command (see AGENTS.md);
-there are no tests yet.
+it runs the suite in `tests/` (currently `tests/test_arm.py`).
+
+## 7. Trying arm.py on the real arm (by hand only)
+
+This step touches hardware, so only the human runs it, never CI and
+never an agent. `arm.py` only reads: it cannot enable, zero or move
+the arm (enable, zero, mode and send commands are unreachable through
+it), but `connect()` still opens the real bus. From the project root:
+
+```bash
+uv run python -c "
+from arm import Arm
+arm = Arm()
+arm.connect()
+try:
+    for joint in arm.read_joints():
+        print(f'{joint.name}: {joint.degrees:+.2f} deg ({joint.radians:+.4f} rad)')
+    gripper = arm.read_gripper()
+    print(f'{gripper.name}: {gripper.degrees:+.2f} deg ({gripper.radians:+.4f} rad)')
+finally:
+    arm.disconnect()
+"
+```
+
+A `JointStateUnavailable` error means a joint reported exactly `0.0`
+(or a non-finite value): the SDK substitutes `0.0` for missing
+feedback, so `arm.py` never reports `0.0` as an angle. Check the bus
+connection and the motor power, then retry.

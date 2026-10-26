@@ -11,3 +11,9 @@
   set hardware_yaml to rebotarm_dm.yaml, installed it editable via uv (sync-safe),
   verified the import only, and wrote docs/SETUP.md. No hardware touched,
   nothing committed.
+- Built module 1 (arm.py): read-only RebotArm wrapper exposing only
+  connect, joint/gripper reads (degrees and radians with names) and
+  disconnect; exact 0.0 is rejected as missing feedback. Added
+  tests/test_arm.py (11 tests with a RebotArm fake, all green) and a
+  manual hardware-check section in docs/SETUP.md. No hardware touched,
+  nothing committed.
