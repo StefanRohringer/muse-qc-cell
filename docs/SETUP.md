@@ -89,7 +89,7 @@ uv run python --version  # must report Python 3.11.x
 ```
 
 `uv run pytest` is the project test command (see AGENTS.md);
-it runs the suite in `tests/` (tests/test_arm.py, tests/test_diagnose.py, tests/test_preflight.py, tests/test_safety.py).
+it runs the suite in `tests/` (tests/test_arm.py, tests/test_diagnose.py, tests/test_preflight.py, tests/test_safety.py, tests/test_usb_devices.py).
 All tests run without the Seeed SDK; one test in tests/test_safety.py reads the real joint limits and is skipped when the SDK is not installed.
 
 ## 7. Trying arm.py on the real arm (by hand only)
@@ -118,6 +118,36 @@ A `JointStateUnavailable` error means a joint reported exactly `0.0`
 (or a non-finite value): the SDK substitutes `0.0` for missing
 feedback, so `arm.py` never reports `0.0` as an angle. Check the bus
 connection and the motor power, then retry.
+
+## 8. Finding the arm by USB ID (by hand only)
+
+This step is run by the human only, never by an agent. The arm port is
+never a fixed `/dev/ttyACM0`: `preflight.py` finds it by USB vendor and
+product ID through `usb_devices.py` (read-only sysfs lookup, the serial
+port itself is never opened).
+
+How to read the IDs (arm power supply off, only USB connected):
+
+```bash
+ls -l /dev/serial/by-id/
+udevadm info -q property -n /dev/ttyACM0 | grep -E "ID_VENDOR_ID|ID_MODEL_ID"
+```
+
+Expected for the arm: `ID_VENDOR_ID=2e88`, `ID_MODEL_ID=4603`.
+(The gripper Pico reports `2e8a`, which is a different device and is
+ignored by the lookup.)
+
+How to run the check, from the project root:
+
+```bash
+uv run python preflight.py
+```
+
+Expected result: `arm-usb: OK` with the found path. With the USB cable
+unplugged: `arm-usb: FAIL` (`arm not found by USB ID 2e88:4603`), and the
+port checks report `skipped: no arm port` instead of probing.
+
+Never write the device serial number into the repository.
 
 ## Safety notes
 

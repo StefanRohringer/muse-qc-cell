@@ -1,8 +1,8 @@
-"""Pre-flight safety checks before any arm movement.
+"""Pre-flight safety checks before any arm movement (read-only).
 
-Read-only script: it never opens /dev/ttyACM0, sends nothing, and
-imports neither arm.py nor any hardware SDK. All check logic takes
-command output as parameters so pytest can run without hardware.
+Never opens a serial port and imports neither arm.py nor any hardware
+SDK. The arm port is found by USB ID via usb_devices.py. All check
+logic takes injected values so pytest runs without hardware.
 """
 
 from __future__ import annotations
@@ -16,27 +16,22 @@ import subprocess
 import sys
 from dataclasses import dataclass
 
-PORT = "/dev/ttyACM0"
-# A term counts only at the start of a program or module name or right
-# after one of these separators. Trailing characters are allowed so
-# names like "ros2" or "rosmaster" still match, while "across" does not.
+from usb_devices import ARM_USB_PID, ARM_USB_VID, find_serial_ports
+
 _SUSPICIOUS_PROGRAM_RE = re.compile(r"(?:^|[-_./])(rebot|ros|motorbridge)", re.IGNORECASE)
+SKIPPED_NO_PORT = "skipped: no arm port"
 
 
 @dataclass(frozen=True)
 class CheckResult:
     """Outcome of one pre-flight check."""
-
     name: str
     ok: bool
     detail: str
 
 
 def program_basename(command: str) -> str:
-    """Return the basename of the first whitespace-separated element.
-
-    Directory parts never match, only the basename itself.
-    """
+    """Return the basename of the first whitespace-separated element."""
     first = command.strip().split(None, 1)
     if not first:
         return ""
@@ -46,13 +41,7 @@ def program_basename(command: str) -> str:
 
 
 def candidate_names(command: str) -> list[str]:
-    """Return the matchable names from every command-line element.
-
-    The basename of each element counts, so a driver started through
-    an interpreter is still found. For "-m <module>", the top-level
-    module name counts as well, so dots in "motorbridge.server" hide
-    nothing. Directory parts never match, only each basename.
-    """
+    """Return matchable names from every command-line element plus -m module."""
     tokens = command.strip().split()
     names = [program_basename(token) for token in tokens]
     for index, token in enumerate(tokens):
@@ -62,12 +51,7 @@ def candidate_names(command: str) -> list[str]:
 
 
 def find_suspicious_processes(ps_output: str, own_pid: int) -> list[str]:
-    """Return ps lines with suspicious program names, excluding own PID.
-
-    Every command-line element counts by basename, plus the top-level
-    module after "-m". A term matches at the start of such a name or
-    after -, _, . or /.
-    """
+    """Return ps lines with suspicious program names, excluding own PID."""
     found: list[str] = []
     for line in ps_output.splitlines():
         stripped = line.strip()
@@ -82,13 +66,16 @@ def find_suspicious_processes(ps_output: str, own_pid: int) -> list[str]:
             continue  # Header line such as "PID COMMAND".
         if pid == own_pid:
             continue
-        if any(_SUSPICIOUS_PROGRAM_RE.search(name) for name in candidate_names(parts[1])):
+        if any(_SUSPICIOUS_PROGRAM_RE.search(n) for n in candidate_names(parts[1])):
             found.append(stripped)
     return found
 
 
-def check_competing_processes(ps_output: str, own_pid: int) -> CheckResult:
-    """FAIL when another process could be driving the arm."""
+def check_competing_processes(ps_output: str | None, own_pid: int) -> CheckResult:
+    """FAIL when another process could be driving the arm or ps failed."""
+    if ps_output is None:
+        return CheckResult(name="competing-processes", ok=False,
+                            detail="not verifiable: ps failed")
     found = find_suspicious_processes(ps_output, own_pid)
     if found:
         return CheckResult(
@@ -103,20 +90,32 @@ def check_competing_processes(ps_output: str, own_pid: int) -> CheckResult:
     )
 
 
-def check_device_exists(exists: bool, port: str = PORT) -> CheckResult:
+def check_arm_usb(ports: list[str]) -> CheckResult:
+    """OK with exactly one arm port found by USB ID, else FAIL."""
+    if len(ports) == 1:
+        return CheckResult(name="arm-usb", ok=True,
+                            detail=f"{ports[0]} found by USB ID {ARM_USB_VID}:{ARM_USB_PID}")
+    if not ports:
+        return CheckResult(name="arm-usb", ok=False,
+                            detail=f"arm not found by USB ID {ARM_USB_VID}:{ARM_USB_PID}")
+    return CheckResult(name="arm-usb", ok=False,
+                        detail=f"multiple arms found by USB ID {ARM_USB_VID}:{ARM_USB_PID}: "
+                        + ", ".join(ports))
+
+
+def _skipped(name: str) -> CheckResult:
+    """Port check outcome when no arm port was found by USB ID."""
+    return CheckResult(name=name, ok=False, detail=SKIPPED_NO_PORT)
+
+
+def check_device_exists(exists: bool, port: str) -> CheckResult:
     """FAIL when the serial device node is missing."""
     if exists:
-        return CheckResult(
-            name="device-exists", ok=True, detail=f"{port} exists"
-        )
-    return CheckResult(
-        name="device-exists", ok=False, detail=f"{port} is missing"
-    )
+        return CheckResult(name="device-exists", ok=True, detail=f"{port} exists")
+    return CheckResult(name="device-exists", ok=False, detail=f"{port} is missing")
 
 
-def check_port_access(
-    can_read: bool, can_write: bool, in_dialout: bool
-) -> CheckResult:
+def check_port_access(can_read: bool, can_write: bool, in_dialout: bool) -> CheckResult:
     """FAIL when the user cannot read/write the port or misses dialout."""
     problems: list[str] = []
     if not can_read:
@@ -126,9 +125,7 @@ def check_port_access(
     if not in_dialout:
         problems.append("user is not in group dialout")
     if problems:
-        return CheckResult(
-            name="port-access", ok=False, detail="; ".join(problems)
-        )
+        return CheckResult(name="port-access", ok=False, detail="; ".join(problems))
     return CheckResult(
         name="port-access",
         ok=True,
@@ -137,11 +134,7 @@ def check_port_access(
 
 
 def parse_fuser_pids(output: str) -> list[str]:
-    """Extract PIDs from fuser stdout/stderr text.
-
-    Only bare numeric tokens count as PIDs, so device names such as
-    ttyACM0 and error messages never produce false hits.
-    """
+    """Extract PIDs from fuser stdout/stderr text (bare numbers only)."""
     if ":" in output:
         output = output.split(":", 1)[1]
     return [token for token in re.split(r"\s+", output) if token.isdigit()]
@@ -152,9 +145,7 @@ def parse_lsof_pids(output: str) -> list[str]:
     pids: list[str] = []
     for line in output.splitlines():
         stripped = line.strip()
-        if not stripped:
-            continue
-        if stripped.startswith("COMMAND"):
+        if not stripped or stripped.startswith("COMMAND"):
             continue
         fields = stripped.split()
         if len(fields) >= 2 and fields[1].isdigit():
@@ -165,13 +156,9 @@ def parse_lsof_pids(output: str) -> list[str]:
 
 
 def check_port_holder(
-    fuser_output: str | None, lsof_output: str | None, port: str = PORT
+    fuser_output: str | None, lsof_output: str | None, port: str
 ) -> CheckResult:
-    """FAIL when another process holds the port.
-
-    fuser is preferred; lsof is used only when fuser output is None
-    (tool missing). Both None means not verifiable, which is a FAIL.
-    """
+    """FAIL when another process holds the port (fuser preferred, else lsof)."""
     if fuser_output is not None:
         pids = parse_fuser_pids(fuser_output)
         if pids:
@@ -181,9 +168,7 @@ def check_port_holder(
                 detail=f"{port} held by PIDs (fuser): {', '.join(pids)}",
             )
         return CheckResult(
-            name="port-holder",
-            ok=True,
-            detail=f"no process holds {port} (fuser)",
+            name="port-holder", ok=True, detail=f"no process holds {port} (fuser)"
         )
     if lsof_output is not None:
         pids = parse_lsof_pids(lsof_output)
@@ -194,9 +179,7 @@ def check_port_holder(
                 detail=f"{port} held by PIDs (lsof): {', '.join(pids)}",
             )
         return CheckResult(
-            name="port-holder",
-            ok=True,
-            detail=f"no process holds {port} (lsof)",
+            name="port-holder", ok=True, detail=f"no process holds {port} (lsof)"
         )
     return CheckResult(
         name="port-holder",
@@ -206,36 +189,33 @@ def check_port_holder(
 
 
 def run_all_checks(
-    ps_output: str,
+    ps_output: str | None,
     own_pid: int,
+    arm_ports: list[str],
     device_exists: bool,
     can_read: bool,
     can_write: bool,
     in_dialout: bool,
     fuser_output: str | None,
     lsof_output: str | None,
-    port: str = PORT,
+    port: str | None,
 ) -> tuple[list[CheckResult], bool]:
     """Run every check on injected values; True only when all pass."""
-    results = [
-        check_competing_processes(ps_output, own_pid),
-        check_device_exists(device_exists, port),
-        check_port_access(can_read, can_write, in_dialout),
-        check_port_holder(fuser_output, lsof_output, port),
-    ]
+    results = [check_competing_processes(ps_output, own_pid), check_arm_usb(arm_ports)]
+    if port is None:
+        results.extend([_skipped("device-exists"), _skipped("port-access"),
+                         _skipped("port-holder")])
+    else:
+        results.extend([check_device_exists(device_exists, port),
+                         check_port_access(can_read, can_write, in_dialout),
+                         check_port_holder(fuser_output, lsof_output, port)])
     return results, all(item.ok for item in results)
 
 
 def _run_command(args: list[str]) -> str | None:
-    """Run a read-only probe and return combined stdout/stderr text.
-
-    Returns None when the probe command could not run at all, so a
-    failed probe is never mistaken for a clean result.
-    """
+    """Run a read-only probe; None when the probe could not run at all."""
     try:
-        completed = subprocess.run(
-            args, capture_output=True, text=True, timeout=10
-        )
+        completed = subprocess.run(args, capture_output=True, text=True, timeout=10)
     except (OSError, subprocess.SubprocessError):
         return None
     return (completed.stdout or "") + (completed.stderr or "")
@@ -269,28 +249,33 @@ def main() -> int:
     """Collect read-only system state, print checks, return exit code."""
     own_pid = os.getpid()
     ps_output = _run_command(["ps", "-eo", "pid,args"])
+    arm_ports = find_serial_ports(ARM_USB_VID, ARM_USB_PID)
+    port = arm_ports[0] if len(arm_ports) == 1 else None
 
-    exists = os.path.exists(PORT)
-    can_read = os.access(PORT, os.R_OK)
-    can_write = os.access(PORT, os.W_OK)
+    exists = can_read = can_write = False
     in_dialout = "dialout" in get_user_group_names()
-
     fuser_output: str | None = None
     lsof_output: str | None = None
-    if shutil.which("fuser") is not None:
-        fuser_output = _run_command(["fuser", PORT])
-    if fuser_output is None and shutil.which("lsof") is not None:
-        lsof_output = _run_command(["lsof", "-t", PORT])
+    if port is not None:
+        exists = os.path.exists(port)
+        can_read = os.access(port, os.R_OK)
+        can_write = os.access(port, os.W_OK)
+        if shutil.which("fuser") is not None:
+            fuser_output = _run_command(["fuser", port])
+        if fuser_output is None and shutil.which("lsof") is not None:
+            lsof_output = _run_command(["lsof", "-t", port])
 
     results, overall = run_all_checks(
         ps_output=ps_output,
         own_pid=own_pid,
+        arm_ports=arm_ports,
         device_exists=exists,
         can_read=can_read,
         can_write=can_write,
         in_dialout=in_dialout,
         fuser_output=fuser_output,
         lsof_output=lsof_output,
+        port=port,
     )
     for item in results:
         label = "OK" if item.ok else "FAIL"

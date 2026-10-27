@@ -40,3 +40,11 @@
   Requirements in README and THIRD_PARTY) and safety.py right-side limit
   (WORK_Y_MIN_M with both-side tests); full suite green (98 passed).
   No hardware touched, nothing committed.
+- Added usb_devices.py (read-only arm port lookup by USB ID 2e88:4603
+  via sysfs, no port ever opened) and switched preflight.py to a new
+  "arm-usb" check with no fixed port (port checks skip when the lookup
+  fails; failed ps probe is FAIL, never a crash); preflight.py is back
+  under 300 lines. Added tests/test_usb_devices.py (fake sysfs) and
+  extended tests/test_preflight.py; full suite green (116 passed).
+  Documented the USB-ID check in docs/SETUP.md. No hardware touched,
+  no serial port opened, nothing committed.

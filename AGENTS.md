@@ -42,7 +42,7 @@ Built during the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026).
 - Muse Code never reads .env and never prints keys.
 
 ## Layout
-safety.py, arm.py, gripper.py (planned), camera_top.py (planned),
+safety.py, arm.py, usb_devices.py, gripper.py (planned), camera_top.py (planned),
 camera_hand.py (planned), vision_sam.py (planned), inspection.py (planned),
 tools/ (planned), agent.py (planned), tests/, docs/
 
