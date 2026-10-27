@@ -13,7 +13,7 @@ Built during the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026).
 ## Stack
 - Python 3.11, uv, one virtual environment in .venv
 - Hardware only through motorbridge and reBotArm_control_py (official Seeed packages, MIT)
-- AI only through Meta Model API: Muse Spark, Muse Wonder, SAM 3.1, Muse Voice Transcribe
+- AI only through Meta Model API: Muse Spark (muse-spark-1.3), SAM 3.1, and Muse Code
 - API key only from .env (MODEL_API_KEY), loaded by the program, never printed
 
 ## Design
@@ -43,7 +43,14 @@ Built during the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026).
 
 ## Layout
 safety.py, arm.py, camera_top.py, camera_hand.py, vision_sam.py, inspect.py,
-tools.py, agent.py, planner.py, voice.py, web/, tests/, docs/
+tools.py, agent.py, tests/, docs/
+
+## Ground rules for Muse Code
+- Build only what is asked, then stop and report files changed, what was run and limitations.
+- One tool per file with definitions() and run().
+- The agent system prompt is generic.
+- Devices are found by USB ID, never by port order.
+- Nothing is pushed to the public repository before the user has reviewed it.
 
 ## Commands
 - Tests: uv run pytest

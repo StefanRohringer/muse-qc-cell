@@ -17,3 +17,9 @@
   200 ms state freshness, latched STOP, 4-sensor gripper rules) with
   tests/test_safety.py (33 tests, all green) and filled in the gripper
   entry in docs/THIRD_PARTY.md. No hardware touched, nothing committed.
+- Fixed safety.py strict targets: every target needs full x/y/z position
+  and all six joints ("incomplete-target" otherwise), joint 6 always
+  checked against J6_REF; tests updated. No hardware touched, nothing committed.
+- Documentation only: shortened docs/PLAN.md, updated AGENTS.md stack and
+  layout plus ground rules, updated docs/THIRD_PARTY.md and docs/SETUP.md.
+  No code changed, nothing committed.

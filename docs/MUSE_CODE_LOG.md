@@ -61,3 +61,4 @@
   entry in docs/THIRD_PARTY.md. No hardware touched, port never opened,
   nothing committed.
 - With model Muse Code powered by Meta Muse Spark, strict targets in safety.py: every Target now needs full x/y/z plus all six joints ("incomplete-target" otherwise) with joint 6 always checked against J6_REF; tests updated. No hardware touched, nothing committed.
+- With model Muse Code powered by Meta Muse Spark, documentation only: shortened docs/PLAN.md (hackathon context, connector goal, setup, daily schedule), updated AGENTS.md (stack, layout, ground rules), updated docs/THIRD_PARTY.md (Seeed sources line, gripper purpose, workshop link) and docs/SETUP.md (test list, SDK checkout note); verified with uv run pytest. No code changed, no hardware touched, nothing committed.
