@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib.util
+
 import pytest
 
 import safety
@@ -9,9 +11,19 @@ from safety import CurrentState, Target
 
 CURRENT_JOINTS = (10.0, -90.0, -45.0, 20.0, 30.0, 5.0)
 
+FAKE_JOINT_LIMITS_DEG = {
+    "joint1": (-170.0, 170.0),
+    "joint2": (-180.0, 0.0),
+    "joint3": (-170.0, 170.0),
+    "joint4": (-170.0, 170.0),
+    "joint5": (-170.0, 170.0),
+    "joint6": (-170.0, 170.0),
+}
+
 
 @pytest.fixture(autouse=True)
-def _clean_safety_state():
+def _clean_safety_state(monkeypatch):
+    monkeypatch.setattr(safety, "JOINT_LIMITS_DEG", dict(FAKE_JOINT_LIMITS_DEG))
     safety.clear_stop(confirmed_by_user=True)
     safety.set_j6_ref(0.0)
     yield
@@ -51,9 +63,13 @@ def assert_refusal(result: dict) -> dict:
 
 
 def test_joint_limits_loaded_from_sdk():
-    assert safety.JOINT_LIMITS_DEG is not None
-    assert set(safety.JOINT_LIMITS_DEG) == set(safety.JOINT_NAMES)
-    for low, high in safety.JOINT_LIMITS_DEG.values():
+    if importlib.util.find_spec("reBotArm_control_py") is None:
+        pytest.skip("Seeed SDK not installed")
+    real_limits = safety._load_joint_limits_from_sdk()
+    if real_limits is None:
+        pytest.skip("SDK joint limits unavailable")
+    assert set(real_limits) == set(safety.JOINT_NAMES)
+    for low, high in real_limits.values():
         assert low < high
 
 

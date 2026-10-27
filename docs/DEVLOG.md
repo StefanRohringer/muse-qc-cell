@@ -23,3 +23,7 @@
 - Documentation only: shortened docs/PLAN.md, updated AGENTS.md stack and
   layout plus ground rules, updated docs/THIRD_PARTY.md and docs/SETUP.md.
   No code changed, nothing committed.
+- Made tests/test_safety.py SDK-independent (fake joint limits via fixture,
+  SDK test skips without reBotArm_control_py), added README Contributions
+  section, fixed AGENTS.md layout (inspection.py, tools/) and stack wording.
+  safety.py unchanged. Nothing committed.
