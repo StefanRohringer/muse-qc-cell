@@ -6,6 +6,7 @@ import os
 
 import preflight
 from preflight import (
+    candidate_names,
     check_competing_processes,
     check_device_exists,
     check_port_access,
@@ -82,9 +83,33 @@ def test_directory_part_alone_is_ok():
 
 
 def test_arguments_alone_do_not_match():
-    ps = "  PID COMMAND\n  420 /usr/bin/python -m MotorBridge.server\n"
+    ps = "  PID COMMAND\n  420 /usr/bin/python script.py --output /tmp/data\n"
     assert find_suspicious_processes(ps, own_pid=1) == []
     assert check_competing_processes(ps, own_pid=1).ok
+
+
+def test_module_invocation_is_fail():
+    ps = "  PID COMMAND\n  420 /usr/bin/python -m MotorBridge.server\n"
+    assert find_suspicious_processes(ps, own_pid=1) != []
+    assert not check_competing_processes(ps, own_pid=1).ok
+
+
+def test_innocent_module_is_ok():
+    ps = "  PID COMMAND\n  420 /usr/bin/python -m pytest tests/\n"
+    assert find_suspicious_processes(ps, own_pid=1) == []
+    assert check_competing_processes(ps, own_pid=1).ok
+
+
+def test_candidate_names_covers_every_element_and_module():
+    names = candidate_names("/usr/bin/python -m MotorBridge.server")
+    assert "python" in names
+    assert "MotorBridge.server" in names
+    assert "MotorBridge" in names
+
+
+def test_fuser_failure_falls_back_to_lsof():
+    assert check_port_holder(fuser_output=None, lsof_output="").ok
+    assert not check_port_holder(fuser_output=None, lsof_output="1234\n").ok
 
 
 def test_missing_device_is_fail():

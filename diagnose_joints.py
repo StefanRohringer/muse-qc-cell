@@ -4,6 +4,8 @@ Read-only script: it connects, prints raw get_positions() values of
 the arm and gripper groups four times (then every 0.5 s three more
 times), and disconnects. It never enables, zeroes, mode-switches, or
 moves anything. Values are printed unfiltered, including 0.0.
+Warning: disconnect() makes the SDK disable all motors, so the arm can
+sag under its own weight; support the arm by hand first.
 """
 
 from __future__ import annotations
@@ -29,10 +31,11 @@ def _print_sample(index: int, sdk: object) -> None:
     for group_name in (ARM_GROUP, GRIPPER_GROUP):
         group = sdk.groups[group_name]
         names, positions = _raw_positions(group)
+        if not names:
+            print(f"  {group_name}: (no joints reported)")
+            continue
         for name, value in zip(names, positions):
             print(f"  {group_name}.{name} = {value!r}")
-    if len(names) == 0:
-        print("  (no joints reported)")
 
 
 def main() -> int:

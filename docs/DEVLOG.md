@@ -27,3 +27,12 @@
   SDK test skips without reBotArm_control_py), added README Contributions
   section, fixed AGENTS.md layout (inspection.py, tools/) and stack wording.
   safety.py unchanged. Nothing committed.
+- Fixed review findings: safety.py refuses non-finite current x/y/z
+  ("invalid-current-position"), requires 0 < speed, derives WORK_X_MAX_M
+  and WORK_Y_MAX_M from TABLE_* minus EDGE_MARGIN_M (values unchanged)
+  and notes the holding-lowering rule still needs real-gripper
+  verification; preflight.py checks every command-line element plus the
+  -m module, drops the unused constant and falls back from a failed fuser
+  probe to lsof; arm.py and diagnose_joints.py warn about motor
+  disable/sag on disconnect; tests added for every fix, full suite green.
+  No hardware touched, nothing committed.

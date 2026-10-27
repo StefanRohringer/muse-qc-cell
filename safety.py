@@ -28,9 +28,10 @@ TABLE_FRONT_M = 0.545  # Front table edge from base center (+x).
 TABLE_LEFT_M = 0.525  # Left table edge from base center (+y).
 TABLE_RIGHT_M = 0.525  # Right table edge from base center (-y).
 TABLE_BACK_M = 0.055  # Back table edge from base center (-x).
+EDGE_MARGIN_M = 0.05  # Keep-out margin from every table edge.
 WORK_X_MIN_M = 0.10  # Nothing behind the base: 10 cm forward minimum.
-WORK_X_MAX_M = 0.495  # Front reach: table edge minus 5 cm margin.
-WORK_Y_MAX_M = 0.475  # Left/right reach: table edge minus 5 cm margin.
+WORK_X_MAX_M = TABLE_FRONT_M - EDGE_MARGIN_M  # Front reach (0.495).
+WORK_Y_MAX_M = TABLE_LEFT_M - EDGE_MARGIN_M  # Left/right reach (0.475).
 TOOL_Z_MIN_M = 0.03  # Tool height above the table, minimum.
 TOOL_Z_MAX_M = 0.45  # Tool height above the table, maximum.
 J6_CABLE_LIMIT_DEG = 75.0  # Joint 6 hard limit around J6_REF (camera cable).
@@ -176,6 +177,15 @@ def _check_current(state: CurrentState) -> dict | None:
     for name, value in zip(JOINT_NAMES, state.joints_deg):
         if value is None or not math.isfinite(value) or value == 0.0:
             return _refuse("invalid-current-reading", {name: value}, "finite and nonzero")
+    if (
+        state.x is None
+        or state.y is None
+        or state.z is None
+        or not math.isfinite(state.x)
+        or not math.isfinite(state.y)
+        or not math.isfinite(state.z)
+    ):
+        return _refuse("invalid-current-position", (state.x, state.y, state.z), "finite numbers")
     return None
 
 
@@ -217,10 +227,9 @@ def check_target(target: Target, current_state: CurrentState) -> dict:
     if abs(target_j6 - J6_REF) > J6_CABLE_LIMIT_DEG:
         return _refuse("joint6-cable", target_j6, [J6_REF - J6_CABLE_LIMIT_DEG, J6_REF + J6_CABLE_LIMIT_DEG])
     speed = SPEED_DEFAULT if target.speed is None else target.speed
-    if not math.isfinite(speed) or not 0.0 <= speed <= SPEED_MAX:
+    if not math.isfinite(speed) or not 0.0 < speed <= SPEED_MAX:
         return _refuse("speed-cap", target.speed, SPEED_MAX)
-    if current_state.x is None or current_state.y is None or current_state.z is None:
-        return _refuse("missing-current-position", None, "current x/y/z")
+    assert current_state.x is not None and current_state.y is not None and current_state.z is not None
     step = math.dist((current_state.x, current_state.y, current_state.z), (target.x, target.y, target.z))
     if step > MAX_STEP_M:
         return _refuse("step-cartesian", step, MAX_STEP_M)
@@ -274,6 +283,9 @@ def check_gripper(phase: str, contacts: set[str] | frozenset[str] | list[str] | 
         }
     if _HOLDING_CONTACTS is None:
         return _refuse("no-hold-baseline", phase, "a confirmed held grasp first")
+    # NOTE: the holding-lowering rule below (any contact change means the
+    # part was placed) is written from the sensor spec only and must be
+    # verified on the real gripper before it sorts parts.
     if seen != _HOLDING_CONTACTS:
         if phase == "holding-moving":
             set_stop("gripper contact changed while holding and moving")

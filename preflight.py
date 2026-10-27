@@ -17,10 +17,9 @@ import sys
 from dataclasses import dataclass
 
 PORT = "/dev/ttyACM0"
-SUSPICIOUS_SUBSTRINGS = ("rebot", "ros", "motorbridge")
-# A term counts only at the start of the program name or right after
-# one of these separators. Trailing characters are allowed so names
-# like "ros2" or "rosmaster" still match, while "across" does not.
+# A term counts only at the start of a program or module name or right
+# after one of these separators. Trailing characters are allowed so
+# names like "ros2" or "rosmaster" still match, while "across" does not.
 _SUSPICIOUS_PROGRAM_RE = re.compile(r"(?:^|[-_./])(rebot|ros|motorbridge)", re.IGNORECASE)
 
 
@@ -34,9 +33,9 @@ class CheckResult:
 
 
 def program_basename(command: str) -> str:
-    """Return the basename of the first command-line element.
+    """Return the basename of the first whitespace-separated element.
 
-    Only argv[0] counts: directory parts and arguments never match.
+    Directory parts never match, only the basename itself.
     """
     first = command.strip().split(None, 1)
     if not first:
@@ -46,11 +45,28 @@ def program_basename(command: str) -> str:
     return base
 
 
+def candidate_names(command: str) -> list[str]:
+    """Return the matchable names from every command-line element.
+
+    The basename of each element counts, so a driver started through
+    an interpreter is still found. For "-m <module>", the top-level
+    module name counts as well, so dots in "motorbridge.server" hide
+    nothing. Directory parts never match, only each basename.
+    """
+    tokens = command.strip().split()
+    names = [program_basename(token) for token in tokens]
+    for index, token in enumerate(tokens):
+        if token.strip("\"'") == "-m" and index + 1 < len(tokens):
+            names.append(tokens[index + 1].strip("\"'").split(".")[0])
+    return names
+
+
 def find_suspicious_processes(ps_output: str, own_pid: int) -> list[str]:
     """Return ps lines with suspicious program names, excluding own PID.
 
-    Only the basename of the first command-line element counts. A
-    term matches at the start of that name or after -, _, . or /.
+    Every command-line element counts by basename, plus the top-level
+    module after "-m". A term matches at the start of such a name or
+    after -, _, . or /.
     """
     found: list[str] = []
     for line in ps_output.splitlines():
@@ -66,7 +82,7 @@ def find_suspicious_processes(ps_output: str, own_pid: int) -> list[str]:
             continue  # Header line such as "PID COMMAND".
         if pid == own_pid:
             continue
-        if _SUSPICIOUS_PROGRAM_RE.search(program_basename(parts[1])):
+        if any(_SUSPICIOUS_PROGRAM_RE.search(name) for name in candidate_names(parts[1])):
             found.append(stripped)
     return found
 
@@ -210,14 +226,18 @@ def run_all_checks(
     return results, all(item.ok for item in results)
 
 
-def _run_command(args: list[str]) -> str:
-    """Run a read-only probe and return combined stdout/stderr text."""
+def _run_command(args: list[str]) -> str | None:
+    """Run a read-only probe and return combined stdout/stderr text.
+
+    Returns None when the probe command could not run at all, so a
+    failed probe is never mistaken for a clean result.
+    """
     try:
         completed = subprocess.run(
             args, capture_output=True, text=True, timeout=10
         )
     except (OSError, subprocess.SubprocessError):
-        return ""
+        return None
     return (completed.stdout or "") + (completed.stderr or "")
 
 
@@ -259,7 +279,7 @@ def main() -> int:
     lsof_output: str | None = None
     if shutil.which("fuser") is not None:
         fuser_output = _run_command(["fuser", PORT])
-    elif shutil.which("lsof") is not None:
+    if fuser_output is None and shutil.which("lsof") is not None:
         lsof_output = _run_command(["lsof", "-t", PORT])
 
     results, overall = run_all_checks(

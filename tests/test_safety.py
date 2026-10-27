@@ -249,3 +249,23 @@ def test_contact_change_while_lowering_means_placed():
 def test_unknown_phase_and_sensor_refused():
     assert_refusal(safety.check_gripper("half-open", set()))
     assert_refusal(safety.check_gripper("open", {"L9"}))
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf"), None])
+def test_non_finite_current_position_refused(bad):
+    result = assert_refusal(safety.check_target(make_target(), make_state(x=bad)))
+    assert result["reason"] == "invalid-current-position"
+
+
+@pytest.mark.parametrize("speed", [0.0, -0.1])
+def test_non_positive_speed_refused(speed):
+    result = assert_refusal(safety.check_target(make_target(speed=speed), make_state()))
+    assert result["reason"] == "speed-cap"
+
+
+def test_work_limits_derive_from_table_edges():
+    assert safety.EDGE_MARGIN_M == pytest.approx(0.05)
+    assert safety.WORK_X_MAX_M == pytest.approx(safety.TABLE_FRONT_M - safety.EDGE_MARGIN_M)
+    assert safety.WORK_Y_MAX_M == pytest.approx(safety.TABLE_LEFT_M - safety.EDGE_MARGIN_M)
+    assert safety.WORK_X_MAX_M == pytest.approx(0.495)
+    assert safety.WORK_Y_MAX_M == pytest.approx(0.475)

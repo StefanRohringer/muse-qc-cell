@@ -111,7 +111,11 @@ class Arm:
         self._sdk = sdk
 
     def disconnect(self) -> None:
-        """Close the bus connection. Safe to call when disconnected."""
+        """Close the bus connection. Safe to call when disconnected.
+
+        Warning: the SDK disables all motors on disconnect, so the arm
+        can sag under its own weight. Support the arm by hand first.
+        """
         if self._sdk is None:
             return
         try:
