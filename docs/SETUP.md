@@ -227,6 +227,42 @@ and stick one marker per table corner. Which ID ends up in which corner
 does not matter: the detection added later finds the corner of each ID
 by itself.
 
+## 11. Table marker detection (by hand only)
+
+This step opens the real camera, so only the human runs it, never CI
+and never an agent. `muse_qc/detect_markers.py` takes one frame with
+`open_table_camera()` from `muse_qc/camera_top.py`, finds the four
+ArUco table markers (IDs 0 to 3, shared constants in
+`muse_qc/table_markers.py`) with `cv2.aruco.ArucoDetector`, and
+requires each ID exactly once: a missing marker raises naming the
+missing IDs, a marker seen twice raises naming the duplicated IDs.
+Detected IDs outside 0 to 3 are ignored and reported under
+`ignored_ids`. From the project root:
+
+```bash
+uv run python -m muse_qc.detect_markers
+```
+
+Expected result: one line per ID with image corner, center in pixels
+and side in pixels, then the scale in px/mm, then the path of one
+annotated copy (marker outlines and IDs drawn) at
+`recordings/table_markers_<YYYYmmdd_HHMMSS>.png`, for example:
+
+```text
+ID 0 top-left center=(194.5, 174.5) side=149.0 px
+ID 1 top-right center=(1724.5, 174.5) side=149.0 px
+ID 2 bottom-left center=(194.5, 904.5) side=149.0 px
+ID 3 bottom-right center=(1724.5, 904.5) side=149.0 px
+scale: 3.725 px/mm
+recordings/table_markers_20261027_123456.png
+```
+
+Which ID sits in which table corner does not matter: the image corner
+of each ID (`top-left`, `top-right`, `bottom-left`, `bottom-right`) is
+found from its center relative to the image center, and the command
+fails when two markers fall into the same image corner. The scale is
+the mean marker side in pixels divided by 40 mm.
+
 ## Safety notes
 
 Read-only review of the SDK file

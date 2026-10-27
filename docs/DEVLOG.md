@@ -132,3 +132,14 @@
   v4l2-ctl entry lost its last sentence and the camera_top docstring
   plus docs/SETUP.md section 9 now say the fixed values are applied on
   every start to make the result reproducible. Nothing committed.
+- Added muse_qc/detect_markers.py (hand-run table marker detection:
+  one frame via open_table_camera, ArUcoDetector over the shared
+  dictionary, each ID 0-3 required exactly once with missing/duplicated
+  errors, unknown IDs under ignored_ids, image corner names from the
+  centers, px/mm scale from the 40 mm size, annotated PNG saved to
+  recordings/) with tests/test_detect_markers.py (offline synthetic
+  1920x1080 frame: accuracy within 2 px, ignored ID, corner names,
+  scale, missing/duplicated errors, faked main writing the PNG, no
+  arm/safety/SDK import) plus docs/SETUP.md section 11 and the AGENTS.md
+  layout entry. No camera opened by the agent, nothing committed.
+- Human ran python -m muse_qc.detect_markers on the real table (arm power off): all four markers found. ID 2 top-left, ID 3 top-right, ID 0 bottom-left, ID 1 bottom-right (the arm stands at the bottom edge of the image); marker sides 58.1 to 59.3 px; scale 1.465 px/mm; annotated image saved and checked by eye, every marker outlined correctly.
