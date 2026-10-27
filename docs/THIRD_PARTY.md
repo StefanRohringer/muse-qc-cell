@@ -50,10 +50,10 @@ Official Seeed sources are used for the reBot Arm B601-DM. No third-party code i
 - Purpose: touch-sensing gripper fingers reporting grip and contact (4 sensors).
 - Link: https://github.com/StefanRohringer/Touch-Sensing-Fin-Ray-Gripper
 - License: software GPL-3.0-or-later, hardware CERN-OHL-S-2.0.
-- Status: no code is copied into this MIT repository. `gripper.py`
+- Status: no code is copied into this MIT repository. `gripper.py` (planned)
   will be newly written and only uses the gripper's documented USB
   serial protocol.
-- The Touch-Sensing Fin-Ray Gripper is an additional open hardware component for the reBot arm, built by the author before the hackathon. It is listed in the official Seeed reBot-DevArm repository under "DIY Soft Finger" (https://github.com/Seeed-Projects/reBot-DevArm). Gripper hardware and firmware are not part of this hackathon submission. New in this hackathon: gripper.py, which reads the sensors over USB, and everything else in this repository.
+- The Touch-Sensing Fin-Ray Gripper is an additional open hardware component for the reBot arm, built by the author before the hackathon. It is listed in the official Seeed reBot-DevArm repository under "DIY Soft Finger" (https://github.com/Seeed-Projects/reBot-DevArm). Gripper hardware and firmware are not part of this hackathon submission. New in this hackathon: gripper.py (planned), which will read the sensors over USB, and everything else in this repository.
 
 ## Meta workshop repo
 

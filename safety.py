@@ -31,7 +31,8 @@ TABLE_BACK_M = 0.055  # Back table edge from base center (-x).
 EDGE_MARGIN_M = 0.05  # Keep-out margin from every table edge.
 WORK_X_MIN_M = 0.10  # Nothing behind the base: 10 cm forward minimum.
 WORK_X_MAX_M = TABLE_FRONT_M - EDGE_MARGIN_M  # Front reach (0.495).
-WORK_Y_MAX_M = TABLE_LEFT_M - EDGE_MARGIN_M  # Left/right reach (0.475).
+WORK_Y_MAX_M = TABLE_LEFT_M - EDGE_MARGIN_M  # Left reach (0.475).
+WORK_Y_MIN_M = -(TABLE_RIGHT_M - EDGE_MARGIN_M)  # Right reach (-0.475).
 TOOL_Z_MIN_M = 0.03  # Tool height above the table, minimum.
 TOOL_Z_MAX_M = 0.45  # Tool height above the table, maximum.
 J6_CABLE_LIMIT_DEG = 75.0  # Joint 6 hard limit around J6_REF (camera cable).
@@ -211,8 +212,8 @@ def check_target(target: Target, current_state: CurrentState) -> dict:
     assert target.x is not None and target.y is not None and target.z is not None
     if not WORK_X_MIN_M <= target.x <= WORK_X_MAX_M:
         return _refuse("workspace-x", target.x, [WORK_X_MIN_M, WORK_X_MAX_M])
-    if abs(target.y) > WORK_Y_MAX_M:
-        return _refuse("workspace-y", target.y, [-WORK_Y_MAX_M, WORK_Y_MAX_M])
+    if not WORK_Y_MIN_M <= target.y <= WORK_Y_MAX_M:
+        return _refuse("workspace-y", target.y, [WORK_Y_MIN_M, WORK_Y_MAX_M])
     if not TOOL_Z_MIN_M <= target.z <= TOOL_Z_MAX_M:
         return _refuse("tool-z", target.z, [TOOL_Z_MIN_M, TOOL_Z_MAX_M])
     for name, value in zip(JOINT_NAMES, target.joints_deg):

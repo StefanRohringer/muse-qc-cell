@@ -267,5 +267,27 @@ def test_work_limits_derive_from_table_edges():
     assert safety.EDGE_MARGIN_M == pytest.approx(0.05)
     assert safety.WORK_X_MAX_M == pytest.approx(safety.TABLE_FRONT_M - safety.EDGE_MARGIN_M)
     assert safety.WORK_Y_MAX_M == pytest.approx(safety.TABLE_LEFT_M - safety.EDGE_MARGIN_M)
+    assert safety.WORK_Y_MIN_M == pytest.approx(-(safety.TABLE_RIGHT_M - safety.EDGE_MARGIN_M))
     assert safety.WORK_X_MAX_M == pytest.approx(0.495)
     assert safety.WORK_Y_MAX_M == pytest.approx(0.475)
+    assert safety.WORK_Y_MIN_M == pytest.approx(-0.475)
+
+
+@pytest.mark.parametrize(
+    ("state_y", "target_y", "passes"),
+    [
+        (0.474, 0.474, True),  # just inside on the left (+y)
+        (-0.474, -0.474, True),  # just inside on the right (-y)
+        (0.470, 0.476, False),  # just outside on the left (+y)
+        (-0.470, -0.476, False),  # just outside on the right (-y)
+    ],
+)
+def test_workspace_y_limits_both_sides(state_y, target_y, passes):
+    state = make_state(x=0.32, y=state_y, z=0.21)
+    target = make_target(x=0.32, y=target_y, z=0.21)
+    result = safety.check_target(target, state)
+    if passes:
+        assert result["ok"] is True
+    else:
+        assert_refusal(result)
+        assert result["reason"] == "workspace-y"

@@ -6,8 +6,7 @@
 
 ## 2026-10-27
 
-- Documentation only: created docs/PLAN.md (goal, setup, run flow,
-  schedule with done-when and fallback, cut list), extended AGENTS.md
+- Documentation only: created docs/PLAN.md (goal, setup, schedule), extended AGENTS.md
   with agent-loop, evidence, offline-test and no-legacy rules, and
   declared the gripper project plus workshop repo in
   docs/THIRD_PARTY.md. No code changed, nothing committed.
@@ -35,4 +34,9 @@
   -m module, drops the unused constant and falls back from a failed fuser
   probe to lsof; arm.py and diagnose_joints.py warn about motor
   disable/sag on disconnect; tests added for every fix, full suite green.
+  No hardware touched, nothing committed.
+- Fixed docs (PLAN wording, full test list with SDK-independent note in
+  SETUP, planned markers and line rule in AGENTS, planned gripper plus
+  Requirements in README and THIRD_PARTY) and safety.py right-side limit
+  (WORK_Y_MIN_M with both-side tests); full suite green (98 passed).
   No hardware touched, nothing committed.

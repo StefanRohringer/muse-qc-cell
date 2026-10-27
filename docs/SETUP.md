@@ -89,8 +89,8 @@ uv run python --version  # must report Python 3.11.x
 ```
 
 `uv run pytest` is the project test command (see AGENTS.md);
-it runs the suite in `tests/` (tests/test_arm.py, tests/test_preflight.py and tests/test_safety.py).
-The safety tests need the Seeed SDK checkout from step 1, because safety.py reads the joint limits from it.
+it runs the suite in `tests/` (tests/test_arm.py, tests/test_diagnose.py, tests/test_preflight.py, tests/test_safety.py).
+All tests run without the Seeed SDK; one test in tests/test_safety.py reads the real joint limits and is skipped when the SDK is not installed.
 
 ## 7. Trying arm.py on the real arm (by hand only)
 

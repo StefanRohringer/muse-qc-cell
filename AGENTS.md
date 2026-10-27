@@ -21,7 +21,7 @@ Built during the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026).
 - safety.py is inside every tool that moves the arm; the agent cannot call or bypass it.
 - Tools take part IDs and bin names only, never coordinates.
 - Every safety limit has pytest tests, including targets that must be rejected.
-- Small modules, one file per job, max 300 lines per file.
+- Small modules, one file per job, max 300 lines per module (tests excluded).
 - One tool per file.
 
 ## Agent loop
@@ -42,8 +42,9 @@ Built during the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026).
 - Muse Code never reads .env and never prints keys.
 
 ## Layout
-safety.py, arm.py, camera_top.py, camera_hand.py, vision_sam.py, inspection.py,
-tools/, agent.py, tests/, docs/
+safety.py, arm.py, gripper.py (planned), camera_top.py (planned),
+camera_hand.py (planned), vision_sam.py (planned), inspection.py (planned),
+tools/ (planned), agent.py (planned), tests/, docs/
 
 ## Ground rules for Muse Code
 - Build only what is asked, then stop and report files changed, what was run and limitations.
