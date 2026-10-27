@@ -60,3 +60,4 @@
   (33 tests, all green, full suite green) and filled in the gripper
   entry in docs/THIRD_PARTY.md. No hardware touched, port never opened,
   nothing committed.
+- With model Muse Code powered by Meta Muse Spark, strict targets in safety.py: every Target now needs full x/y/z plus all six joints ("incomplete-target" otherwise) with joint 6 always checked against J6_REF; tests updated. No hardware touched, nothing committed.

@@ -71,8 +71,19 @@ def test_valid_joint_nudge_with_explicit_speed_passes():
 
 def test_workspace_corner_at_limits_passes():
     state = make_state(x=0.48, y=-0.46, z=0.44)
-    target = make_target(x=0.495, y=-0.475, z=0.45, joints_deg=None)
+    target = make_target(x=0.495, y=-0.475, z=0.45)
     assert safety.check_target(target, state)["ok"] is True
+
+
+def test_joints_only_target_refused():
+    target = Target(x=None, y=None, z=None, joints_deg=CURRENT_JOINTS)
+    result = assert_refusal(safety.check_target(target, make_state()))
+    assert result["reason"] == "incomplete-target"
+
+
+def test_position_only_target_refused():
+    result = assert_refusal(safety.check_target(make_target(joints_deg=None), make_state()))
+    assert result["reason"] == "incomplete-target"
 
 
 def test_fresh_state_at_age_limit_passes():
@@ -98,7 +109,7 @@ def test_joint6_at_cable_boundary_passes():
 )
 def test_out_of_workspace_targets_refused(position):
     x, y, z = position
-    result = assert_refusal(safety.check_target(make_target(x=x, y=y, z=z, joints_deg=None), make_state()))
+    result = assert_refusal(safety.check_target(make_target(x=x, y=y, z=z), make_state()))
     assert result["reason"] in ("workspace-x", "workspace-y", "tool-z")
 
 
@@ -129,7 +140,7 @@ def test_speed_above_cap_refused():
 
 
 def test_cartesian_step_of_6cm_refused():
-    target = make_target(x=0.36, joints_deg=None)
+    target = make_target(x=0.36)
     result = assert_refusal(safety.check_target(target, make_state()))
     assert result["reason"] == "step-cartesian"
 

@@ -104,7 +104,7 @@ JOINT_LIMITS_DEG: dict[str, tuple[float, float]] | None = _load_joint_limits_fro
 
 @dataclass(frozen=True)
 class Target:
-    """Planned move. Position in meters, joints in degrees, speed 0..1."""
+    """Planned move. Full x/y/z in meters plus all six joints in degrees are required; speed 0..1."""
 
     x: float | None = None
     y: float | None = None
@@ -185,57 +185,48 @@ def check_target(target: Target, current_state: CurrentState) -> dict:
         return _refuse("stop-latched", _STOP_REASON, None)
     if JOINT_LIMITS_DEG is None:
         return _refuse("joint-limits-unavailable", None, "readable Seeed SDK joint limits")
-    position_given = target.x is not None or target.y is not None or target.z is not None
-    if position_given and (target.x is None or target.y is None or target.z is None):
-        return _refuse("bad-target", (target.x, target.y, target.z), "full x/y/z position or none")
-    if not position_given and target.joints_deg is None:
-        return _refuse("empty-target", None, "a position, joints, or both")
-    if position_given and any(not math.isfinite(v) for v in (target.x, target.y, target.z)):
+    if target.x is None or target.y is None or target.z is None or target.joints_deg is None:
+        return _refuse("incomplete-target", (target.x, target.y, target.z, target.joints_deg is None), "full x/y/z and six joints")
+    assert target.joints_deg is not None
+    if any(not math.isfinite(v) for v in (target.x, target.y, target.z)):
         return _refuse("bad-target", (target.x, target.y, target.z), "finite numbers")
-    if target.joints_deg is not None:
-        if len(target.joints_deg) != len(JOINT_NAMES):
-            return _refuse("bad-target", target.joints_deg, "six joint angles")
-        if any(not math.isfinite(v) for v in target.joints_deg):
-            return _refuse("bad-target", target.joints_deg, "finite numbers")
+    if len(target.joints_deg) != len(JOINT_NAMES):
+        return _refuse("bad-target", target.joints_deg, "six joint angles")
+    if any(not math.isfinite(v) for v in target.joints_deg):
+        return _refuse("bad-target", target.joints_deg, "finite numbers")
     failed = _check_current(current_state)
     if failed is not None:
         return failed
     assert current_state.joints_deg is not None
-    if position_given:
-        assert target.x is not None and target.y is not None and target.z is not None
-        if not WORK_X_MIN_M <= target.x <= WORK_X_MAX_M:
-            return _refuse("workspace-x", target.x, [WORK_X_MIN_M, WORK_X_MAX_M])
-        if abs(target.y) > WORK_Y_MAX_M:
-            return _refuse("workspace-y", target.y, [-WORK_Y_MAX_M, WORK_Y_MAX_M])
-        if not TOOL_Z_MIN_M <= target.z <= TOOL_Z_MAX_M:
-            return _refuse("tool-z", target.z, [TOOL_Z_MIN_M, TOOL_Z_MAX_M])
-    if target.joints_deg is not None:
-        for name, value in zip(JOINT_NAMES, target.joints_deg):
-            low, high = JOINT_LIMITS_DEG[name]
-            if not low <= value <= high:
-                return _refuse("joint-limit", {name: value}, {name: [low, high]})
-        target_j6 = target.joints_deg[5]
-        current_j6 = current_state.joints_deg[5]
-        assert current_j6 is not None
-        if abs(target_j6 - current_j6) > 1e-9:
-            if J6_REF is None:
-                return _refuse("joint6-ref-unset", target_j6, "user-set J6_REF")
-            if abs(target_j6 - J6_REF) > J6_CABLE_LIMIT_DEG:
-                return _refuse("joint6-cable", target_j6, [J6_REF - J6_CABLE_LIMIT_DEG, J6_REF + J6_CABLE_LIMIT_DEG])
+    assert target.x is not None and target.y is not None and target.z is not None
+    if not WORK_X_MIN_M <= target.x <= WORK_X_MAX_M:
+        return _refuse("workspace-x", target.x, [WORK_X_MIN_M, WORK_X_MAX_M])
+    if abs(target.y) > WORK_Y_MAX_M:
+        return _refuse("workspace-y", target.y, [-WORK_Y_MAX_M, WORK_Y_MAX_M])
+    if not TOOL_Z_MIN_M <= target.z <= TOOL_Z_MAX_M:
+        return _refuse("tool-z", target.z, [TOOL_Z_MIN_M, TOOL_Z_MAX_M])
+    for name, value in zip(JOINT_NAMES, target.joints_deg):
+        low, high = JOINT_LIMITS_DEG[name]
+        if not low <= value <= high:
+            return _refuse("joint-limit", {name: value}, {name: [low, high]})
+    target_j6 = target.joints_deg[5]
+    current_j6 = current_state.joints_deg[5]
+    assert current_j6 is not None
+    if J6_REF is None:
+        return _refuse("joint6-ref-unset", target_j6, "user-set J6_REF")
+    if abs(target_j6 - J6_REF) > J6_CABLE_LIMIT_DEG:
+        return _refuse("joint6-cable", target_j6, [J6_REF - J6_CABLE_LIMIT_DEG, J6_REF + J6_CABLE_LIMIT_DEG])
     speed = SPEED_DEFAULT if target.speed is None else target.speed
     if not math.isfinite(speed) or not 0.0 <= speed <= SPEED_MAX:
         return _refuse("speed-cap", target.speed, SPEED_MAX)
-    if position_given:
-        if current_state.x is None or current_state.y is None or current_state.z is None:
-            return _refuse("missing-current-position", None, "current x/y/z")
-        assert target.x is not None and target.y is not None and target.z is not None
-        step = math.dist((current_state.x, current_state.y, current_state.z), (target.x, target.y, target.z))
-        if step > MAX_STEP_M:
-            return _refuse("step-cartesian", step, MAX_STEP_M)
-    if target.joints_deg is not None:
-        peak = max(abs(t - c) for t, c in zip(target.joints_deg, current_state.joints_deg) if c is not None)
-        if peak > MAX_STEP_JOINT_DEG:
-            return _refuse("step-joint", peak, MAX_STEP_JOINT_DEG)
+    if current_state.x is None or current_state.y is None or current_state.z is None:
+        return _refuse("missing-current-position", None, "current x/y/z")
+    step = math.dist((current_state.x, current_state.y, current_state.z), (target.x, target.y, target.z))
+    if step > MAX_STEP_M:
+        return _refuse("step-cartesian", step, MAX_STEP_M)
+    peak = max(abs(t - c) for t, c in zip(target.joints_deg, current_state.joints_deg) if c is not None)
+    if peak > MAX_STEP_JOINT_DEG:
+        return _refuse("step-joint", peak, MAX_STEP_JOINT_DEG)
     return {"ok": True, "speed": speed, "detail": "target passes all safety checks"}
 
 
