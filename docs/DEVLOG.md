@@ -11,3 +11,9 @@
   with agent-loop, evidence, offline-test and no-legacy rules, and
   declared the gripper project plus workshop repo in
   docs/THIRD_PARTY.md. No code changed, nothing committed.
+- Built safety.py (pure pre-move checks: workspace box with 5 cm
+  margin, tool z, SDK URDF joint limits with refuse-all fallback,
+  joint 6 cable limit around user-set J6_REF, speed cap, step limits,
+  200 ms state freshness, latched STOP, 4-sensor gripper rules) with
+  tests/test_safety.py (33 tests, all green) and filled in the gripper
+  entry in docs/THIRD_PARTY.md. No hardware touched, nothing committed.

@@ -50,10 +50,11 @@ referenced as a package dependency.
 ## Author's public gripper project (declared, not vendored)
 
 - Purpose: tactile gripper reporting grip and contact; contact triggers STOP.
-- Link: TODO
-- License: TODO
-- Status: no code copied into this repository yet; read-only use planned
-  via a small `gripper.py` reader.
+- Link: https://github.com/StefanRohringer/Touch-Sensing-Fin-Ray-Gripper
+- License: software GPL-3.0-or-later, hardware CERN-OHL-S-2.0.
+- Status: no code is copied into this MIT repository. `gripper.py`
+  will be newly written and only uses the gripper's documented USB
+  serial protocol.
 
 ## Meta workshop repo
 

@@ -1,0 +1,224 @@
+"""Tests for safety.py using fake values only. No hardware is touched."""
+
+from __future__ import annotations
+
+import pytest
+
+import safety
+from safety import CurrentState, Target
+
+CURRENT_JOINTS = (10.0, -90.0, -45.0, 20.0, 30.0, 5.0)
+
+
+@pytest.fixture(autouse=True)
+def _clean_safety_state():
+    safety.clear_stop(confirmed_by_user=True)
+    safety.set_j6_ref(0.0)
+    yield
+    safety.clear_stop(confirmed_by_user=True)
+    safety.set_j6_ref(0.0)
+
+
+def make_state(**overrides) -> CurrentState:
+    values: dict = {
+        "x": 0.30,
+        "y": 0.0,
+        "z": 0.20,
+        "joints_deg": CURRENT_JOINTS,
+        "reading_age_ms": 12.0,
+    }
+    values.update(overrides)
+    return CurrentState(**values)
+
+
+def make_target(**overrides) -> Target:
+    values: dict = {
+        "x": 0.32,
+        "y": 0.01,
+        "z": 0.21,
+        "joints_deg": CURRENT_JOINTS,
+        "speed": None,
+    }
+    values.update(overrides)
+    return Target(**values)
+
+
+def assert_refusal(result: dict) -> dict:
+    assert result["ok"] is False
+    assert {"ok", "reason", "value", "limit"} <= set(result)
+    assert isinstance(result["reason"], str) and result["reason"]
+    return result
+
+
+def test_joint_limits_loaded_from_sdk():
+    assert safety.JOINT_LIMITS_DEG is not None
+    assert set(safety.JOINT_LIMITS_DEG) == set(safety.JOINT_NAMES)
+    for low, high in safety.JOINT_LIMITS_DEG.values():
+        assert low < high
+
+
+def test_valid_cartesian_nudge_passes_with_default_speed():
+    result = safety.check_target(make_target(), make_state())
+    assert result == {"ok": True, "speed": 0.10, "detail": "target passes all safety checks"}
+
+
+def test_valid_joint_nudge_with_explicit_speed_passes():
+    joints = (12.0, -92.0, -45.0, 20.0, 30.0, 8.0)
+    result = safety.check_target(make_target(joints_deg=joints, speed=0.2), make_state())
+    assert result["ok"] is True
+    assert result["speed"] == pytest.approx(0.2)
+
+
+def test_workspace_corner_at_limits_passes():
+    state = make_state(x=0.48, y=-0.46, z=0.44)
+    target = make_target(x=0.495, y=-0.475, z=0.45, joints_deg=None)
+    assert safety.check_target(target, state)["ok"] is True
+
+
+def test_fresh_state_at_age_limit_passes():
+    assert safety.check_target(make_target(), make_state(reading_age_ms=200.0))["ok"] is True
+
+
+def test_joint6_at_cable_boundary_passes():
+    state = make_state(joints_deg=(10.0, -90.0, -45.0, 20.0, 30.0, 70.0))
+    target = make_target(joints_deg=(10.0, -90.0, -45.0, 20.0, 30.0, 75.0))
+    assert safety.check_target(target, state)["ok"] is True
+
+
+@pytest.mark.parametrize(
+    "position",
+    [
+        (0.555, 0.0, 0.20),  # 1 cm past the front table edge
+        (0.30, 0.535, 0.20),  # 1 cm past the left table edge
+        (0.30, -0.535, 0.20),  # 1 cm past the right table edge
+        (0.045, 0.0, 0.20),  # 1 cm past the back table edge
+        (-0.02, 0.0, 0.20),  # behind the base
+        (0.30, 0.0, 0.02),  # below tool z minimum
+    ],
+)
+def test_out_of_workspace_targets_refused(position):
+    x, y, z = position
+    result = assert_refusal(safety.check_target(make_target(x=x, y=y, z=z, joints_deg=None), make_state()))
+    assert result["reason"] in ("workspace-x", "workspace-y", "tool-z")
+
+
+def test_joint6_at_76_deg_refused():
+    state = make_state(joints_deg=(10.0, -90.0, -45.0, 20.0, 30.0, 70.0))
+    target = make_target(joints_deg=(10.0, -90.0, -45.0, 20.0, 30.0, 76.0))
+    result = assert_refusal(safety.check_target(target, state))
+    assert result["reason"] == "joint6-cable"
+
+
+def test_joint6_move_with_unset_ref_refused():
+    safety.set_j6_ref(None)
+    target = make_target(joints_deg=(10.0, -90.0, -45.0, 20.0, 30.0, 10.0))
+    result = assert_refusal(safety.check_target(target, make_state()))
+    assert result["reason"] == "joint6-ref-unset"
+
+
+def test_joint_move_outside_sdk_limits_refused():
+    target = make_target(joints_deg=(10.0, 5.0, -45.0, 20.0, 30.0, 5.0))
+    result = assert_refusal(safety.check_target(target, make_state()))
+    assert result["reason"] == "joint-limit"
+
+
+def test_speed_above_cap_refused():
+    result = assert_refusal(safety.check_target(make_target(speed=0.5), make_state()))
+    assert result["reason"] == "speed-cap"
+    assert result["limit"] == safety.SPEED_MAX
+
+
+def test_cartesian_step_of_6cm_refused():
+    target = make_target(x=0.36, joints_deg=None)
+    result = assert_refusal(safety.check_target(target, make_state()))
+    assert result["reason"] == "step-cartesian"
+
+
+def test_joint_step_above_10_deg_refused():
+    target = make_target(joints_deg=(21.0, -90.0, -45.0, 20.0, 30.0, 5.0))
+    result = assert_refusal(safety.check_target(target, make_state()))
+    assert result["reason"] == "step-joint"
+
+
+def test_stop_blocks_valid_target():
+    safety.set_stop("probe")
+    result = assert_refusal(safety.check_target(make_target(), make_state()))
+    assert result["reason"] == "stop-latched"
+
+
+def test_clear_stop_needs_user_confirmation():
+    safety.set_stop("probe")
+    assert_refusal(safety.clear_stop())
+    assert safety.is_stopped() is True
+    assert safety.clear_stop(confirmed_by_user=True)["ok"] is True
+    assert safety.is_stopped() is False
+    assert safety.check_target(make_target(), make_state())["ok"] is True
+
+
+def test_stale_state_refused():
+    result = assert_refusal(safety.check_target(make_target(), make_state(reading_age_ms=250.0)))
+    assert result["reason"] == "stale-state"
+
+
+@pytest.mark.parametrize("bad", [None, float("nan"), 0.0])
+def test_failed_current_readings_refused(bad):
+    joints = list(CURRENT_JOINTS)
+    joints[0] = bad
+    result = assert_refusal(safety.check_target(make_target(), make_state(joints_deg=tuple(joints))))
+    assert result["reason"] == "invalid-current-reading"
+
+
+def test_missing_joint_limits_refuse_every_move(monkeypatch):
+    monkeypatch.setattr(safety, "JOINT_LIMITS_DEG", None)
+    result = assert_refusal(safety.check_target(make_target(), make_state()))
+    assert result["reason"] == "joint-limits-unavailable"
+
+
+def test_open_gripper_without_contact_ok():
+    assert safety.check_gripper("open", set())["ok"] is True
+
+
+def test_single_sensor_while_moving_open_stops():
+    result = assert_refusal(safety.check_gripper("open-moving", {"L1"}))
+    assert result["reason"] == "contact-while-moving-open"
+    assert safety.is_stopped() is True
+
+
+def test_closed_with_only_left_contact_is_not_held():
+    result = assert_refusal(safety.check_gripper("closed", {"L1", "L2"}))
+    assert result["reason"] == "missed-grip"
+    assert result["action"] == "retry"
+
+
+def test_closed_with_left_and_right_contact_is_held():
+    result = safety.check_gripper("closed", {"L1", "R2"})
+    assert result == {"ok": True, "grip": "held", "detail": "part held by both fingers"}
+
+
+def test_missed_grip_retries_then_stops():
+    first = assert_refusal(safety.check_gripper("closed", set()))
+    second = assert_refusal(safety.check_gripper("closed", set()))
+    assert (first["action"], second["action"]) == ("retry", "retry")
+    exhausted = assert_refusal(safety.check_gripper("closed", set()))
+    assert exhausted["reason"] == "missed-grip-retries-exhausted"
+    assert safety.is_stopped() is True
+
+
+def test_contact_change_while_holding_and_moving_stops():
+    safety.check_gripper("closed", {"L1", "R2"})
+    assert safety.check_gripper("holding-moving", {"L1", "R2"})["ok"] is True
+    result = assert_refusal(safety.check_gripper("holding-moving", {"L1"}))
+    assert result["reason"] == "contact-change-while-holding"
+    assert safety.is_stopped() is True
+
+
+def test_contact_change_while_lowering_means_placed():
+    safety.check_gripper("closed", {"L1", "R2"})
+    assert safety.check_gripper("holding-lowering", {"L1", "R2"})["grip"] == "holding"
+    result = safety.check_gripper("holding-lowering", set())
+    assert result == {"ok": True, "grip": "placed", "action": "open-gripper", "detail": "part placed, open gripper"}
+
+
+def test_unknown_phase_and_sensor_refused():
+    assert_refusal(safety.check_gripper("half-open", set()))
+    assert_refusal(safety.check_gripper("open", {"L9"}))
