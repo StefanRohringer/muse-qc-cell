@@ -89,19 +89,19 @@ uv run python --version  # must report Python 3.11.x
 ```
 
 `uv run pytest` is the project test command (see AGENTS.md);
-it runs the suite in `tests/` (tests/test_arm.py, tests/test_diagnose.py, tests/test_preflight.py, tests/test_safety.py, tests/test_usb_devices.py).
+it runs the suite in `tests/` (tests/test_arm.py, tests/test_diagnose.py, tests/test_preflight.py, tests/test_safety.py, tests/test_sdk_config.py, tests/test_usb_devices.py).
 All tests run without the Seeed SDK; one test in tests/test_safety.py reads the real joint limits and is skipped when the SDK is not installed.
 
-## 7. Trying arm.py on the real arm (by hand only)
+## 7. Trying muse_qc/arm.py on the real arm (by hand only)
 
 This step touches hardware, so only the human runs it, never CI and
-never an agent. `arm.py` only reads: it cannot enable, zero or move
+never an agent. `muse_qc/arm.py` only reads: it cannot enable, zero or move
 the arm (enable, zero, mode and send commands are unreachable through
 it), but `connect()` still opens the real bus. From the project root:
 
 ```bash
 uv run python -c "
-from arm import Arm
+from muse_qc.arm import Arm
 arm = Arm()
 arm.connect()
 try:
@@ -116,14 +116,14 @@ finally:
 
 A `JointStateUnavailable` error means a joint reported exactly `0.0`
 (or a non-finite value): the SDK substitutes `0.0` for missing
-feedback, so `arm.py` never reports `0.0` as an angle. Check the bus
+feedback, so `muse_qc/arm.py` never reports `0.0` as an angle. Check the bus
 connection and the motor power, then retry.
 
 ## 8. Finding the arm by USB ID (by hand only)
 
 This step is run by the human only, never by an agent. The arm port is
-never a fixed `/dev/ttyACM0`: `preflight.py` finds it by USB vendor and
-product ID through `usb_devices.py` (read-only sysfs lookup, the serial
+never a fixed `/dev/ttyACM0`: `muse_qc/preflight.py` finds it by USB vendor and
+product ID through `muse_qc/usb_devices.py` (read-only sysfs lookup, the serial
 port itself is never opened).
 
 How to read the IDs (arm power supply off, only USB connected):
@@ -140,15 +140,15 @@ ignored by the lookup.)
 How to run the check, from the project root:
 
 ```bash
-uv run python preflight.py
+uv run python -m muse_qc.preflight
 ```
 
 Expected result: `arm-usb: OK` with the found path. With the USB cable
 unplugged: `arm-usb: FAIL` (`arm not found by USB ID 2e88:4603`), and the
 port checks report `skipped: no arm port` instead of probing.
 
-`preflight.py` now also checks that the SDK opens the same device:
-`sdk-port` compares the SDK channel from `sdk_config.py`
+`muse_qc/preflight.py` now also checks that the SDK opens the same device:
+`sdk-port` compares the SDK channel from `muse_qc/sdk_config.py`
 (`config/rebotarm.yaml` via `hardware_yaml`) with the arm port found by
 USB ID. Expected: `sdk-port: OK`. It FAILs when the channel is
 unreadable, is not a `/dev` path (for example `can0`), or points to a
@@ -160,7 +160,7 @@ Never write the device serial number into the repository.
 
 Read-only review of the SDK file
 `reBotArm_control_py/actuator/rebotarm.py` (SDK clone at
-`~/meta-hackathon/seeed-sdk`) and of `arm.py`. No hardware was touched.
+`~/meta-hackathon/seeed-sdk`) and of `muse_qc/arm.py`. No hardware was touched.
 
 - The constructor `RebotArm.__init__` (`rebotarm.py:529-550`) starts no
   thread and sends nothing. It only loads the config, stores channel,
@@ -181,7 +181,7 @@ Read-only review of the SDK file
 - `get_positions()` (`rebotarm.py:465-485`) sends only explicit feedback
   request frames plus receive-queue polling (`_request_feedback`,
   `rebotarm.py:456-463`; `_poll_feedback`, `rebotarm.py:445-454`). It
-  starts no thread and commands no motion. This is the path `arm.py`
+  starts no thread and commands no motion. This is the path `muse_qc/arm.py`
   uses for `read_joints()` and `read_gripper()`.
 - `disconnect()` (`rebotarm.py:738-750`) stops the control loop
   (`stop_control_loop`, `rebotarm.py:816-820`), then calls
@@ -190,10 +190,10 @@ Read-only review of the SDK file
   (`shutdown()` / `close()`, `rebotarm.py:744-747`). After
   `disable_all()` the motors no longer hold position, so the arm can sag
   under its own weight.
-- The `arm.py` wrapper adds no thread and no bus traffic of its own:
-  `Arm.__init__` (`arm.py:78-80`) only stores the factory,
-  `Arm.connect` (`arm.py:87-93`) only calls `sdk.connect()`, and
-  `Arm.disconnect` (`arm.py:95-102`) only calls `sdk.disconnect()`.
+- The `muse_qc/arm.py` wrapper adds no thread and no bus traffic of its own:
+  `Arm.__init__` (`muse_qc/arm.py:78-80`) only stores the factory,
+  `Arm.connect` (`muse_qc/arm.py:87-93`) only calls `sdk.connect()`, and
+  `Arm.disconnect` (`muse_qc/arm.py:95-102`) only calls `sdk.disconnect()`.
 - Not verified: the exact bytes the `motorbridge` package
   (`Controller.disable_all`, `shutdown`, `close`, `send_*`) puts on the
   bus. That package was outside this review.

@@ -17,8 +17,8 @@ import subprocess
 import sys
 from dataclasses import dataclass
 
-from sdk_config import read_sdk_channel
-from usb_devices import ARM_USB_PID, ARM_USB_VID, find_serial_ports
+from muse_qc.sdk_config import read_sdk_channel
+from muse_qc.usb_devices import ARM_USB_PID, ARM_USB_VID, find_serial_ports
 
 _SUSPICIOUS_PROGRAM_RE = re.compile(r"(?:^|[-_./])(rebot|ros|motorbridge)", re.IGNORECASE)
 SKIPPED_NO_PORT = "skipped: no arm port"

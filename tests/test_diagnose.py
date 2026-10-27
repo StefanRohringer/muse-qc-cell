@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import diagnose_joints
+from muse_qc import diagnose_joints
 
 
 class FakeGroup:

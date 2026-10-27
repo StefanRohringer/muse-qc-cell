@@ -6,8 +6,8 @@ import importlib.util
 
 import pytest
 
-import safety
-from safety import CurrentState, Target
+from muse_qc import safety
+from muse_qc.safety import CurrentState, Target
 
 CURRENT_JOINTS = (10.0, -90.0, -45.0, 20.0, 30.0, 5.0)
 

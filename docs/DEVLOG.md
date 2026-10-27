@@ -63,3 +63,10 @@
 - Human ran preflight.py on the real PC again (started by the human, arm
   power off, USB only): sdk-port OK (SDK channel and USB arm port are the
   same device), overall OK.
+- Moved safety.py, arm.py, usb_devices.py, sdk_config.py, preflight.py
+  and diagnose_joints.py into the muse_qc/ package (new one-line
+  __init__.py), deleted the main.py placeholder, and updated all imports,
+  source-path tests, module runs (python -m muse_qc.preflight) and docs
+  paths. No logic changed; full suite green (128 passed).
+- Human ran python -m muse_qc.preflight on the real PC after the package
+  move (started by the human, arm power off, USB only): all checks OK.

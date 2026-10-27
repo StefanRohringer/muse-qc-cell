@@ -17,8 +17,8 @@ Built during the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026).
 - API key only from .env (MODEL_API_KEY), loaded by the program, never printed
 
 ## Design
-- safety.py is the only path to the motors. The model never sends raw motor commands.
-- safety.py is inside every tool that moves the arm; the agent cannot call or bypass it.
+- muse_qc/safety.py is the only path to the motors. The model never sends raw motor commands.
+- muse_qc/safety.py is inside every tool that moves the arm; the agent cannot call or bypass it.
 - Tools take part IDs and bin names only, never coordinates.
 - Every safety limit has pytest tests, including targets that must be rejected.
 - Small modules, one file per job, max 300 lines per module (tests excluded).
@@ -42,9 +42,10 @@ Built during the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026).
 - Muse Code never reads .env and never prints keys.
 
 ## Layout
-safety.py, arm.py, usb_devices.py, sdk_config.py, gripper.py (planned),
-camera_top.py (planned), camera_hand.py (planned), vision_sam.py (planned),
-inspection.py (planned), tools/ (planned), agent.py (planned), tests/, docs/
+muse_qc/ (safety.py, arm.py, usb_devices.py, sdk_config.py, preflight.py,
+diagnose_joints.py, gripper.py (planned), camera_top.py (planned),
+camera_hand.py (planned), vision_sam.py (planned), inspection.py (planned),
+tools/ (planned), agent.py (planned)), tests/, docs/
 
 ## Ground rules for Muse Code
 - Build only what is asked, then stop and report files changed, what was run and limitations.

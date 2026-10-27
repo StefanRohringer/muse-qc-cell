@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import os
 
-import preflight
-from preflight import (
+import muse_qc.preflight as preflight
+from muse_qc.preflight import (
     candidate_names,
     check_arm_usb,
     check_competing_processes,
@@ -331,7 +331,7 @@ def test_run_all_checks_reports_arm_usb_first():
 
 
 def test_preflight_imports_no_hardware_modules():
-    path = os.path.join(os.path.dirname(__file__), "..", "preflight.py")
+    path = os.path.join(os.path.dirname(__file__), "..", "muse_qc", "preflight.py")
     with open(path, encoding="utf-8") as handle:
         source = handle.read()
     for forbidden in (
@@ -351,7 +351,7 @@ def test_preflight_imports_no_hardware_modules():
 
 def test_preflight_has_no_fixed_port():
     assert not hasattr(preflight, "PORT")
-    path = os.path.join(os.path.dirname(__file__), "..", "preflight.py")
+    path = os.path.join(os.path.dirname(__file__), "..", "muse_qc", "preflight.py")
     with open(path, encoding="utf-8") as handle:
         source = handle.read()
     assert 'PORT = "/dev/ttyACM0"' not in source
