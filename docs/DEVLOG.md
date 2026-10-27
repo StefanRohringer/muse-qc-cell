@@ -143,3 +143,25 @@
   arm/safety/SDK import) plus docs/SETUP.md section 11 and the AGENTS.md
   layout entry. No camera opened by the agent, nothing committed.
 - Human ran python -m muse_qc.detect_markers on the real table (arm power off): all four markers found. ID 2 top-left, ID 3 top-right, ID 0 bottom-left, ID 1 bottom-right (the arm stands at the bottom edge of the image); marker sides 58.1 to 59.3 px; scale 1.465 px/mm; annotated image saved and checked by eye, every marker outlined correctly.
+
+## 2026-10-28
+
+- Human measured the marker distances with a tape measure, centre to centre: ID 2 to ID 3 977 mm, ID 0 to ID 2 531 mm, diagonal ID 2 to ID 1 1110 mm (rectangle check 1112 mm). ID 0 to ID 1 not measurable because the arm is in the way.
+- Added muse_qc/table_coords.py (179 lines: homography from the four
+  marker centres to TABLE_MARKER_LAYOUT_MM, pixel to mm and back,
+  marker side lengths in mm as an independent check, 100 mm grid
+  drawing with labelled origin and axes, hand-run main with one frame
+  and a grid PNG in recordings/) with tests/test_table_coords.py
+  (offline synthetic frame at a known scale and offset: centres map to
+  the layout within 1 mm, round trip within 0.5 px, sides about
+  40 mm, layout diagonal within 5 mm of 1110 mm, faked main writing
+  the PNG, no arm/safety/SDK import) plus TABLE_MARKER_LAYOUT_MM in
+  table_markers.py, docs/SETUP.md section 12 and the AGENTS.md layout
+  entry. Full suite green. No camera opened by the agent, nothing
+  committed.
+- Human ran python -m muse_qc.table_coords on the real table (arm power off): marker centres mapped exactly to the measured layout; marker sides from the corners 37.0 to 37.8 mm instead of 40 mm (about 7 percent small, most likely lens distortion towards the image corners); grid image checked by eye, grid lines straight and parallel to the table edges.
+- Human placed a 25 mm white cube with its centre at x = 300 mm, y = 300 mm (tape measure from the centre of marker 0) and ran table_coords again: in the grid image the cube centre is about 19 mm too far in -x and on the line in y; after allowing about 5 mm for the cube height the table error is about 15 mm in x. Recorded as a known limitation; lens distortion is not corrected yet.
+- Documentation only: replaced the guessed example output in
+  docs/SETUP.md section 12 with the real human run output and added
+  the known-limitation paragraph (lens distortion not corrected, 37 mm
+  sides, 15 mm cube offset in x). No code changed, nothing committed.
