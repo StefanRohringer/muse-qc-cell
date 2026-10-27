@@ -46,3 +46,15 @@ referenced as a package dependency.
   (upstream default is the RS arm).
 - Verified 2026-10-26: `import reBotArm_control_py` succeeds under
   Python 3.11. No `connect()` call, no hardware touched.
+
+## Author's public gripper project (declared, not vendored)
+
+- Purpose: tactile gripper reporting grip and contact; contact triggers STOP.
+- Link: TODO
+- License: TODO
+- Status: no code copied into this repository yet; read-only use planned
+  via a small `gripper.py` reader.
+
+## Meta workshop repo
+
+- Ideas only, no code copied.

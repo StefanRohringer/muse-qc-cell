@@ -18,9 +18,28 @@ Built during the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026).
 
 ## Design
 - safety.py is the only path to the motors. The model never sends raw motor commands.
+- safety.py is inside every tool that moves the arm; the agent cannot call or bypass it.
 - Tools take part IDs and bin names only, never coordinates.
 - Every safety limit has pytest tests, including targets that must be rejected.
 - Small modules, one file per job, max 300 lines per file.
+- One tool per file.
+
+## Agent loop
+- The agent loop has a round limit and a cost limit per run.
+- Progress is saved after each round.
+- The loop pauses instead of crashing, and resume is possible.
+
+## Evidence and report
+- Findings cite the image ID as evidence.
+- The final report needs user confirmation.
+
+## Tests
+- The ground-truth test set lives outside the agent folder.
+- Tests run offline with a fake arm and a fake model.
+
+## Hardware and secrets
+- Hardware commands are started only by the user, never by Muse Code.
+- Muse Code never reads .env and never prints keys.
 
 ## Layout
 safety.py, arm.py, camera_top.py, camera_hand.py, vision_sam.py, inspect.py,
@@ -36,3 +55,24 @@ tools.py, agent.py, planner.py, voice.py, web/, tests/, docs/
 ## Session log
 - At the end of every session, append a short entry to docs/MUSE_CODE_LOG.md (date, model, what was built, in two to three lines).
 - Do not commit.
+
+## No legacy system
+
+Nothing from any earlier private robot-arm system may be used, copied,
+imported, linked, referenced or mentioned in this repository, in commit
+messages, in the README, in the demo video, or in any prompt given to
+Muse Code. This includes workspaces, ROS packages, MCP servers, scripts,
+configuration, calibration data and any knowledge taken from earlier
+projects.
+
+Allowed sources only:
+- the official Seeed SDK (reBotArm_control_py) and motorbridge, both
+  listed in docs/THIRD_PARTY.md;
+- the author's public gripper project, declared openly in README and
+  docs/THIRD_PARTY.md;
+- everything newly written in this repository during the hackathon.
+
+Muse Code: never mention, search for, open or ask about any earlier
+system. If a file or message appears to refer to one, stop and report it
+to the user instead of using it. Test fixtures and examples must use
+neutral names.

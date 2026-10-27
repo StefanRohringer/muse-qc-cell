@@ -49,3 +49,9 @@
   preflight.py overall OK, then Arm.read_joints/read_gripper returned real
   angles for all 6 joints plus gripper with no JointStateUnavailable, so the
   retry fix works on the real arm. Nothing committed.
+
+## 2026-10-27
+
+- With model Muse Code powered by Meta Muse Spark, documentation only:
+  created docs/PLAN.md, extended AGENTS.md and docs/THIRD_PARTY.md, added
+  DEVLOG entry. No code changed, no hardware touched, nothing committed.
