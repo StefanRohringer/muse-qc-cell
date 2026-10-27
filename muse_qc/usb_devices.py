@@ -13,6 +13,9 @@ from pathlib import Path
 ARM_USB_VID = "2e88"
 ARM_USB_PID = "4603"
 
+TABLE_CAM_USB_VID = "145f"
+TABLE_CAM_USB_PID = "0203"
+
 _TTY_PREFIXES = ("ttyACM", "ttyUSB")
 
 
@@ -75,6 +78,54 @@ def find_serial_ports(
             continue
         device_dir = entry / "device"
         if not os.path.lexists(device_dir):
+            continue
+        got_vid, got_pid = _ids_of(entry, device_dir)
+        if got_vid == want_vid and got_pid == want_pid:
+            found.append(f"/dev/{entry.name}")
+    return found
+
+
+def _is_capture_node(entry: Path) -> bool:
+    """Return True for capture nodes of a video device entry.
+
+    Keeps entries whose "index" file holds 0 (the capture node of a
+    camera exposing several /dev/videoN nodes). When the file is
+    missing, the entry is kept.
+    """
+    try:
+        text = (entry / "index").read_text(encoding="utf-8").strip()
+    except OSError:
+        return True
+    return text == "0"
+
+
+def find_video_devices(
+    vid: str,
+    pid: str,
+    sysfs_root: str | os.PathLike[str] = "/sys/class/video4linux",
+) -> list[str]:
+    """Return /dev/videoN paths whose USB IDs match vid and pid.
+
+    Only names starting with "video" are considered, and only capture
+    nodes (see _is_capture_node) are kept. The sysfs root is a
+    parameter so tests can pass a fake folder. Never opens a camera;
+    only reads idVendor/idProduct (plus index) files.
+    """
+    want_vid = vid.strip().lower()
+    want_pid = pid.strip().lower()
+    root = Path(sysfs_root)
+    try:
+        entries = sorted(root.iterdir())
+    except OSError:
+        return []
+    found: list[str] = []
+    for entry in entries:
+        if not entry.name.startswith("video"):
+            continue
+        device_dir = entry / "device"
+        if not os.path.lexists(device_dir):
+            continue
+        if not _is_capture_node(entry):
             continue
         got_vid, got_pid = _ids_of(entry, device_dir)
         if got_vid == want_vid and got_pid == want_pid:

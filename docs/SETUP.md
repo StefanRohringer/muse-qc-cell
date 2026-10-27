@@ -156,6 +156,77 @@ different device; without an arm port it reports `skipped: no arm port`.
 
 Never write the device serial number into the repository.
 
+## 9. Table camera test (by hand only)
+
+This step opens the real camera, so only the human runs it, never CI
+and never an agent. `muse_qc/camera_top.py` finds the table camera by
+USB vendor and product ID through `muse_qc/usb_devices.py`
+(read-only sysfs lookup under `/sys/class/video4linux`, capture nodes
+only), opens exactly one matching device with the V4L2 backend, requests
+MJPG at 1920x1080, discards 45 warm-up frames (about 1.5 s at 30 fps,
+letting the camera settle after the settings are applied), then reads
+the returned frame and saves it. The camera runs in MJPG at 30 fps. It
+imports no arm code and moves nothing. From the project root:
+
+```bash
+uv run python -m muse_qc.camera_top
+```
+
+Expected result: one new file `recordings/table_<YYYYmmdd_HHMMSS>.png`
+at 1920x1080 and one printed line with path, width and height, for
+example:
+
+```text
+recordings/table_20261027_123456.png 1920x1080
+```
+
+With the camera unplugged the command fails with
+`table camera not found by USB ID 145f:0203`; with several matching
+devices it fails with `several table cameras found` and never falls
+back to a fixed index. When the real frame size is not 1920x1080 the
+command fails with `unexpected frame size WxH` and never silently falls
+back to a lower resolution.
+
+> Mounting: in this cell the table camera (USB ID 145f:0203) is mounted upside down above the table. camera_top.py therefore rotates every frame by 180 degrees (TABLE_CAM_ROTATE_180 = True). If your camera is mounted normally, set it to False.
+
+Fixed settings: every start applies manual exposure mode
+(auto_exposure 1), exposure_time_absolute 450, gain 0, brightness 160,
+contrast 150, automatic white balance off (white_balance_automatic 0)
+at 3200 K. The values are set after the format and size and before the
+warm-up frames, then read back and printed in the same line as the
+image path. The camera keeps its last settings even after being
+unplugged, so values set earlier by hand or by another program would
+carry over; applying the fixed values on every start makes the result
+reproducible.
+
+How to check them by hand (the device node may differ):
+
+```bash
+v4l2-ctl -d /dev/video10 --get-ctrl=auto_exposure,exposure_time_absolute,gain,brightness,contrast,white_balance_automatic,white_balance_temperature
+```
+
+## 10. Table markers (print by hand)
+
+This step uses only the printer, so the human runs it by hand, never CI
+and never an agent. `muse_qc/make_markers.py` writes one A4 page with
+the four ArUco table markers (IDs 0 to 3, shared constants in
+`muse_qc/table_markers.py`). From the project root:
+
+```bash
+uv run python -m muse_qc.make_markers
+```
+
+Expected result: one printed line with the path `docs/table_markers.svg`.
+The file is part of the repository, so it can be printed straight from
+there. It can be generated again with the command above.
+
+Print the page at 100 % (actual size, no scaling to fit the page).
+Then check with a ruler: the scale line must measure exactly 100 mm
+and every black marker square exactly 40 mm. Cut out the four markers
+and stick one marker per table corner. Which ID ends up in which corner
+does not matter: the detection added later finds the corner of each ID
+by itself.
+
 ## Safety notes
 
 Read-only review of the SDK file

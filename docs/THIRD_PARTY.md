@@ -45,6 +45,15 @@ Official Seeed sources are used for the reBot Arm B601-DM. No third-party code i
 - Verified 2026-10-26: `import reBotArm_control_py` succeeds under
   Python 3.11. No `connect()` call, no hardware touched.
 
+## opencv-python-headless (installed)
+
+- Purpose: table camera capture and image saving for `muse_qc/camera_top.py`
+  (one frame via VideoCapture, 180-degree rotation, PNG output).
+  ArUco marker generation and detection (cv2.aruco).
+- Source (PyPI): `opencv-python-headless>=5.0.0.93` (resolved to 5.0.0.93).
+- License: Apache 2.0 (PyPI package metadata).
+- Installed with: `uv add opencv-python-headless`.
+
 ## Author's public gripper project (declared, not vendored)
 
 - Purpose: touch-sensing gripper fingers reporting grip and contact (4 sensors).
