@@ -42,9 +42,9 @@ Built during the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026).
 - Muse Code never reads .env and never prints keys.
 
 ## Layout
-safety.py, arm.py, usb_devices.py, gripper.py (planned), camera_top.py (planned),
-camera_hand.py (planned), vision_sam.py (planned), inspection.py (planned),
-tools/ (planned), agent.py (planned), tests/, docs/
+safety.py, arm.py, usb_devices.py, sdk_config.py, gripper.py (planned),
+camera_top.py (planned), camera_hand.py (planned), vision_sam.py (planned),
+inspection.py (planned), tools/ (planned), agent.py (planned), tests/, docs/
 
 ## Ground rules for Muse Code
 - Build only what is asked, then stop and report files changed, what was run and limitations.
@@ -62,6 +62,7 @@ tools/ (planned), agent.py (planned), tests/, docs/
 
 ## Session log
 - At the end of every session, append a short entry to docs/MUSE_CODE_LOG.md (date, model, what was built, in two to three lines).
+- Every hardware test run by the human is logged in docs/DEVLOG.md as a 'Human ran ...' entry with date, conditions (for example arm power off, USB only) and result, in the same or the next commit. Never write device serial numbers.
 - Do not commit.
 
 ## No legacy system

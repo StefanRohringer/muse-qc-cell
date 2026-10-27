@@ -12,6 +12,7 @@ from preflight import (
     check_device_exists,
     check_port_access,
     check_port_holder,
+    check_sdk_port,
     find_suspicious_processes,
     parse_fuser_pids,
     parse_lsof_pids,
@@ -42,6 +43,7 @@ def _ok_kwargs(**overrides):
         "fuser_output": "",
         "lsof_output": None,
         "port": PORT,
+        "sdk_channel": PORT,
     }
     kwargs.update(overrides)
     return kwargs
@@ -267,7 +269,7 @@ def test_run_all_checks_skips_port_checks_without_arm_port():
     assert not overall
     by_name = {item.name: item for item in results}
     assert not by_name["arm-usb"].ok
-    for name in ("device-exists", "port-access", "port-holder"):
+    for name in ("sdk-port", "device-exists", "port-access", "port-holder"):
         assert not by_name[name].ok
         assert by_name[name].detail == "skipped: no arm port"
 
@@ -282,11 +284,49 @@ def test_run_all_checks_skips_port_checks_on_ambiguous_arm_port():
     assert by_name["device-exists"].detail == "skipped: no arm port"
 
 
+def test_sdk_port_same_device_is_ok():
+    result = check_sdk_port("/dev/ttyACM0", "/dev/ttyACM0")
+    assert result.ok
+    assert result.name == "sdk-port"
+    assert "/dev/ttyACM0" in result.detail
+
+
+def test_sdk_port_different_device_is_fail():
+    result = check_sdk_port("/dev/ttyACM1", "/dev/ttyACM0")
+    assert not result.ok
+    assert "/dev/ttyACM1" in result.detail
+    assert "/dev/ttyACM0" in result.detail
+
+
+def test_sdk_port_can_bus_channel_is_fail():
+    result = check_sdk_port("can0", "/dev/ttyACM0")
+    assert not result.ok
+    assert "can0" in result.detail
+
+
+def test_sdk_port_unreadable_channel_is_fail():
+    result = check_sdk_port(None, "/dev/ttyACM0")
+    assert not result.ok
+    assert "unreadable" in result.detail
+
+
+def test_sdk_port_skipped_without_arm_port():
+    result = check_sdk_port("/dev/ttyACM0", None)
+    assert not result.ok
+    assert result.detail == "skipped: no arm port"
+
+
+def test_run_all_checks_fail_when_sdk_channel_differs():
+    _, overall = run_all_checks(**_ok_kwargs(sdk_channel="/dev/ttyACM1"))
+    assert not overall
+
+
 def test_run_all_checks_reports_arm_usb_first():
     results, _ = run_all_checks(**_ok_kwargs())
-    assert [item.name for item in results][:2] == [
+    assert [item.name for item in results][:3] == [
         "competing-processes",
         "arm-usb",
+        "sdk-port",
     ]
 
 

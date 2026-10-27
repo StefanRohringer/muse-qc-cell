@@ -48,3 +48,18 @@
   extended tests/test_preflight.py; full suite green (116 passed).
   Documented the USB-ID check in docs/SETUP.md. No hardware touched,
   no serial port opened, nothing committed.
+- Human ran preflight.py on the real PC (started by the human, arm power
+  off, USB only): arm-usb OK with the cable plugged in, arm-usb FAIL
+  with port checks skipped when unplugged.
+- Added sdk_config.py (read-only SDK channel lookup: finds
+  reBotArm_control_py via find_spec without importing it, follows
+  config/rebotarm.yaml via hardware_yaml, returns the channel) and a new
+  preflight.py "sdk-port" check (OK only when SDK channel and USB arm
+  port are the same device; skipped without an arm port); preflight.py
+  stays under 300 lines. Added tests/test_sdk_config.py and new
+  sdk-port cases in tests/test_preflight.py; full suite green
+  (128 passed). No hardware touched, no serial port opened, nothing
+  committed.
+- Human ran preflight.py on the real PC again (started by the human, arm
+  power off, USB only): sdk-port OK (SDK channel and USB arm port are the
+  same device), overall OK.

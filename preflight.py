@@ -1,8 +1,9 @@
 """Pre-flight safety checks before any arm movement (read-only).
 
 Never opens a serial port and imports neither arm.py nor any hardware
-SDK. The arm port is found by USB ID via usb_devices.py. All check
-logic takes injected values so pytest runs without hardware.
+SDK. The arm port is found by USB ID via usb_devices.py, and the SDK
+channel is read via sdk_config.py. All check logic takes injected
+values so pytest runs without hardware.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 
+from sdk_config import read_sdk_channel
 from usb_devices import ARM_USB_PID, ARM_USB_VID, find_serial_ports
 
 _SUSPICIOUS_PROGRAM_RE = re.compile(r"(?:^|[-_./])(rebot|ros|motorbridge)", re.IGNORECASE)
@@ -78,16 +80,10 @@ def check_competing_processes(ps_output: str | None, own_pid: int) -> CheckResul
                             detail="not verifiable: ps failed")
     found = find_suspicious_processes(ps_output, own_pid)
     if found:
-        return CheckResult(
-            name="competing-processes",
-            ok=False,
-            detail=f"suspicious processes running: {'; '.join(found)}",
-        )
-    return CheckResult(
-        name="competing-processes",
-        ok=True,
-        detail="no rebot/ros/motorbridge process found",
-    )
+        return CheckResult(name="competing-processes", ok=False,
+                            detail=f"suspicious processes running: {'; '.join(found)}")
+    return CheckResult(name="competing-processes", ok=True,
+                        detail="no rebot/ros/motorbridge process found")
 
 
 def check_arm_usb(ports: list[str]) -> CheckResult:
@@ -108,6 +104,23 @@ def _skipped(name: str) -> CheckResult:
     return CheckResult(name=name, ok=False, detail=SKIPPED_NO_PORT)
 
 
+def check_sdk_port(channel: str | None, port: str | None) -> CheckResult:
+    """OK only when the SDK channel is the arm port found by USB ID."""
+    if port is None:
+        return _skipped("sdk-port")
+    if channel is None:
+        return CheckResult(name="sdk-port", ok=False,
+                            detail="not verifiable: SDK channel unreadable")
+    if not channel.startswith("/dev/"):
+        return CheckResult(name="sdk-port", ok=False,
+                            detail=f"SDK channel is not a serial device: {channel}")
+    if os.path.realpath(channel) == os.path.realpath(port):
+        return CheckResult(name="sdk-port", ok=True,
+                            detail=f"SDK channel {channel} matches arm port {port}")
+    return CheckResult(name="sdk-port", ok=False,
+                        detail=f"SDK channel {channel} differs from arm port {port}")
+
+
 def check_device_exists(exists: bool, port: str) -> CheckResult:
     """FAIL when the serial device node is missing."""
     if exists:
@@ -126,11 +139,8 @@ def check_port_access(can_read: bool, can_write: bool, in_dialout: bool) -> Chec
         problems.append("user is not in group dialout")
     if problems:
         return CheckResult(name="port-access", ok=False, detail="; ".join(problems))
-    return CheckResult(
-        name="port-access",
-        ok=True,
-        detail="readable, writable, user in group dialout",
-    )
+    return CheckResult(name="port-access", ok=True,
+                        detail="readable, writable, user in group dialout")
 
 
 def parse_fuser_pids(output: str) -> list[str]:
@@ -162,30 +172,19 @@ def check_port_holder(
     if fuser_output is not None:
         pids = parse_fuser_pids(fuser_output)
         if pids:
-            return CheckResult(
-                name="port-holder",
-                ok=False,
-                detail=f"{port} held by PIDs (fuser): {', '.join(pids)}",
-            )
-        return CheckResult(
-            name="port-holder", ok=True, detail=f"no process holds {port} (fuser)"
-        )
+            return CheckResult(name="port-holder", ok=False,
+                                detail=f"{port} held by PIDs (fuser): {', '.join(pids)}")
+        return CheckResult(name="port-holder", ok=True,
+                            detail=f"no process holds {port} (fuser)")
     if lsof_output is not None:
         pids = parse_lsof_pids(lsof_output)
         if pids:
-            return CheckResult(
-                name="port-holder",
-                ok=False,
-                detail=f"{port} held by PIDs (lsof): {', '.join(pids)}",
-            )
-        return CheckResult(
-            name="port-holder", ok=True, detail=f"no process holds {port} (lsof)"
-        )
-    return CheckResult(
-        name="port-holder",
-        ok=False,
-        detail="not verifiable: neither fuser nor lsof is available",
-    )
+            return CheckResult(name="port-holder", ok=False,
+                                detail=f"{port} held by PIDs (lsof): {', '.join(pids)}")
+        return CheckResult(name="port-holder", ok=True,
+                            detail=f"no process holds {port} (lsof)")
+    return CheckResult(name="port-holder", ok=False,
+                        detail="not verifiable: neither fuser nor lsof is available")
 
 
 def run_all_checks(
@@ -199,9 +198,11 @@ def run_all_checks(
     fuser_output: str | None,
     lsof_output: str | None,
     port: str | None,
+    sdk_channel: str | None,
 ) -> tuple[list[CheckResult], bool]:
     """Run every check on injected values; True only when all pass."""
-    results = [check_competing_processes(ps_output, own_pid), check_arm_usb(arm_ports)]
+    results = [check_competing_processes(ps_output, own_pid), check_arm_usb(arm_ports),
+                check_sdk_port(sdk_channel, port)]
     if port is None:
         results.extend([_skipped("device-exists"), _skipped("port-access"),
                          _skipped("port-holder")])
@@ -251,6 +252,7 @@ def main() -> int:
     ps_output = _run_command(["ps", "-eo", "pid,args"])
     arm_ports = find_serial_ports(ARM_USB_VID, ARM_USB_PID)
     port = arm_ports[0] if len(arm_ports) == 1 else None
+    sdk_channel = read_sdk_channel()
 
     exists = can_read = can_write = False
     in_dialout = "dialout" in get_user_group_names()
@@ -276,6 +278,7 @@ def main() -> int:
         fuser_output=fuser_output,
         lsof_output=lsof_output,
         port=port,
+        sdk_channel=sdk_channel,
     )
     for item in results:
         label = "OK" if item.ok else "FAIL"

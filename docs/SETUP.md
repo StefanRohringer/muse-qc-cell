@@ -147,6 +147,13 @@ Expected result: `arm-usb: OK` with the found path. With the USB cable
 unplugged: `arm-usb: FAIL` (`arm not found by USB ID 2e88:4603`), and the
 port checks report `skipped: no arm port` instead of probing.
 
+`preflight.py` now also checks that the SDK opens the same device:
+`sdk-port` compares the SDK channel from `sdk_config.py`
+(`config/rebotarm.yaml` via `hardware_yaml`) with the arm port found by
+USB ID. Expected: `sdk-port: OK`. It FAILs when the channel is
+unreadable, is not a `/dev` path (for example `can0`), or points to a
+different device; without an arm port it reports `skipped: no arm port`.
+
 Never write the device serial number into the repository.
 
 ## Safety notes
