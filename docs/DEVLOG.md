@@ -165,3 +165,17 @@
   docs/SETUP.md section 12 with the real human run output and added
   the known-limitation paragraph (lens distortion not corrected, 37 mm
   sides, 15 mm cube offset in x). No code changed, nothing committed.
+- Added muse_qc/checkerboard.py (shared calibration constants: 10 by 7
+  squares of 25 mm, 9 by 6 inner corners; hand-run A4 landscape SVG
+  generator docs/checkerboard.svg with a 100 mm scale line) with
+  tests/test_checkerboard.py (offline A4, square and margin checks
+  plus a cv2.findChessboardCorners round trip) plus docs/SETUP.md
+  section 13 and the AGENTS.md layout entry. The generator was not run
+  by the agent, nothing committed.
+- Removed the black outline rect around the checkerboard (plain white
+  margin for findChessboardCorners on real photos) and moved the
+  instruction text into the top margin, left aligned with the board;
+  the 100 mm scale line stays below the board. Extended
+  tests/test_checkerboard.py with a black-only-squares check. The
+  generator was not run by the agent, nothing committed.
+- Human ran python -m muse_qc.checkerboard (no hardware): docs/checkerboard.svg written, 35 black squares of 25 mm, 100 mm scale line, instruction text in the top margin; full suite green (187 passed).

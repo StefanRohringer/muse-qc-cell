@@ -310,6 +310,27 @@ enough to locate parts roughly; the arm camera refines the position
 before a grasp. A checkerboard camera calibration can remove the
 error later.
 
+## 13. Calibration checkerboard (print by hand)
+
+This step uses only the printer, so the human runs it by hand, never CI
+and never an agent. `muse_qc/checkerboard.py` writes one A4 landscape
+page with the calibration checkerboard (shared constants in
+`muse_qc/checkerboard.py`: 10 by 7 squares of 25 mm, 9 by 6 inner
+corners). From the project root:
+
+```bash
+uv run python -m muse_qc.checkerboard
+```
+
+Expected result: one printed line with the path `docs/checkerboard.svg`.
+The file is part of the repository, so it can be printed straight from
+there. It can be generated again with the command above.
+
+Print the page at 100 % (actual size, no scaling to fit the page).
+Then check with a ruler: the scale line must measure exactly 100 mm
+and one square exactly 25 mm. Glue the page flat on cardboard so it
+stays plane for the calibration.
+
 ## Safety notes
 
 Read-only review of the SDK file

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="297.0mm" height="210.0mm" viewBox="0 0 297.0 210.0">
+<rect x="0" y="0" width="297.0" height="210.0" fill="white"/>
+<g id="checkerboard">
+<rect x="23.5" y="17.5" width="25.0" height="25.0" fill="black"/>
+<rect x="73.5" y="17.5" width="25.0" height="25.0" fill="black"/>
+<rect x="123.5" y="17.5" width="25.0" height="25.0" fill="black"/>
+<rect x="173.5" y="17.5" width="25.0" height="25.0" fill="black"/>
+<rect x="223.5" y="17.5" width="25.0" height="25.0" fill="black"/>
+<rect x="48.5" y="42.5" width="25.0" height="25.0" fill="black"/>
+<rect x="98.5" y="42.5" width="25.0" height="25.0" fill="black"/>
+<rect x="148.5" y="42.5" width="25.0" height="25.0" fill="black"/>
+<rect x="198.5" y="42.5" width="25.0" height="25.0" fill="black"/>
+<rect x="248.5" y="42.5" width="25.0" height="25.0" fill="black"/>
+<rect x="23.5" y="67.5" width="25.0" height="25.0" fill="black"/>
+<rect x="73.5" y="67.5" width="25.0" height="25.0" fill="black"/>
+<rect x="123.5" y="67.5" width="25.0" height="25.0" fill="black"/>
+<rect x="173.5" y="67.5" width="25.0" height="25.0" fill="black"/>
+<rect x="223.5" y="67.5" width="25.0" height="25.0" fill="black"/>
+<rect x="48.5" y="92.5" width="25.0" height="25.0" fill="black"/>
+<rect x="98.5" y="92.5" width="25.0" height="25.0" fill="black"/>
+<rect x="148.5" y="92.5" width="25.0" height="25.0" fill="black"/>
+<rect x="198.5" y="92.5" width="25.0" height="25.0" fill="black"/>
+<rect x="248.5" y="92.5" width="25.0" height="25.0" fill="black"/>
+<rect x="23.5" y="117.5" width="25.0" height="25.0" fill="black"/>
+<rect x="73.5" y="117.5" width="25.0" height="25.0" fill="black"/>
+<rect x="123.5" y="117.5" width="25.0" height="25.0" fill="black"/>
+<rect x="173.5" y="117.5" width="25.0" height="25.0" fill="black"/>
+<rect x="223.5" y="117.5" width="25.0" height="25.0" fill="black"/>
+<rect x="48.5" y="142.5" width="25.0" height="25.0" fill="black"/>
+<rect x="98.5" y="142.5" width="25.0" height="25.0" fill="black"/>
+<rect x="148.5" y="142.5" width="25.0" height="25.0" fill="black"/>
+<rect x="198.5" y="142.5" width="25.0" height="25.0" fill="black"/>
+<rect x="248.5" y="142.5" width="25.0" height="25.0" fill="black"/>
+<rect x="23.5" y="167.5" width="25.0" height="25.0" fill="black"/>
+<rect x="73.5" y="167.5" width="25.0" height="25.0" fill="black"/>
+<rect x="123.5" y="167.5" width="25.0" height="25.0" fill="black"/>
+<rect x="173.5" y="167.5" width="25.0" height="25.0" fill="black"/>
+<rect x="223.5" y="167.5" width="25.0" height="25.0" fill="black"/>
+</g>
+<text x="23.5" y="11.0" font-size="5.0" font-family="sans-serif" fill="black">25 mm squares, print at 100 % / actual size, glue flat on cardboard</text>
+<line id="scale-line" x1="98.5" y1="197.5" x2="198.5" y2="197.5" stroke="black" stroke-width="0.5"/>
+</svg>
