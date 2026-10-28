@@ -22,6 +22,7 @@ import threading
 import time
 
 from muse_qc import safety
+from muse_qc.cycle_timing import summarize_ms
 from muse_qc.first_move_plan import (
     LOOP_RATE_HZ,
     SETTLE_CYCLES,
@@ -54,6 +55,9 @@ class WaypointStream:
         self.halt = False
         self.settle = 0
         self.done = threading.Event()
+        self.work_ms: list[float] = []
+        self.period_ms: list[float] = []
+        self._prev_start: float | None = None
 
     def _send(self, joint_rad: list[float]) -> None:
         try:
@@ -78,6 +82,22 @@ class WaypointStream:
         self._hold()
 
     def __call__(self, _sdk: object, _dt: float) -> None:
+        start = time.perf_counter()
+        try:
+            if self._prev_start is not None:
+                self.period_ms.append((start - self._prev_start) * 1000.0)
+        except Exception:
+            pass
+        self._prev_start = start
+        try:
+            self._step()
+        finally:
+            try:
+                self.work_ms.append((time.perf_counter() - start) * 1000.0)
+            except Exception:
+                pass
+
+    def _step(self) -> None:
         read_start = time.monotonic()
         try:
             current_rad = [float(v) for v in self.group.get_positions()]
@@ -218,6 +238,17 @@ def execute(
             if not stream.done.is_set():
                 stream.halt = True
                 stream.done.wait(timeout=30.0)
+            if stream.work_ms:
+                out(f"cycle work: {summarize_ms(stream.work_ms)}"
+                    f" over {len(stream.work_ms)} cycles")
+            else:
+                out("cycle work: no samples")
+            target_ms = 1000.0 / LOOP_RATE_HZ
+            if stream.period_ms:
+                out(f"cycle period: {summarize_ms(stream.period_ms)}"
+                    f" (target {target_ms:.2f} ms)")
+            else:
+                out(f"cycle period: no samples (target {target_ms:.2f} ms)")
             if stream.refusal is not None:
                 out(f"REFUSED {json.dumps(stream.refusal)}")
                 return 1

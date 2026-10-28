@@ -554,7 +554,12 @@ After the home hold the plan appends a settle segment: it ramps
 to the rest reading clamped into its URDF limits and holds it
 for 1 s. The arm is brought back close to its rest reading
 (joints outside their URDF limits stay at the limit), so it
-barely drops when the motors are disabled.
+barely drops when the motors are disabled. Cycle timing: the dry run
+prints a `cycle work (dry run):` line with mean, p95 and max of the
+per-waypoint work (joint read, tip FK and safety check), and
+`--execute` prints `cycle work:` plus `cycle period:` (time between
+callback starts with the loop-rate target). Both are pure measurements
+and change neither what is sent nor when.
 
 Recorded settle run (2026-10-28, arm power supply on, vlim 10 %):
 

@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 
 from muse_qc import fk_check, safety
+from muse_qc.cycle_timing import summarize_ms
 
 LOOP_RATE_HZ = 50.0
 JOINT_SPEED_DEG_S = 5.0
@@ -241,7 +242,9 @@ def validate_and_print(
     tip_of = real_tip_m if tip_fn is None else tip_fn
     target_tips: list[tuple[float, float, float]] = []
     all_ok = True
+    work_ms: list[float] = []
     for index, (segment, waypoint) in enumerate(plan):
+        work_start = time.perf_counter()
         read_start = time.monotonic()
         current_deg = read_current_deg(group)
         age_ms = (time.monotonic() - read_start) * 1000.0
@@ -257,11 +260,17 @@ def validate_and_print(
             joints_deg=tuple(current_deg), reading_age_ms=age_ms,
         )
         result = check(target, current)
+        work_ms.append((time.perf_counter() - work_start) * 1000.0)
         if not result.get("ok"):
             all_ok = False
         tip_mm = (target_tip[0] * 1000.0, target_tip[1] * 1000.0,
                   target_tip[2] * 1000.0)
         out(format_line(index, len(plan), waypoint, tip_mm, result, segment))
+    if work_ms:
+        out(f"cycle work (dry run): {summarize_ms(work_ms)}"
+            f" over {len(work_ms)} waypoints")
+    else:
+        out("cycle work (dry run): no samples")
     return all_ok, target_tips
 
 

@@ -304,3 +304,51 @@ def test_source_avoids_motion_primitives():
         text = Path(name).read_text(encoding="utf-8")
         for forbidden in ("set_zero", "safe_home", "estop", "RebotArmEndPose"):
             assert forbidden not in text
+
+
+def test_summarize_ms_known_values():
+    from muse_qc.cycle_timing import summarize_ms
+
+    assert summarize_ms([]) == "no samples"
+    assert summarize_ms([5.0]) == "mean 5.00 ms, p95 5.00 ms, max 5.00 ms"
+    assert summarize_ms([1.0, 2.0, 3.0, 4.0]) == (
+        "mean 2.50 ms, p95 4.00 ms, max 4.00 ms"
+    )
+
+
+def test_dry_run_prints_work_summary():
+    import re
+
+    arm = FakeArm(REST_DEG)
+    lines = []
+    assert first_move.dry_run(arm, check_fn=_always_ok, tip_fn=_fake_tip,
+                              joint_limits=TEST_LIMITS,
+                              out=lines.append) == 0
+    assert re.fullmatch(
+        r"cycle work \(dry run\): mean \d+\.\d{2} ms, p95 \d+\.\d{2} ms, "
+        r"max \d+\.\d{2} ms over \d+ waypoints",
+        next(line for line in lines
+             if line.startswith("cycle work (dry run):")),
+    )
+
+
+def test_execute_prints_work_and_period_summaries():
+    import re
+
+    arm = FakeArm(REST_DEG)
+    lines = []
+    result = first_move.execute(arm, input_fn=lambda prompt: "yes",
+                                check_fn=_always_ok, tip_fn=_fake_tip,
+                                vlims=VLIMS, joint_limits=TEST_LIMITS,
+                                out=lines.append)
+    assert result == 0
+    assert re.fullmatch(
+        r"cycle work: mean \d+\.\d{2} ms, p95 \d+\.\d{2} ms, "
+        r"max \d+\.\d{2} ms over \d+ cycles",
+        next(line for line in lines if line.startswith("cycle work:")),
+    )
+    assert re.fullmatch(
+        r"cycle period: mean \d+\.\d{2} ms, p95 \d+\.\d{2} ms, "
+        r"max \d+\.\d{2} ms \(target 20\.00 ms\)",
+        next(line for line in lines if line.startswith("cycle period:")),
+    )
