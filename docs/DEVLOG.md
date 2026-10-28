@@ -522,3 +522,14 @@ summary: lines=1235 data=1229 ignored=6 changes=23
 events: L1=3 L2=4 R1=4 R2=5
 max magnitude uT: L1=7782.0 L2=10365.0 R1=8277.0 R2=7601.0
 ```
+- Human ran python -m muse_qc.gripper --watch 15 after the live-read fix (2026-10-28, arm power supply off, only USB): OK. The human pressed one finger once near the end; the change line shows its real time stamp and the firmware version is read from "# firmware 2".
+```text
+pico: /dev/ttyACM1
+firmware: 2
+do not touch the fingers
+start: contacts -
++14.6s contacts: L2 (safety open: unexpected-contact)
+summary: lines=591 data=584 ignored=7 changes=1
+events: L1=0 L2=1 R1=0 R2=0
+max magnitude uT (as sent by the firmware): L1=7640.0 L2=9775.0 R1=7950.0 R2=7228.0
+```

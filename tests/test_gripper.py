@@ -9,15 +9,20 @@ from pathlib import Path
 import pytest
 
 import muse_qc.gripper as gripper
+import muse_qc.gripper_watch as gripper_watch
 from muse_qc.gripper import (
     COMMANDS,
     PICO_USB_VID,
+    RAW_MODE_UT,
     Reading,
     TouchSensor,
-    _firmware_version,
+    ensure_deviation_mode,
     find_pico_port,
-    main,
     parse_line,
+)
+from muse_qc.gripper_watch import (
+    _firmware_version,
+    main,
     watch,
 )
 
@@ -203,7 +208,7 @@ def test_find_pico_port_none_without_pico(tmp_path):
 
 
 def test_main_no_pico_exits_2(monkeypatch, capsys):
-    monkeypatch.setattr(gripper, "find_pico_port", lambda *a, **k: None)
+    monkeypatch.setattr(gripper_watch, "find_pico_port", lambda *a, **k: None)
     assert main(["--watch", "1"]) == 2
     assert "not found" in capsys.readouterr().out
 
@@ -330,12 +335,12 @@ def test_read_returns_newest_within_timeout_on_endless_stream():
 )
 def test_firmware_version_parsing(monkeypatch, queued, expected):
     """Bug 2: only "# firmware <N>" counts, never a 2 inside a data line."""
-    monkeypatch.setattr(gripper, "VERSION_WAIT_S", 0.05)
+    monkeypatch.setattr(gripper_watch, "VERSION_WAIT_S", 0.05)
     assert _firmware_version(_sensor(*queued)) == expected
 
 
 def test_main_watch_ok_with_fakes(monkeypatch, capsys):
-    monkeypatch.setattr(gripper, "find_pico_port", lambda *a, **k: "/dev/ttyACM1")
+    monkeypatch.setattr(gripper_watch, "find_pico_port", lambda *a, **k: "/dev/ttyACM1")
     cycle = [ZERO, ZERO.replace(",-", ",L1")]
     state = {"i": 0}
 
@@ -357,14 +362,76 @@ def test_main_watch_ok_with_fakes(monkeypatch, capsys):
         created.append(serial_obj)
         return serial_obj
 
-    monkeypatch.setattr(gripper.serial, "Serial", fake_serial)
-    monkeypatch.setattr(gripper.time, "sleep", lambda s: None)
+    monkeypatch.setattr(gripper_watch.serial, "Serial", fake_serial)
+    monkeypatch.setattr(gripper_watch.time, "sleep", lambda s: None)
     assert main(["--watch", "1"]) == 0
     out = capsys.readouterr().out
     assert "pico: /dev/ttyACM1" in out
     assert "firmware: 2" in out
     assert "do not touch the fingers" in out
+    assert "output mode: deviation" in out
     assert "contacts: L1" in out
     assert "summary:" in out
     assert created[0].written == [b"v", b"n", b"f"]
     assert created[0].closed
+
+
+def _data_line(ms: int, mags: tuple[float, float, float, float],
+               contacts: str = "-") -> str:
+    """One data line with the given per-sensor magnitudes."""
+    vals = ",".join(f"0,0,0,{m}" for m in mags)
+    return f"D,{ms},{vals},{contacts}"
+
+
+DEV_MAGS = (10.0, 20.0, 30.0, 40.0)
+RAW_MAGS = (7640.0, 9775.0, 7950.0, 7228.0)
+
+
+class SwitchingSerial(FakeSerial):
+    """Raw stream until 'a' is sent, deviation after (like the firmware)."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._ms = 0
+
+    def readline(self) -> bytes:
+        self._ms += 1
+        mags = DEV_MAGS if b"a" in self.written else RAW_MAGS
+        return (_data_line(self._ms, mags) + "\r\n").encode("ascii")
+
+
+def test_raw_mode_threshold():
+    assert RAW_MODE_UT == 1000.0
+
+
+def test_output_mode_already_deviation_sends_no_a(capsys):
+    sensor = _sensor(*[_data_line(ms, DEV_MAGS) for ms in range(1, 8)])
+    assert ensure_deviation_mode(sensor, retry_s=0.0) == "deviation"
+    assert sensor._serial.written == []
+    assert "output mode: deviation" in capsys.readouterr().out
+
+
+def test_output_mode_raw_then_deviation_sends_a_once(capsys):
+    sensor = TouchSensor(
+        serial_factory=lambda *a, **k: SwitchingSerial(*a, **k)
+    )
+    sensor.open("/dev/ttyFAKE")
+    assert ensure_deviation_mode(sensor, retry_s=0.0) == "deviation"
+    assert sensor._serial.written == [b"a"]
+    assert "output mode: deviation" in capsys.readouterr().out
+
+
+def test_output_mode_raw_stays_raw_sends_a_once_only(capsys):
+    state = {"ms": 0}
+
+    def generate():
+        state["ms"] += 1
+        return (_data_line(state["ms"], RAW_MAGS) + "\r\n").encode("ascii")
+
+    sensor = TouchSensor(
+        serial_factory=lambda *a, **k: FakeSerial(*a, generator=generate, **k)
+    )
+    sensor.open("/dev/ttyFAKE")
+    assert ensure_deviation_mode(sensor, retry_s=0.0) == "raw (a sent, still raw)"
+    assert sensor._serial.written == [b"a"]
+    assert "output mode: raw (a sent, still raw)" in capsys.readouterr().out

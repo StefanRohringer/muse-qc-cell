@@ -898,7 +898,9 @@ new in this hackathon; hardware and firmware are not part of it. No
 firmware code is used, only the documented serial line protocol, so
 this MIT repository stays clear of the gripper project's GPL-3.0 code.
 
-Run (human only, moves nothing; the tool never commands the arm):
+Run (human only, moves nothing; the tool never commands the arm;
+the reader is `muse_qc/gripper.py`, the watch CLI moved to
+`muse_qc/gripper_watch.py` so the reader stays at or below 300 lines):
 
 ```bash
 uv run python -m muse_qc.gripper --watch 10
@@ -916,9 +918,14 @@ time) together with what `safety.check_gripper` says for phase "open"
 (informative only; that phase never latches STOP, and the tool never
 clears a latched STOP itself). Ctrl+C prints a partial summary. The
 summary labels the maxima "as sent by the firmware": raw-value mode
-sends thousands of uT, deviation mode tens of uT; no mode command is
-sent. Exit codes: 0 ok, 1 port cannot be opened, 2 no Pico found or
-bad `--watch` value.
+sends thousands of uT, deviation mode tens of uT. After `n` and `f`
+the tool probes the next readings for up to 0.5 s; when the median
+magnitude over all four sensors is above `RAW_MODE_UT` = 1000 the
+firmware still streams raw values, so it sends `a` once (never twice:
+`a` may be a toggle), waits 0.3 s and probes again, printing `output
+mode: deviation` or `output mode: raw (a sent, still raw)`. Exit
+codes: 0 ok, 1 port cannot be opened, 2 no Pico found or bad `--watch`
+value.
 
 Recorded output (second human run of 2026-10-28, shortened as marked;
 see docs/DEVLOG.md). The change lines here all show +30.0s because of
@@ -938,6 +945,52 @@ summary: lines=1235 data=1229 ignored=6 changes=23
 events: L1=3 L2=4 R1=4 R2=5
 max magnitude uT: L1=7782.0 L2=10365.0 R1=8277.0 R2=7601.0
 ```
+
+## 25. Gripper motor direction test (by hand only)
+
+This step moves the gripper motor, so only the human runs it, never CI
+and never an agent. `muse_qc/gripper_motor.py` (checked by
+`tests/test_gripper_motor.py`, fake SDK only) needs `--delta-deg D`
+with D between -20 and +20 deg and not 0; anything else is an argparse
+error (exit 2) before anything connects. No gripper-project code is
+used, only the SDK motor protocol.
+
+Dry run first (connects, reads, moves nothing):
+
+```bash
+uv run python -m muse_qc.gripper_motor --delta-deg 10
+```
+
+It prints the six arm joints and the gripper reading through
+`muse_qc/arm.py`, the plan (ramp out at 5 deg/s, hold 2 s, ramp back,
+hold 1 s at 100 Hz) and the expectation: 0 deg = closed, more negative
+= more open, about 0.32 mm total jaw opening per motor degree, so
++10 deg should close the jaws by about 3 mm. Then, with the hand on
+the power supply switch and nothing between the jaws:
+
+```bash
+uv run python -m muse_qc.gripper_motor --delta-deg 10 --execute
+```
+
+After the human types `yes`, the arm and gripper groups switch to
+`mode_pos_vel` and everything is enabled at once (the SDK
+`JointGroup.enable()` calls the vendor controller's `enable_all()`,
+so there is no gripper-only enable). The control loop then commands
+the arm rest reading clamped into its URDF limits every cycle (joint 2
+often rests about 1 deg beyond its limit): the arm rests on its
+support and must not move. That hold pose is checked once with
+`safety.check_target` first (same speed fraction as `first_move`),
+and a refusal aborts without moving. The gripper runs at 10 % of its
+config vlim (3.0 rad/s), the arm at 10 % of its SDK caps. At the end
+of the first hold the tool prints `gripper commanded deg` and
+`gripper measured deg`, at the end `gripper back deg`; then it stops
+the loop and disables. Ctrl+C or any error stops the loop, disables
+and prints what happened.
+
+The human notes whether the jaws open or close and roughly by how many
+mm. If +10 deg opens the jaws instead of closing them by about 3 mm,
+the sign convention is the opposite of the URDF expectation and the
+plan sign must be flipped before any grasp code is built on it.
 
 ## Safety notes
 
