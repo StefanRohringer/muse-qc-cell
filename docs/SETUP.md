@@ -589,6 +589,17 @@ stopping: the motors will be disabled now
 
 Note: the end message was changed to "arm holds the settle pose"
 after this run, because the plan ends in the settle pose.
+
+Recorded 100 Hz run (2026-10-28, arm power supply on, vlim 10 %):
+
+```text
+cycle work (dry run): mean 1.20 ms, p95 1.25 ms, max 8.07 ms over 590 waypoints
+cycle work: mean 2.04 ms, p95 2.10 ms, max 2.21 ms over 590 cycles
+cycle period: mean 10.09 ms, p95 10.16 ms, max 10.20 ms (target 10.00 ms)
+motion finished, arm holds the settle pose
+stopping: the motors will be disabled now
+```
+
 `RebotArmEndPose`, zeroing and the home routine are never used.
 
 Safety steps for the human:
