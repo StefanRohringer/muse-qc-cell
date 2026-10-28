@@ -626,6 +626,33 @@ uv run python -m muse_qc.first_move --execute
 
 Recorded output follows after the first human run.
 
+## 19. Arm camera test (by hand only)
+
+This step opens the real arm camera, so only the human runs it, never CI
+and never an agent. `muse_qc/camera_arm.py` finds the colour stream of
+the Orbbec Gemini 305 on the gripper by USB vendor and product ID
+(2bc5:0840) plus USB interface 4 (`find_arm_color_node` in the same
+module: the interface directory behind the `device` link must carry
+`bInterfaceNumber` 04 and the node `index` must be 0), never by fixed
+`/dev` number. The node is opened with the V4L2 backend as YUYV
+640x480, warmed up with 15 reads and retried up to 3 times (the first
+open sometimes gives no frame), then one frame is saved unrotated:
+the image is upright. It imports no arm code and moves nothing.
+The Orbbec SDK is not used and is not a dependency. From the project
+root:
+
+```bash
+uv run python -m muse_qc.camera_arm
+```
+
+Expected result: one new file `recordings/armcam_<YYYYmmdd_HHMMSS>.png`
+at 640x480 plus printed lines with the node, the attempt number and
+the frame shape, for example `node: /dev/video6`. Exit codes: 0 ok,
+1 camera not found, 2 no frame, 3 write failed.
+
+Images in `recordings/` are never committed (`recordings/` is
+git-ignored). Recorded output will be added after the first human run.
+
 ## Safety notes
 
 Read-only review of the SDK file
