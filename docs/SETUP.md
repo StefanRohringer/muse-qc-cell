@@ -397,6 +397,37 @@ mild barrel distortion; `calibration/table_camera.json` written.
 Expected first line of table_coords with the file present:
 `calibration: calibration/table_camera.json (rms 0.199 px)`.
 
+## 15. Model API connection check (by hand only)
+
+This step contacts the Meta Model API over the network, so only the
+human runs it, never CI and never an agent. `muse_qc/model_check.py`
+reads `MODEL_API_KEY` from `.env` or the environment (the key is never
+printed, not even partly), calls `GET /v1/models` once through the
+`openai` SDK with the base URL `https://api.meta.ai/v1`, prints the
+number of models and one `OK`/`MISSING` line each for `muse-spark-1.3`
+and `sam-3.1`. The exit code is 0 only when both are listed. From the
+project root:
+
+```bash
+uv run python -m muse_qc.model_check
+```
+
+Real human run with a valid key (recorded output, never edited):
+
+```text
+models: 9
+muse-spark-1.3: OK
+sam-3.1: OK
+```
+
+Exit code 0. With an invalid key the same run prints `key rejected`
+with exit 1 (the API answers HTTP 401 invalid_api_key).
+
+With a missing key the command exits nonzero with a message that
+`MODEL_API_KEY` is missing. With a wrong key it prints `key rejected`.
+On network errors it prints a short reason. None of these cases prints
+a stack trace or the key.
+
 ## Safety notes
 
 Read-only review of the SDK file

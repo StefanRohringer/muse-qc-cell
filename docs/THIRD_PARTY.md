@@ -54,6 +54,15 @@ Official Seeed sources are used for the reBot Arm B601-DM. No third-party code i
 - License: Apache 2.0 (PyPI package metadata).
 - Installed with: `uv add opencv-python-headless`.
 
+## openai (installed)
+
+- Purpose: client for the Meta Model API in `muse_qc/model_check.py`
+  (hand-run connection check: one `GET /v1/models` call against the
+  base URL `https://api.meta.ai/v1`).
+- Source (PyPI): `openai>=3.40.0` (resolved to 3.40.0).
+- License: Apache-2.0 (PyPI package metadata).
+- Installed with: `uv add openai`.
+
 ## Author's public gripper project (declared, not vendored)
 
 - Purpose: touch-sensing gripper fingers reporting grip and contact (4 sensors).
