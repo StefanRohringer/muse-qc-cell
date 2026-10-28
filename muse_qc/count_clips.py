@@ -11,7 +11,8 @@ kept lever box plus "levers: N" and
 "verdict: good|bad", and saves two annotated copies:
 recordings/count_<timestamp>.png (full image with the part box)
 and recordings/count_<timestamp>_crop.png (enlarged crop with the
-lever boxes). A good part has exactly EXPECTED_LEVERS levers.
+lever boxes), plus recordings/count_<timestamp>.json with the
+inspection record. A good part has exactly EXPECTED_LEVERS levers.
 
 Run by the human only (it contacts the Meta Model API):
 
@@ -23,16 +24,16 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Callable
-from datetime import datetime
 from pathlib import Path
 
 import cv2
 import numpy
 
+from muse_qc.inspection.draw import draw_levers, draw_part, save_pair
+from muse_qc.inspection.record import build_record, write_record
 from muse_qc.model_check import KEY_NAME, read_api_key
 from muse_qc.vision_sam import (
     _default_client_factory,
-    draw_boxes,
     fetch_output_text,
     image_to_data_url,
     load_image,
@@ -153,61 +154,24 @@ def crop_and_enlarge(frame: numpy.ndarray, box: dict) -> numpy.ndarray:
     )
 
 
-def draw_levers(frame: numpy.ndarray, boxes: list[dict], count: int) -> numpy.ndarray:
-    """Return a copy of frame with boxes and the lever count drawn."""
-    annotated = draw_boxes(frame, boxes)
-    cv2.putText(
-        annotated,
-        f"levers: {count}",
-        (10, 30),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        1.0,
-        (0, 255, 0),
-        2,
-    )
-    return annotated
-
-
-def draw_part(frame: numpy.ndarray, box: dict, count: int) -> numpy.ndarray:
-    """Return a copy of frame with the part box and count drawn."""
-    return draw_levers(frame, [box], count)
-
-
-def save_pair(
-    full: numpy.ndarray,
-    crop: numpy.ndarray,
-    recordings_dir: str | Path = "recordings",
-) -> tuple[Path, Path]:
-    """Save full and crop under one timestamp, return both paths."""
-    target_dir = Path(recordings_dir)
-    target_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    full_path = target_dir / f"count_{stamp}.png"
-    crop_path = target_dir / f"count_{stamp}_crop.png"
-    ok_full = cv2.imwrite(str(full_path), full)
-    ok_crop = cv2.imwrite(str(crop_path), crop)
-    if not ok_full or not ok_crop:
-        raise RuntimeError(f"failed to write images to {target_dir}")
-    return full_path, crop_path
-
-
 def run_count(
     api_key: str | None,
     frame: numpy.ndarray,
     prompt: str,
     make_client: Callable[[str], object],
     recordings_dir: str | Path = "recordings",
+    source_image: str | Path = "",
 ) -> int:
     """Find the part, count its levers; return the exit code.
 
     Prints "part: box=(...) confidence=...", one dropped line per
     too-short remnant, one line per kept lever box (id, box,
-    confidence), then "levers: N", "verdict: good|bad" and both
-    annotated image paths. Returns 0
+    confidence), then "levers: N", "verdict: good|bad", both
+    annotated image paths and the JSON record path. Returns 0
     on success, 3 when no part is found, 2 when the key is missing
-    or an API request fails, 1 when the crop or an annotated image
-    cannot be written. Errors print a short message without a
-    stack trace and never include the key.
+    or an API request fails, 1 when the crop, an annotated image
+    or the JSON record cannot be written. Errors print a short
+    message without a stack trace and never include the key.
     """
     if not api_key or not api_key.strip():
         print(f"{KEY_NAME} is missing: set it in .env or the environment")
@@ -271,6 +235,24 @@ def run_count(
         return 1
     print(full_path)
     print(crop_path)
+    try:
+        record_path = write_record(
+            build_record(
+                source_image=str(source_image),
+                full_image=str(full_path),
+                crop_image=str(crop_path),
+                part=part,
+                lever_prompt=prompt,
+                kept=kept,
+                dropped=dropped,
+                expected_levers=EXPECTED_LEVERS,
+            ),
+            recordings_dir,
+        )
+    except (OSError, RuntimeError) as exc:
+        print(f"request failed: {exc}")
+        return 1
+    print(record_path)
     return 0
 
 
@@ -288,7 +270,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"request failed: {exc}")
         return 1
     return run_count(
-        read_api_key(), frame, args.prompt, _default_client_factory
+        read_api_key(),
+        frame,
+        args.prompt,
+        _default_client_factory,
+        source_image=args.image,
     )
 
 

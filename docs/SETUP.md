@@ -733,6 +733,40 @@ recordings/count_20261028_164952.png
 recordings/count_20261028_164952_crop.png
 ```
 
+Every successful run also writes
+`recordings/count_<YYYYmmdd_HHMMSS>.json` next to the two PNGs
+and prints its path as the last line. The JSON record holds the
+timestamp, the source image path, the full and crop image paths,
+the part box and confidence, the lever prompt, the kept lever
+boxes with confidence, the dropped boxes, the lever count, the
+verdict and the expected lever count. It is written by
+`muse_qc/inspection/record.py` (with the drawing helpers in
+`muse_qc/inspection/draw.py`).
+
+## 21. Inspection report (offline)
+
+This step reads only saved files, so it runs anywhere without
+hardware, camera, network or API key. `muse_qc/inspection/report.py`
+reads all `recordings/count_*.json` records and writes one
+self-contained HTML page (inline CSS only, no external URLs, no
+JavaScript; the crop and full images are referenced by relative
+path). The page header shows the title, the generation time and
+the totals (parts inspected, good, bad); each record gets one
+card, newest first, with the time, the crop thumbnail, a full
+image link, levers found versus expected, a green GOOD or red BAD
+badge, and the dropped remnant boxes when there are any. With no
+records yet the page says "no inspections yet". From the project
+root:
+
+```bash
+uv run python -m muse_qc.inspection.report --recordings recordings --out recordings/report.html
+```
+
+Exit codes: 0 report written, 1 write failed. The command prints
+the output path.
+
+Recorded output will be added after the first human run.
+
 ## Safety notes
 
 Read-only review of the SDK file
