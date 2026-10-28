@@ -4,7 +4,10 @@ The four printed table markers (see muse_qc.table_markers) span a known
 rectangle on the table. Their detected centres give a homography from
 pixel coordinates to the table frame defined by TABLE_MARKER_LAYOUT_MM
 (origin at the centre of marker 0, +x towards marker 1, +y towards
-marker 2 away from the arm, units mm).
+marker 2 away from the arm, units mm). When a calibration record is
+passed, the raw marker points are undistorted first and every mapping
+converts between raw pixels and undistorted pixels point by point;
+the frame itself is never undistorted as a whole.
 
 Run by hand only (it opens the real table camera):
 
@@ -20,6 +23,14 @@ from pathlib import Path
 import cv2
 import numpy
 
+from muse_qc.calibrate_camera import (
+    OUTPUT_PATH as CALIBRATION_PATH,
+)
+from muse_qc.calibrate_camera import (
+    distort_points,
+    load_calibration,
+    undistort_points,
+)
 from muse_qc.camera_top import open_table_camera
 from muse_qc.detect_markers import detect_table_markers
 from muse_qc.table_markers import (
@@ -32,21 +43,34 @@ from muse_qc.table_markers import (
 RECTANGLE_ORDER = (0, 1, 3, 2)
 
 
-def table_homography(markers: dict) -> numpy.ndarray:
+def load_table_calibration(path: str | Path = CALIBRATION_PATH) -> dict | None:
+    """Load the table calibration, or return None when the file is missing.
+
+    A corrupt file still raises; only a missing file falls back to raw
+    pixels.
+    """
+    try:
+        return load_calibration(path)
+    except OSError:
+        return None
+
+
+def table_homography(markers: dict, calibration: dict | None = None) -> numpy.ndarray:
     """Return the 3x3 homography from pixels to table millimetres.
 
     The source points are the detected marker centres (output of
-    detect_table_markers), the destination points are the matching
-    entries of TABLE_MARKER_LAYOUT_MM. Raises RuntimeError naming the
-    missing IDs when a table marker has no entry.
+    detect_table_markers), undistorted first when a calibration is
+    passed; the destination points are the matching entries of
+    TABLE_MARKER_LAYOUT_MM. Raises RuntimeError naming the missing
+    IDs when a table marker has no entry.
     """
     missing = [marker_id for marker_id in TABLE_MARKER_IDS if marker_id not in markers]
     if missing:
         raise RuntimeError(f"missing table markers: {missing}")
-    source = numpy.array(
-        [markers[marker_id]["center"] for marker_id in RECTANGLE_ORDER],
-        dtype=numpy.float32,
-    )
+    centers = [markers[marker_id]["center"] for marker_id in RECTANGLE_ORDER]
+    if calibration is not None:
+        centers = undistort_points(centers, calibration)
+    source = numpy.array(centers, dtype=numpy.float32)
     target = numpy.array(
         [TABLE_MARKER_LAYOUT_MM[marker_id] for marker_id in RECTANGLE_ORDER],
         dtype=numpy.float32,
@@ -61,20 +85,39 @@ def _apply(homography: numpy.ndarray, point: tuple[float, float]) -> tuple[float
 
 
 def pixel_to_table_mm(
-    homography: numpy.ndarray, pixel: tuple[float, float]
+    homography: numpy.ndarray,
+    pixel: tuple[float, float],
+    calibration: dict | None = None,
 ) -> tuple[float, float]:
-    """Map one pixel (u, v) to table coordinates (x_mm, y_mm)."""
+    """Map one raw pixel (u, v) to table coordinates (x_mm, y_mm).
+
+    With a calibration the raw pixel is undistorted first, so the
+    homography always works on undistorted pixels.
+    """
+    if calibration is not None:
+        (pixel,) = undistort_points([pixel], calibration)
     return _apply(homography, pixel)
 
 
 def table_mm_to_pixel(
-    homography: numpy.ndarray, point_mm: tuple[float, float]
+    homography: numpy.ndarray,
+    point_mm: tuple[float, float],
+    calibration: dict | None = None,
 ) -> tuple[float, float]:
-    """Map one table point (x_mm, y_mm) back to pixels (u, v)."""
-    return _apply(numpy.linalg.inv(homography), point_mm)
+    """Map one table point (x_mm, y_mm) back to raw pixels (u, v).
+
+    With a calibration the undistorted pixel is distorted back, so
+    the result lands on the raw frame.
+    """
+    undistorted = _apply(numpy.linalg.inv(homography), point_mm)
+    if calibration is not None:
+        (undistorted,) = distort_points([undistorted], calibration)
+    return undistorted
 
 
-def marker_sides_mm(homography: numpy.ndarray, markers: dict) -> dict:
+def marker_sides_mm(
+    homography: numpy.ndarray, markers: dict, calibration: dict | None = None
+) -> dict:
     """Return the mean side length in mm of each marker.
 
     Every marker corner is mapped into the table frame and the four
@@ -84,23 +127,27 @@ def marker_sides_mm(homography: numpy.ndarray, markers: dict) -> dict:
     """
     sides: dict = {}
     for marker_id in TABLE_MARKER_IDS:
-        corners = [
-            pixel_to_table_mm(homography, corner)
-            for corner in markers[marker_id]["corners"]
-        ]
-        edges = [math.dist(corners[i], corners[(i + 1) % 4]) for i in range(4)]
+        corners = list(markers[marker_id]["corners"])
+        if calibration is not None:
+            corners = undistort_points(corners, calibration)
+        mapped = [pixel_to_table_mm(homography, corner) for corner in corners]
+        edges = [math.dist(mapped[i], mapped[(i + 1) % 4]) for i in range(4)]
         sides[marker_id] = sum(edges) / 4.0
     return sides
 
 
 def draw_grid(
-    frame: numpy.ndarray, homography: numpy.ndarray, step_mm: int = 100
+    frame: numpy.ndarray,
+    homography: numpy.ndarray,
+    step_mm: int = 100,
+    calibration: dict | None = None,
 ) -> numpy.ndarray:
     """Return a copy of frame with a 100 mm table grid drawn over it.
 
     Grid lines run every step_mm over the marker rectangle, the
     rectangle border is drawn, and the origin plus the +x and +y axes
-    are labelled.
+    are labelled. With a calibration the grid is distorted back onto
+    the raw frame; the frame itself is never undistorted.
     """
     grid = frame.copy()
     max_x = max(x for x, _ in TABLE_MARKER_LAYOUT_MM.values())
@@ -109,7 +156,7 @@ def draw_grid(
     red = (0, 0, 255)
 
     def to_px(point_mm: tuple[float, float]) -> tuple[int, int]:
-        u, v = table_mm_to_pixel(homography, point_mm)
+        u, v = table_mm_to_pixel(homography, point_mm, calibration)
         return (int(round(u)), int(round(v)))
 
     x = 0.0
@@ -149,16 +196,30 @@ def save_grid(
     return path
 
 
-def main() -> None:
-    """Take one frame, print table coordinates, save the grid image."""
+def main(calibration_path: str | Path = CALIBRATION_PATH) -> None:
+    """Take one frame, print table coordinates, save the grid image.
+
+    Loads the calibration from calibration_path when the file exists
+    (undistorted mapping) and falls back to raw pixels otherwise.
+    """
     frame, _ = open_table_camera()
     height, width = frame.shape[0], frame.shape[1]
+    calibration = load_table_calibration(calibration_path)
+    if calibration is None:
+        print("calibration: none (raw pixels)")
+    else:
+        print(
+            f"calibration: {calibration_path}"
+            f" (rms {calibration['rms_px']:.3f} px)"
+        )
     markers = detect_table_markers(frame)
-    homography = table_homography(markers)
-    sides = marker_sides_mm(homography, markers)
+    homography = table_homography(markers, calibration)
+    sides = marker_sides_mm(homography, markers, calibration)
     for marker_id in TABLE_MARKER_IDS:
         center_x, center_y = markers[marker_id]["center"]
-        x_mm, y_mm = pixel_to_table_mm(homography, (center_x, center_y))
+        x_mm, y_mm = pixel_to_table_mm(
+            homography, (center_x, center_y), calibration
+        )
         print(
             f"ID {marker_id} center_px=({center_x:.1f}, {center_y:.1f})"
             f" center_mm=({x_mm:.1f}, {y_mm:.1f})"
@@ -166,12 +227,14 @@ def main() -> None:
             f" (expected {TABLE_MARKER_SIZE_MM:.0f} mm)"
         )
     image_u, image_v = width / 2.0, height / 2.0
-    image_x, image_y = pixel_to_table_mm(homography, (image_u, image_v))
+    image_x, image_y = pixel_to_table_mm(
+        homography, (image_u, image_v), calibration
+    )
     print(
         f"image center px=({image_u:.1f}, {image_v:.1f})"
         f" mm=({image_x:.1f}, {image_y:.1f})"
     )
-    path = save_grid(draw_grid(frame, homography))
+    path = save_grid(draw_grid(frame, homography, calibration=calibration))
     print(path)
 
 

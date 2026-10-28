@@ -297,13 +297,24 @@ The side length in mm is an independent check: it maps the four
 marker corners (not the centres used for the homography) into the
 table frame, so a wrong homography shows up as a wrong side length.
 
-Known limitation: the lens distortion of the table camera is not
-corrected yet. The marker sides come out at about 37 mm instead of
-40 mm, and a 25 mm cube placed by tape measure at x = 300 mm,
-y = 300 mm appeared about 15 mm too far in -x (y matched). Good
-enough to locate parts roughly; the arm camera refines the position
-before a grasp. A checkerboard camera calibration can remove the
-error later.
+When `calibration/table_camera.json` exists (see section 14), the
+command loads it and prints
+`calibration: calibration/table_camera.json (rms <x> px)` as the
+first line; otherwise it prints `calibration: none (raw pixels)`.
+With a calibration, the detected marker centres and corners are
+undistorted point by point before the homography is built, every
+pixel-to-mm mapping undistorts the raw pixel first, and the grid is
+distorted back onto the raw frame, which itself is never
+undistorted. `detect_markers.py` is unchanged and always reports raw
+pixels.
+
+Known limitation without the calibration file: the lens distortion
+of the table camera is not corrected. The marker sides come out at
+about 37 mm instead of 40 mm, and a 25 mm cube placed by tape
+measure at x = 300 mm, y = 300 mm appeared about 15 mm too far in
+-x (y matched). Good enough to locate parts roughly; the arm camera
+refines the position before a grasp. The example output above was
+recorded without a calibration.
 
 ## 13. Calibration checkerboard (print by hand)
 
@@ -368,10 +379,16 @@ the distortion coefficients, and the path
 `calibration/table_camera.json` with `camera_matrix`, `dist_coeffs`,
 `image_size`, `rms_px`, `images_used` and `created`. The command is
 refused with a clear error when fewer than 10 boards are found or
-when the images differ in size. `load_calibration()` and
-`undistort()` in the same module are reused later;
-`detect_markers.py` and `table_coords.py` still work on the raw
-frames and are switched to undistorted images in a later step.
+when the images differ in size. `load_calibration()`, `undistort()`,
+`undistort_points()` and `distort_points()` in the same module are
+reused by the table mapping; `detect_markers.py` always works on
+the raw frame.
+
+Human result on the real table: 26 images used, RMS reprojection
+error 0.199 px, fx about 1518 px, principal point about (959, 542),
+mild barrel distortion; `calibration/table_camera.json` written.
+Expected first line of table_coords with the file present:
+`calibration: calibration/table_camera.json (rms 0.199 px)`.
 
 ## Safety notes
 

@@ -20,9 +20,11 @@ from muse_qc.calibrate_camera import (
     board_object_points,
     calibrate_from_files,
     calibrate_from_points,
+    distort_points,
     load_calibration,
     save_calibration,
     undistort,
+    undistort_points,
 )
 from muse_qc.capture_calibration import capture_session, find_board
 from muse_qc.checkerboard import CHECKER_SQUARES
@@ -152,6 +154,50 @@ def test_json_round_trip_and_undistort(tmp_path: Path) -> None:
     frame = draw_board(*TRUE_SIZE)
     assert undistort(frame, loaded).shape == frame.shape
     assert undistort(frame, record).shape == frame.shape
+
+
+POINTS_RECORD = {
+    "camera_matrix": [[1500.0, 0.0, 960.0], [0.0, 1500.0, 540.0], [0.0, 0.0, 1.0]],
+    "dist_coeffs": [[-0.05, 0.01, 0.0, 0.0, 0.0]],
+}
+
+
+def test_undistort_distort_points_round_trip() -> None:
+    """distort_points inverts undistort_points within 0.01 px both ways."""
+    rng = numpy.random.default_rng(3)
+    raw = [
+        (float(u), float(v))
+        for u, v in rng.uniform([0.0, 0.0], [1920.0, 1080.0], size=(50, 2))
+    ]
+    there = undistort_points(raw, POINTS_RECORD)
+    back = distort_points(there, POINTS_RECORD)
+    for before, after in zip(raw, back):
+        assert after == pytest.approx(before, abs=0.01)
+    forth = distort_points(there, POINTS_RECORD)
+    home = undistort_points(forth, POINTS_RECORD)
+    for before, after in zip(there, home):
+        assert after == pytest.approx(before, abs=0.01)
+
+
+def test_undistort_points_converges_in_strong_corners() -> None:
+    """Strongly distorted corner points still round-trip within 0.01 px."""
+    strong = {
+        "camera_matrix": [[1500.0, 0.0, 960.0], [0.0, 1500.0, 540.0], [0.0, 0.0, 1.0]],
+        "dist_coeffs": [[-0.4, 0.1, 0.0, 0.0, 0.0]],
+    }
+    corners = [(5.0, 5.0), (1915.0, 5.0), (5.0, 1075.0), (1915.0, 1075.0)]
+    plain = undistort_points(corners, strong)
+    assert plain != pytest.approx(corners, abs=1.0)
+    back = distort_points(plain, strong)
+    for before, after in zip(corners, back):
+        assert after == pytest.approx(before, abs=0.01)
+
+
+def test_undistort_points_keeps_principal_point() -> None:
+    """The principal point is the fixed point of the distortion."""
+    assert undistort_points([(960.0, 540.0)], POINTS_RECORD) == pytest.approx(
+        [(960.0, 540.0)], abs=1e-9
+    )
 
 
 def test_modules_import_no_hardware_code() -> None:
