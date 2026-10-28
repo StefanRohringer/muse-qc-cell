@@ -18,7 +18,10 @@ def pose_mm(joint_radians: object) -> dict:
     """Return the end_link pose for six arm joint angles in radians.
 
     Pure SDK computation (no bus): x, y, z in mm and roll, pitch,
-    yaw in degrees, plus the rotation matrix for tip projection.
+    yaw in degrees, plus the rotation matrix and the link6 origin
+    in mm. The link6 origin defines the tool axis together with
+    the end_link origin (the fixed end_joint offset runs along
+    the link6 z axis, not along the end_link z axis).
     """
     import numpy as np
     import pinocchio as pin
@@ -39,8 +42,10 @@ def pose_mm(joint_radians: object) -> dict:
         model, np.array(values), controlled_joints=get_arm_joint_count(model)
     )
     position, rotation, _ = compute_fk(model, full_q)
+    link6_position, _, _ = compute_fk(model, full_q, frame_name="link6")
     euler = pin.rpy.matrixToRpy(rotation)
     pos_mm = position * 1000.0
+    link6_mm = link6_position * 1000.0
     return {
         "x_mm": float(pos_mm[0]),
         "y_mm": float(pos_mm[1]),
@@ -49,26 +54,32 @@ def pose_mm(joint_radians: object) -> dict:
         "pitch_deg": float(math.degrees(euler[1])),
         "yaw_deg": float(math.degrees(euler[2])),
         "rotation": tuple(tuple(float(v) for v in row) for row in rotation),
+        "link6_x_mm": float(link6_mm[0]),
+        "link6_y_mm": float(link6_mm[1]),
+        "link6_z_mm": float(link6_mm[2]),
     }
 
 
 def tip_mm(pose: dict) -> dict:
-    """Project the finger tip from an end_link pose along its z axis.
+    """Project the finger tip from an end_link pose along the tool axis.
 
-    Moves TIP_OFFSET_MM along the end_link z axis taken from the
-    SDK rotation in the pose, never from a guessed direction.
+    Moves TIP_OFFSET_MM along the tool axis, the unit vector from
+    the link6 origin to the end_link origin (both from SDK forward
+    kinematics on the same joint angles), never from a guessed
+    direction.
     """
     offset = TIP_OFFSET_MM
-    rows = pose["rotation"]
-    z_axis = (rows[0][2], rows[1][2], rows[2][2])
-    norm = math.sqrt(sum(v * v for v in z_axis))
+    end = (pose["x_mm"], pose["y_mm"], pose["z_mm"])
+    base = (pose["link6_x_mm"], pose["link6_y_mm"], pose["link6_z_mm"])
+    axis = [e - b for e, b in zip(end, base)]
+    norm = math.sqrt(sum(v * v for v in axis))
     if not math.isfinite(norm) or norm == 0.0:
-        raise ValueError("Pose has no usable rotation matrix.")
-    unit = [v / norm for v in z_axis]
+        raise ValueError("Pose has no usable tool axis.")
+    unit = [v / norm for v in axis]
     return {
-        "x_mm": float(pose["x_mm"] + offset * unit[0]),
-        "y_mm": float(pose["y_mm"] + offset * unit[1]),
-        "z_mm": float(pose["z_mm"] + offset * unit[2]),
+        "x_mm": float(end[0] + offset * unit[0]),
+        "y_mm": float(end[1] + offset * unit[1]),
+        "z_mm": float(end[2] + offset * unit[2]),
     }
 
 
@@ -93,7 +104,7 @@ def main() -> None:
         print(
             f"tip: x={tip['x_mm']:+.1f} y={tip['y_mm']:+.1f} "
             f"z={tip['z_mm']:+.1f} mm "
-            f"(offset {TIP_OFFSET_MM:.0f} mm along end_link z)"
+            f"(offset {TIP_OFFSET_MM:.0f} mm along tool axis)"
         )
     finally:
         arm.disconnect()

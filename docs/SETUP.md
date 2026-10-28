@@ -485,7 +485,7 @@ the six joint angles once through `muse_qc/arm.py` (read only: it
 never enables, zeroes or sends anything), computes the `end_link`
 pose with the Seeed SDK kinematics (metres and radians in the SDK,
 printed as mm and degrees) and projects the finger-tip position
-30 mm along the `end_link` z axis. The 30 mm value
+30 mm along the tool axis (link6 to end_link). The 30 mm value
 (`TIP_OFFSET_MM`) is an estimate from a hand measurement (185 mm
 from the joint 6 mounting face to the finger tips, minus the
 155.39 mm URDF `end_joint` offset) and must be verified on the arm.
@@ -497,8 +497,27 @@ uv run python -m muse_qc.fk_check
 
 Expected result: one line per joint with the angle in degrees, one
 `end_link:` line with x, y, z in mm and roll, pitch, yaw in
-degrees, and one `tip:` line with x, y, z in mm. Example output
-will be added after the first human run.
+degrees, and one `tip:` line with x, y, z in mm.
+
+Recorded output of the FIRST version (recorded output is never
+edited):
+
+```text
+joint1: -3.33 deg
+joint2: +1.58 deg
+joint3: -1.45 deg
+joint4: +2.72 deg
+joint5: +0.91 deg
+joint6: -3.97 deg
+end_link: x=+256.6 y=-17.9 z=+198.6 mm roll=-3.97 pitch=-0.32 yaw=-4.24 deg
+tip: x=+256.6 y=-15.8 z=+228.6 mm (offset 30 mm along end_link z)
+```
+
+That run showed the wrong tip direction (30 mm straight up while
+the gripper points forward) and led to this fix: the tip is now
+projected along the tool axis from link6 to end_link instead of
+along the end_link z axis. Example output of the fixed version
+will be added after the next human run.
 
 ## Safety notes
 

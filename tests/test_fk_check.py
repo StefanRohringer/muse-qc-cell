@@ -63,6 +63,39 @@ def test_tip_stays_offset_away_from_end_link_off_home():
     assert dist == pytest.approx(TIP_OFFSET_MM, abs=1e-6)
 
 
+def test_tool_axis_runs_link6_to_end_link_and_spans_155mm():
+    _need_sdk_kinematics()
+    from muse_qc.fk_check import TIP_OFFSET_MM, pose_mm, tip_mm
+
+    pose = pose_mm([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    end = (pose["x_mm"], pose["y_mm"], pose["z_mm"])
+    base = (pose["link6_x_mm"], pose["link6_y_mm"], pose["link6_z_mm"])
+    span = math.dist(base, end)
+    assert span == pytest.approx(155.39, abs=0.1)
+    axis = [(e - b) / span for e, b in zip(end, base)]
+    tip = tip_mm(pose)
+    moved = [t - e for t, e in zip((tip["x_mm"], tip["y_mm"], tip["z_mm"]), end)]
+    assert moved == pytest.approx([TIP_OFFSET_MM * v for v in axis], abs=1e-6)
+
+
+def test_tip_does_not_follow_end_link_z():
+    _need_sdk_kinematics()
+    from muse_qc.fk_check import pose_mm, tip_mm
+
+    pose = pose_mm([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    end = (pose["x_mm"], pose["y_mm"], pose["z_mm"])
+    tip = tip_mm(pose)
+    moved = [t - e for t, e in zip((tip["x_mm"], tip["y_mm"], tip["z_mm"]), end)]
+    rows = pose["rotation"]
+    z_col = (rows[0][2], rows[1][2], rows[2][2])
+    cross = (
+        moved[1] * z_col[2] - moved[2] * z_col[1],
+        moved[2] * z_col[0] - moved[0] * z_col[2],
+        moved[0] * z_col[1] - moved[1] * z_col[0],
+    )
+    assert math.sqrt(sum(v * v for v in cross)) == pytest.approx(30.0, abs=1e-3)
+
+
 def test_pose_mm_rejects_bad_input():
     _need_sdk_kinematics()
     from muse_qc.fk_check import pose_mm
