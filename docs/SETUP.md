@@ -992,6 +992,65 @@ mm. If +10 deg opens the jaws instead of closing them by about 3 mm,
 the sign convention is the opposite of the URDF expectation and the
 plan sign must be flipped before any grasp code is built on it.
 
+## 26. First grip with touch feedback (by hand only)
+
+This step closes the jaws onto a part the human holds, so only the
+human runs it, never CI and never an agent. `muse_qc/gripper_grip.py`
+(checked by `tests/test_gripper_grip.py`, fake SDK and fake serial
+only; the loop lives in the shared `muse_qc/gripper_stream.py`, which
+also hosts the `GripperStream` moved over from
+`muse_qc/gripper_motor.py` so that module stays at or below 300
+lines) needs `--open-mm W` with W between 20 and 50 mm (default 40)
+plus `--squeeze-deg S` with S between 0 and 5 deg (default 2);
+anything else is an argparse error (exit 2) before anything connects.
+No gripper-project code is used, only the serial line protocol and the
+SDK motor protocol.
+
+Scale from the human ruler readings of 2026-10-28 (power supply off,
+jaws moved by hand, tip gap with a ruler): +2.79 deg = closed (0 mm),
+-4.97 deg = 5 mm, -102.63 deg = 32 mm, -167.13 deg = 53 mm, giving
+`width_mm = 0.31 * (2.8 - deg)` with `CLOSED_DEG` = 2.8 and
+`MM_PER_DEG` = 0.31 (the 5 mm point sits off the line, soft Fin-Ray
+tips). Negative = open. The motor angle wraps at +-180 deg: fully
+open by hand (98 mm) reads +33.21 deg, so +33 means nearly fully OPEN,
+not closed. Every commanded target must stay inside `[SAFE_MIN_DEG,
+SAFE_MAX_DEG]` = [-175.0, 5.8]; a start reading outside refuses
+before enabling with "gripper reading outside the safe range (wrapped
+or past closed): close the jaws by hand to about 30 mm with the power
+off and run again".
+
+Dry run first (connects, reads arm and gripper, opens the touch
+sensor, moves nothing):
+
+```bash
+uv run python -m muse_qc.gripper_grip --open-mm 40
+```
+
+Then, with the arm resting on its support and the hand on the power
+supply switch:
+
+```bash
+uv run python -m muse_qc.gripper_grip --open-mm 40 --execute
+```
+
+After the human types `yes`, the gripper ramps open to the open width
+at 5 deg/s, holds 3 s ("place the part between the jaws now"; contacts
+in these phases are only printed, the human's hand may touch the
+fingers), then ramps toward closed at 5 deg/s while the newest touch
+reading is polled every cycle with a ~2 ms budget. The first reading
+with contact on the left AND the right finger (confirmed once with
+`safety.check_gripper("closed", ...)`) stops the close, adds the
+squeeze, holds 3 s ("grip held at deg ... width about ... mm contacts
+..."), then ramps back to the open width, holds 1 s and disables. No
+bilateral contact prints "missed grip" and reopens. A reading jump of
+more than 20 deg between two cycles, or a reading leaving the safe
+range, stops closing, holds the last commanded position for 0.5 s and
+disables. Ctrl+C or any error stops closing, opens back to the open
+width if the loop still runs, then disables. The arm hold pose (rest
+reading clamped into its URDF limits, one `safety.check_target`,
+commanded every cycle, 10 % vlims, J6 ref handling) is the same as in
+`gripper_motor`.
+
 ## Safety notes
 
 Read-only review of the SDK file

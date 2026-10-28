@@ -533,3 +533,17 @@ summary: lines=591 data=584 ignored=7 changes=1
 events: L1=0 L2=1 R1=0 R2=0
 max magnitude uT (as sent by the firmware): L1=7640.0 L2=9775.0 R1=7950.0 R2=7228.0
 ```
+- Human ran python -m muse_qc.gripper_motor --delta-deg 10 (dry run) and --delta-deg 10 --execute (2026-10-28, arm power supply on, hand on the power supply switch, nothing between the jaws, jaws about 5 mm open at the tips): OK. The gripper moved +10 deg and back; the arm held its clamped rest pose (joint 2 from +1.21 to 0.00).
+```text
+rest joints deg: ['-2.74', '+1.21', '-1.45', '+2.72', '+2.83', '-0.49']
+gripper rest deg: -4.97
+plan: 700 waypoints at 100 Hz
+arm hold deg: ['-2.74', '+0.00', '-1.45', '+2.72', '+2.83', '-0.49']
+arm hold: ok
+gripper commanded deg: +5.03
+gripper measured deg: +4.78
+gripper back deg: -4.97
+motion finished, gripper back at the start reading
+stopping: the motors will be disabled now
+```
+- Human measured the gripper scale (power supply off, jaws moved by hand, read with the dry run, tip gap with a ruler): +2.79 deg closed (0 mm), -4.97 deg 5 mm, -102.63 deg 32 mm, fully open 98 mm read +33.21 deg (the reading wraps at +-180 deg); with the earlier -167.13 deg at 53 mm this gives about 0.31 mm per motor degree, negative = open (the URDF-based guess was 0.32).

@@ -32,7 +32,6 @@ from __future__ import annotations
 import argparse
 import math
 import sys
-import threading
 
 from muse_qc import safety
 from muse_qc.arm import Arm
@@ -53,6 +52,7 @@ from muse_qc.first_move_plan import (
     real_tip_m,
     scale_vlim,
 )
+from muse_qc.gripper_stream import GripperStream
 
 GRIPPER_CONFIG_VLIM = 3.0  # config/rebotarm_dm.yaml gripper POS_VEL vlim
 DELTA_MIN_DEG = -20.0
@@ -106,52 +106,6 @@ def build_gripper_plan(start_deg: float, delta_deg: float) -> list[tuple[str, fl
     plan += [(SEG_BACK, target - delta_deg * i / steps) for i in range(1, steps + 1)]
     plan += [(SEG_SETTLE, start_deg)] * SETTLE_HOLD_CYCLES
     return plan
-
-
-class GripperStream:
-    """Control-loop callback: hold the arm start pose, stream one plan."""
-
-    def __init__(self, arm_group: object, gripper_group: object,
-                 arm_start_rad: list[float], arm_vlim: list[float],
-                 start_rad: float, waypoints_rad: list[float],
-                 gripper_vlim: list[float], snapshot_index: int | None) -> None:
-        self.arm_group = arm_group
-        self.gripper_group = gripper_group
-        self.arm_start_rad = [float(v) for v in arm_start_rad]
-        self.arm_vlim = [float(v) for v in arm_vlim]
-        self.last_rad = float(start_rad)
-        self.waypoints = [float(v) for v in waypoints_rad]
-        self.gripper_vlim = [float(v) for v in gripper_vlim]
-        self.snapshot_index = snapshot_index
-        self.snapshot_deg: float | None = None
-        self.index = 0
-        self.halt = False
-        self.done = threading.Event()
-
-    def _send(self, grip_rad: float) -> None:
-        self.gripper_group.send_pos_vel([grip_rad], vlim=self.gripper_vlim)
-        self.arm_group.send_pos_vel(list(self.arm_start_rad), vlim=self.arm_vlim)
-
-    def _hold(self) -> None:
-        self._send(self.last_rad)
-        self.done.set()
-
-    def __call__(self, _sdk: object, _dt: float) -> None:
-        if self.halt or self.index >= len(self.waypoints):
-            self._hold()
-            return
-        if self.index == self.snapshot_index:
-            try:
-                positions = self.gripper_group.get_positions()
-                self.snapshot_deg = math.degrees(float(positions[0]))
-            except Exception:
-                pass
-        commanded = self.waypoints[self.index]
-        self._send(commanded)
-        self.last_rad = commanded
-        self.index += 1
-        if self.index >= len(self.waypoints):
-            self.done.set()
 
 
 def _expectation(delta_deg: float) -> str:
