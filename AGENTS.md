@@ -44,7 +44,7 @@ Built during the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026).
 ## Layout
 muse_qc/ (safety.py, arm.py, usb_devices.py, sdk_config.py, preflight.py,
 diagnose_joints.py, gripper.py (planned), camera_top.py, table_markers.py,
-make_markers.py, detect_markers.py, table_coords.py, checkerboard.py, camera_hand.py (planned), vision_sam.py (planned),
+make_markers.py, detect_markers.py, table_coords.py, checkerboard.py, capture_calibration.py, calibrate_camera.py, camera_hand.py (planned), vision_sam.py (planned),
 inspection.py (planned), tools/ (planned), agent.py (planned)), tests/, docs/
 
 ## Ground rules for Muse Code

@@ -326,6 +326,53 @@ Then check with a ruler: the scale line must measure exactly 100 mm
 and one square exactly 25 mm. Glue the page flat on cardboard so it
 stays plane for the calibration.
 
+## 14. Table camera calibration (by hand only)
+
+This step opens the real camera, so only the human runs it, never CI
+and never an agent. The arm stays powered off so it cannot move into
+the frame. `muse_qc/capture_calibration.py` takes the photos and
+`muse_qc/calibrate_camera.py` computes the calibration offline from
+the saved PNGs. Both import no arm code and move nothing.
+
+Photo plan: take about 16 photos of the flat board, always fully
+visible with a white margin around it. Take about 8 flat photos
+spread over the centre, the four corners and the edges of the image,
+then about 8 tilted photos with the board leaning 20 to 40 degrees
+against a box or book (different tilt directions). Move the board,
+never the camera.
+
+Capture, from the project root:
+
+```bash
+uv run python -m muse_qc.capture_calibration
+```
+
+Expected result: a terminal loop with `Enter = take photo, q =
+quit`. Each photo is taken with `open_table_camera()` from
+`muse_qc/camera_top.py` and checked with
+`cv2.findChessboardCornersSB` (9 by 6 inner corners). Photos with a
+found board print `board found` and are saved to
+`recordings/calibration/calib_<timestamp>.png`, the others print
+`board NOT found` and are skipped. Every saved photo prints the
+running count.
+
+Calibrate, from the project root:
+
+```bash
+uv run python -m muse_qc.calibrate_camera
+```
+
+Expected result: one line per used image (`images used: <n>`),
+the RMS reprojection error in px (well below 1 px on good photos),
+the distortion coefficients, and the path
+`calibration/table_camera.json` with `camera_matrix`, `dist_coeffs`,
+`image_size`, `rms_px`, `images_used` and `created`. The command is
+refused with a clear error when fewer than 10 boards are found or
+when the images differ in size. `load_calibration()` and
+`undistort()` in the same module are reused later;
+`detect_markers.py` and `table_coords.py` still work on the raw
+frames and are switched to undistorted images in a later step.
+
 ## Safety notes
 
 Read-only review of the SDK file
