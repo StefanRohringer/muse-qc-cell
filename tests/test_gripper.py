@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+import time
 from pathlib import Path
 
 import pytest
@@ -12,6 +14,7 @@ from muse_qc.gripper import (
     PICO_USB_VID,
     Reading,
     TouchSensor,
+    _firmware_version,
     find_pico_port,
     main,
     parse_line,
@@ -26,26 +29,51 @@ ZERO = "D,5,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,-"
 
 
 class FakeSerial:
-    """Minimal pyserial stand-in: queued input lines, recorded writes."""
+    """Minimal pyserial stand-in: queued input lines, recorded writes.
+
+    With generator set, readline never runs dry (gapless stream like the
+    real Pico) and in_waiting stays positive; sleep_per_line simulates
+    the streaming pace.
+    """
 
     def __init__(self, *args, **kwargs):
         self.port = args[0] if args else None
         self.written: list[bytes] = []
         self.queued: list[bytes] = list(kwargs.pop("queued", []))
+        self.generator = kwargs.pop("generator", None)
+        self.sleep_per_line = kwargs.pop("sleep_per_line", 0.0)
         self.timeout = kwargs.pop("timeout", 0.1)
         self.closed = False
+
+    @property
+    def in_waiting(self) -> int:
+        if self.queued:
+            return sum(len(line) for line in self.queued)
+        return 64 if self.generator is not None else 0
 
     def write(self, data: bytes) -> int:
         self.written.append(bytes(data))
         return len(data)
 
     def readline(self) -> bytes:
+        if self.sleep_per_line:
+            time.sleep(self.sleep_per_line)
         if self.queued:
             return self.queued.pop(0)
+        if self.generator is not None:
+            return self.generator()
         return b""
 
     def close(self) -> None:
         self.closed = True
+
+
+def _stream_line(ms: int, contacts: str) -> str:
+    """One valid fast-mode data line (magnitudes around 20 uT)."""
+    return (
+        f"D,{ms},1.0,2.0,3.0,10.0,4.0,5.0,6.0,20.0,"
+        f"7.0,8.0,9.0,30.0,10.0,11.0,12.0,40.0,{contacts}"
+    )
 
 
 def _sensor(*lines: str) -> TouchSensor:
@@ -206,6 +234,7 @@ def test_watch_stats_and_change_lines(capsys):
     assert "contacts: L1" in out
     assert "safety open: ok" in out
     assert "summary:" in out
+    assert "max magnitude uT (as sent by the firmware):" in out
 
 
 def test_watch_empty_contacts_refused_by_safety(capsys):
@@ -226,3 +255,116 @@ def test_no_hardware_strings_in_module():
 def test_allowed_commands():
     assert COMMANDS == frozenset({"n", "a", "f", "l", "k", "v"})
     assert PICO_USB_VID == "2e8a"
+
+
+def test_read_line_returns_decoded_stripped_line():
+    sensor = _sensor("  " + ZERO + "  ")
+    assert sensor.read_line(1.0) == ZERO
+    assert sensor.lines_read == 1
+
+
+def test_read_line_none_on_timeout_blank_and_closed():
+    sensor = _sensor("   ")
+    assert sensor.read_line(0.5) is None
+    assert sensor.lines_read == 1
+    assert sensor._serial.timeout == 0.1
+    assert _sensor().read_line(0.5) is None
+    with pytest.raises(RuntimeError):
+        TouchSensor(serial_factory=FakeSerial).read_line(0.1)
+
+
+def test_watch_reports_changes_live_on_endless_stream(capsys):
+    """Bug 1 repro: a gapless stream must print changes live, not at the end."""
+    names = ["L1", "L2", "R1", "R2"]
+    state = {"ms": 0}
+
+    def generate():
+        state["ms"] += 1
+        line = _stream_line(state["ms"], names[state["ms"] % 4])
+        return (line + "\r\n").encode("ascii")
+
+    sensor = TouchSensor(
+        serial_factory=lambda *a, **k: FakeSerial(
+            *a, sleep_per_line=0.02, generator=generate, **k
+        )
+    )
+    sensor.open("/dev/ttyFAKE")
+    stats = watch(sensor, 0.4)
+    assert stats["changes"] > 3
+    stamps = [
+        float(match)
+        for match in re.findall(r"^\+([0-9.]+)s contacts:", capsys.readouterr().out, re.M)
+    ]
+    assert len(stamps) == stats["changes"]
+    assert stamps[0] < 0.3
+    assert stamps[-1] > stamps[0]
+    assert all(earlier <= later for earlier, later in zip(stamps, stamps[1:]))
+
+
+def test_read_returns_newest_within_timeout_on_endless_stream():
+    state = {"ms": 0}
+
+    def generate():
+        state["ms"] += 1
+        return (_stream_line(state["ms"], "-") + "\r\n").encode("ascii")
+
+    sensor = TouchSensor(
+        serial_factory=lambda *a, **k: FakeSerial(*a, generator=generate, **k)
+    )
+    sensor.open("/dev/ttyFAKE")
+    start = time.monotonic()
+    reading = sensor.read(0.2)
+    assert time.monotonic() - start < 0.7
+    assert reading is not None and reading.ms > 10
+
+
+@pytest.mark.parametrize(
+    ("queued", "expected"),
+    [
+        (["# firmware 2"], 2),
+        (["junk", GOOD, "# firmware 3"], 3),
+        (["# Ausgabe: Rohwerte"], None),
+        ([GOOD.replace("D,1234", "D,2")], None),
+        ([], None),
+    ],
+)
+def test_firmware_version_parsing(monkeypatch, queued, expected):
+    """Bug 2: only "# firmware <N>" counts, never a 2 inside a data line."""
+    monkeypatch.setattr(gripper, "VERSION_WAIT_S", 0.05)
+    assert _firmware_version(_sensor(*queued)) == expected
+
+
+def test_main_watch_ok_with_fakes(monkeypatch, capsys):
+    monkeypatch.setattr(gripper, "find_pico_port", lambda *a, **k: "/dev/ttyACM1")
+    cycle = [ZERO, ZERO.replace(",-", ",L1")]
+    state = {"i": 0}
+
+    def generate():
+        line = cycle[state["i"] % 2]
+        state["i"] += 1
+        return (line + "\r\n").encode("ascii")
+
+    created: list[FakeSerial] = []
+
+    def fake_serial(*args, **kwargs):
+        serial_obj = FakeSerial(
+            *args,
+            queued=[b"# firmware 2\r\n"],
+            generator=generate,
+            sleep_per_line=0.02,
+            **kwargs,
+        )
+        created.append(serial_obj)
+        return serial_obj
+
+    monkeypatch.setattr(gripper.serial, "Serial", fake_serial)
+    monkeypatch.setattr(gripper.time, "sleep", lambda s: None)
+    assert main(["--watch", "1"]) == 0
+    out = capsys.readouterr().out
+    assert "pico: /dev/ttyACM1" in out
+    assert "firmware: 2" in out
+    assert "do not touch the fingers" in out
+    assert "contacts: L1" in out
+    assert "summary:" in out
+    assert created[0].written == [b"v", b"n", b"f"]
+    assert created[0].closed

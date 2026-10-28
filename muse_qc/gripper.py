@@ -1,14 +1,12 @@
 """Gripper touch sensor reader over USB serial (moves nothing).
 
-Pre-existing hardware (not built here): Fin-Ray fingers on the reBot
-jaws with four magnet-plus-magnetometer sensors (L1, L2 left, R1, R2
-right), read by a Pico (USB VID 2e8a, 115200 baud) streaming one text
-reading per line. Only this reader is new. Protocol (interface only):
-data "D,<ms>,<16 dx,dy,dz,mag in uT for L1 L2 R1 R2>,<contacts>" with
-contacts "L1 R1" or "-" for none; "K," headers, "#" info, rest ignored.
-Commands: n zero, a deviation, f fast (~50/s), l slow, k header,
-v firmware version (expected 2). Port matched by USB VID, never by
-fixed number. Human-run only: uv run python -m muse_qc.gripper --watch 10.
+Pre-existing hardware (not built here): Fin-Ray fingers with four
+magnet sensors (L1, L2 left, R1, R2 right), read by a Pico (USB VID
+2e8a, 115200 baud) streaming one text reading per line. Only this
+reader is new. Protocol: data "D,<ms>,<16 dx,dy,dz,mag>,<contacts>"
+("L1 R1" or "-"); "K," headers, "#" info, rest ignored. Commands: n
+zero, a deviation, f fast (~50/s), l slow, k header, v version (2).
+Port matched by USB VID, never by fixed number. Human-run only.
 """
 
 from __future__ import annotations
@@ -89,16 +87,8 @@ def parse_line(text: str) -> Reading | None:
     return Reading(ms=ms, values=grouped, contacts=contacts)
 
 
-def _id_text(path: Path) -> str | None:
-    try:
-        return path.read_text(encoding="utf-8").strip().lower()
-    except OSError:
-        return None
-
-
 def _present_pids(sysfs_root: str | os.PathLike[str]) -> list[str]:
-    """Distinct idProduct values on serial tty entries (enum only, the
-    firmware PID is not fixed; each is confirmed via find_serial_ports)."""
+    """Distinct idProduct values on serial tty entries (enum only)."""
     try:
         entries = sorted(Path(sysfs_root).iterdir())
     except OSError:
@@ -115,7 +105,10 @@ def _present_pids(sysfs_root: str | os.PathLike[str]) -> list[str]:
         except OSError:
             continue
         for _ in range(4):
-            pid = _id_text(node / "idProduct")
+            try:
+                pid = (node / "idProduct").read_text(encoding="utf-8").strip().lower()
+            except OSError:
+                pid = None
             if pid is not None:
                 if pid not in pids:
                     pids.append(pid)
@@ -171,37 +164,42 @@ class TouchSensor:
         self._require_open()
         self._serial.write(cmd.encode("ascii"))
 
-    def _read_lines(self, timeout_s: float) -> list[str]:
-        """Raw stripped lines until an idle gap or the timeout."""
+    def _waiting(self) -> int:
+        """Buffered input bytes (0 when the serial object has no in_waiting)."""
+        return getattr(self._serial, "in_waiting", 0) or 0
+
+    def read_line(self, timeout_s: float) -> str | None:
+        """One decoded stripped line; None on timeout or blank line."""
         self._require_open()
-        lines: list[str] = []
-        deadline = time.monotonic() + max(0.0, timeout_s)
-        while time.monotonic() < deadline:
+        before = self._serial.timeout
+        self._serial.timeout = max(0.0, timeout_s)
+        try:
             raw = self._serial.readline()
-            if not raw:
-                break
-            self.lines_read += 1
-            text = raw.decode("ascii", errors="replace").strip()
-            if text:
-                lines.append(text)
-        return lines
+        finally:
+            self._serial.timeout = before
+        if not raw:
+            return None
+        self.lines_read += 1
+        return raw.decode("ascii", errors="replace").strip() or None
 
     def read(self, timeout_s: float) -> Reading | None:
-        """Latest parsed reading in the window, or None."""
+        """Newest reading available now; back within about timeout_s."""
+        self._require_open()
+        deadline = time.monotonic() + max(0.0, timeout_s)
         latest = None
-        for text in self._read_lines(timeout_s):
-            reading = parse_line(text)
+        while self._waiting() > 0 and time.monotonic() < deadline:
+            reading = parse_line(self.read_line(max(0.0, deadline - time.monotonic())))
             if reading is not None:
                 latest = reading
+        if latest is None:
+            latest = parse_line(self.read_line(max(0.0, deadline - time.monotonic())))
         return latest
 
 
 def _parse_args(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Watch gripper sensors (moves nothing).")
-    parser.add_argument("--watch", metavar="SECONDS", type=float,
-                        default=WATCH_DEFAULT_S,
-                        help=f"watch time, {WATCH_MIN_S:g} to {WATCH_MAX_S:g}s"
-                        f" (default {WATCH_DEFAULT_S:g})")
+    parser.add_argument("--watch", metavar="SECONDS", type=float, default=WATCH_DEFAULT_S,
+                        help=f"watch time, {WATCH_MIN_S:g}-{WATCH_MAX_S:g}s (default {WATCH_DEFAULT_S:g})")
     args = parser.parse_args(argv)
     if not WATCH_MIN_S <= args.watch <= WATCH_MAX_S:
         parser.error(f"--watch must be {WATCH_MIN_S:g} to {WATCH_MAX_S:g}s, got {args.watch}.")
@@ -212,9 +210,19 @@ def _show(contacts: frozenset[str]) -> str:
     return "-" if not contacts else " ".join(sorted(contacts))
 
 
+def _firmware_version(sensor: TouchSensor) -> int | None:
+    """Send v; the N in "# firmware <N>" within VERSION_WAIT_S, else None."""
+    sensor.send("v")
+    deadline = time.monotonic() + VERSION_WAIT_S
+    while time.monotonic() < deadline:
+        parts = (sensor.read_line(max(0.0, deadline - time.monotonic())) or "").split()
+        if parts[:2] == ["#", "firmware"] and len(parts) == 3 and parts[2].isdigit():
+            return int(parts[2])
+    return None
+
+
 def watch(sensor: TouchSensor, duration_s: float) -> dict:
-    """Print one line per contact change plus a summary; return stats.
-    Each change shows safety.check_gripper for phase "open" (info only)."""
+    """One line per contact change plus a summary; return stats."""
     start = time.monotonic()
     deadline = start + duration_s
     previous: frozenset[str] = frozenset()
@@ -226,31 +234,29 @@ def watch(sensor: TouchSensor, duration_s: float) -> dict:
     print(f"start: contacts {_show(previous)}")
     try:
         while time.monotonic() < deadline:
-            rest = max(0.0, deadline - time.monotonic())
-            for text in sensor._read_lines(rest):
-                reading = parse_line(text)
-                if reading is None:
-                    continue
-                data += 1
-                for i, name in enumerate(SENSOR_NAMES):
-                    max_mag[name] = max(max_mag[name], reading.values[i][3])
-                if reading.contacts != previous:
-                    for name in reading.contacts - previous:
-                        events[name] += 1
-                    previous = reading.contacts
-                    changes += 1
-                    verdict = safety.check_gripper("open", reading.contacts)
-                    note = "safety open: ok" if verdict.get("ok") else \
-                        f"safety open: {verdict.get('reason')}"
-                    print(f"+{time.monotonic() - start:.1f}s contacts: {_show(previous)} ({note})")
+            reading = parse_line(sensor.read_line(max(0.0, deadline - time.monotonic())))
+            if reading is None:
+                continue
+            data += 1
+            for i, name in enumerate(SENSOR_NAMES):
+                max_mag[name] = max(max_mag[name], reading.values[i][3])
+            if reading.contacts != previous:
+                for name in reading.contacts - previous:
+                    events[name] += 1
+                previous = reading.contacts
+                changes += 1
+                verdict = safety.check_gripper("open", reading.contacts)
+                note = "safety open: ok" if verdict.get("ok") else \
+                    f"safety open: {verdict.get('reason')}"
+                print(f"+{time.monotonic() - start:.1f}s contacts: {_show(previous)} ({note})")
     except KeyboardInterrupt:
         print("interrupted; partial summary below")
     lines = sensor.lines_read - base_lines
     print(f"summary: lines={lines} data={data} ignored={lines - data} changes={changes}")
     print("events: " + " ".join(f"{n}={events[n]}" for n in SENSOR_NAMES))
-    print("max magnitude uT: " + " ".join(f"{n}={max_mag[n]:.1f}" for n in SENSOR_NAMES))
-    return {"lines": lines, "data": data, "ignored": lines - data,
-            "changes": changes, "events": events, "max_mag": max_mag}
+    print("max magnitude uT (as sent by the firmware): " + " ".join(f"{n}={max_mag[n]:.1f}" for n in SENSOR_NAMES))
+    return {"lines": lines, "data": data, "ignored": lines - data, "changes": changes,
+            "events": events, "max_mag": max_mag}
 
 
 def main(argv=None) -> int:
@@ -269,20 +275,21 @@ def main(argv=None) -> int:
         print(f"cannot open {port}: {exc}")
         return 1
     with sensor:
-        sensor.send("v")
-        reply = " / ".join(sensor._read_lines(VERSION_WAIT_S))
-        print(f"firmware reply: {reply or '(none)'} (expected {EXPECTED_FIRMWARE_VERSION})")
-        if str(EXPECTED_FIRMWARE_VERSION) not in reply.replace(",", " ").split():
-            print("warning: unexpected firmware version; continuing anyway")
+        version = _firmware_version(sensor)
+        if version is None:
+            print("firmware: no reply")
+        else:
+            print(f"firmware: {version}")
+            if version != EXPECTED_FIRMWARE_VERSION:
+                print(f"warning: expected firmware {EXPECTED_FIRMWARE_VERSION}; continuing")
         print("do not touch the fingers")
         time.sleep(ZERO_SETTLE_S)
         sensor.send("n")
         sensor.send("f")
-        sensor._read_lines(FAST_DRAIN_S)
+        sensor.read(FAST_DRAIN_S)  # drop stale pre-zero lines
         watch(sensor, args.watch)
     if safety.is_stopped():
-        # Defensive only: phase "open" never latches STOP. The only public
-        # reset needs user confirmation, so this tool never clears it.
+        # Phase "open" never latches STOP; only the user can clear it.
         print("safety STOP is latched; only the user can clear it.")
     return 0
 

@@ -497,3 +497,28 @@ ratio: k=-0.0556 rms=5.45 mm
 load: g=4.1395 deg rms=6.76 mm
 ```
 Result: with the correction both 100 mm hovers land at 100 mm (within the ruler accuracy); the nominal model would have put the tip at 131 and 127 mm for these joints. The nominal 150 mm hover at 495.9 322.7 is outside the tool-down workspace once corrected (joint 4 limit), which matches the 130 mm measured there before. Verified only at these two points; heights below 100 mm are not verified yet, and the final approach to a part will still descend slowly until the gripper touch sensors report contact.
+Human ran python -m muse_qc.gripper --watch 30 twice (2026-10-28, arm power supply off, only USB, gripper Pico on /dev/ttyACM1 found by USB ID).
+- First run, fingers not touched: OK, no contact events.
+```text
+pico: /dev/ttyACM1
+firmware reply: 1,24,25,- / D,594566,3,-0,18,18,2,3,27,27,1,0,17,17,9,1,25,27,- / D,594782,5,-0,16,17,1,1,34,34,0,-2,22,22,3,1,27,27,- / # Ausgabe: Rohwerte (expected 2)
+do not touch the fingers
+start: contacts -
+summary: lines=1219 data=1213 ignored=6 changes=0
+events: L1=0 L2=0 R1=0 R2=0
+max magnitude uT: L1=7576.0 L2=9710.0 R1=7909.0 R2=7356.0
+```
+- Second run, the human pressed the fingers by hand in no fixed order: the firmware reported contacts on all four sensors (L1 3, L2 4, R1 4, R2 5 events) and "-" again after release; neighbouring lamellae often reported together. The firmware reply line (about 45 raw data lines plus "# firmware 2") is shortened here. Found two bugs, fixed in the next change: all change lines show +30.0s (lines evaluated only at the end), and the version check matched a "2" inside a data line.
+```text
+pico: /dev/ttyACM1
+firmware reply: [about 45 raw data lines omitted] / # firmware 2 / [raw data lines omitted] (expected 2)
+do not touch the fingers
+start: contacts -
++30.0s contacts: L1 L2 (safety open: unexpected-contact)
++30.0s contacts: L1 L2 R2 (safety open: unexpected-contact)
++30.0s contacts: L1 L2 R1 R2 (safety open: unexpected-contact)
+[20 more change lines, all +30.0s, omitted]
+summary: lines=1235 data=1229 ignored=6 changes=23
+events: L1=3 L2=4 R1=4 R2=5
+max magnitude uT: L1=7782.0 L2=10365.0 R1=8277.0 R2=7601.0
+```

@@ -906,27 +906,37 @@ uv run python -m muse_qc.gripper --watch 10
 
 What happens: the Pico is matched by USB vendor ID 2e8a (never by
 fixed /dev number), the firmware version is asked (`v`, expected 2)
-and printed, then the tool prints "do not touch the fingers", waits
-1 s, zeroes the sensors (`n`), switches to fast mode (`f`, about
-50 lines/s) and watches for `--watch` seconds (1 to 120, default 10).
-Every change of the contact set prints one line together with what
-`safety.check_gripper` says for phase "open" (informative only; that
-phase never latches STOP, and the tool never clears a latched STOP
-itself). Ctrl+C prints a partial summary. Exit codes: 0 ok, 1 port
-cannot be opened, 2 no Pico found or bad `--watch` value.
+and printed as `firmware: N` (only a `# firmware <N>` info line
+counts; `N` inside data lines is ignored), then the tool prints "do
+not touch the fingers", waits 1 s, zeroes the sensors (`n`),
+switches to fast mode (`f`, about 50 lines/s) and watches for
+`--watch` seconds (1 to 120, default 10). Every change of the contact
+set prints one line immediately (one line is read and handled at a
+time) together with what `safety.check_gripper` says for phase "open"
+(informative only; that phase never latches STOP, and the tool never
+clears a latched STOP itself). Ctrl+C prints a partial summary. The
+summary labels the maxima "as sent by the firmware": raw-value mode
+sends thousands of uT, deviation mode tens of uT; no mode command is
+sent. Exit codes: 0 ok, 1 port cannot be opened, 2 no Pico found or
+bad `--watch` value.
 
-Example output shape (no human run yet):
+Recorded output (second human run of 2026-10-28, shortened as marked;
+see docs/DEVLOG.md). The change lines here all show +30.0s because of
+the bug fixed right after these runs (lines were only evaluated at the
+end); current code prints each change with its real time stamp.
 
 ```text
 pico: /dev/ttyACM1
-firmware reply: ... (expected 2)
+firmware reply: [about 45 raw data lines omitted] / # firmware 2 / [raw data lines omitted] (expected 2)
 do not touch the fingers
 start: contacts -
-+2.3s contacts: L1 (safety open: unexpected-contact)
-+4.1s contacts: - (safety open: ok)
-summary: lines=... data=... ignored=... changes=...
-events: L1=.. L2=.. R1=.. R2=..
-max magnitude uT: L1=.. L2=.. R1=.. R2=..
++30.0s contacts: L1 L2 (safety open: unexpected-contact)
++30.0s contacts: L1 L2 R2 (safety open: unexpected-contact)
++30.0s contacts: L1 L2 R1 R2 (safety open: unexpected-contact)
+[20 more change lines, all +30.0s, omitted]
+summary: lines=1235 data=1229 ignored=6 changes=23
+events: L1=3 L2=4 R1=4 R2=5
+max magnitude uT: L1=7782.0 L2=10365.0 R1=8277.0 R2=7601.0
 ```
 
 ## Safety notes
