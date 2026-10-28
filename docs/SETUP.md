@@ -651,7 +651,17 @@ the frame shape, for example `node: /dev/video6`. Exit codes: 0 ok,
 1 camera not found, 2 no frame, 3 write failed.
 
 Images in `recordings/` are never committed (`recordings/` is
-git-ignored). Recorded output will be added after the first human run.
+git-ignored). Recorded output (2026-10-28, arm power supply off):
+
+```text
+node: /dev/video6
+attempt 1 ok: True
+frame shape: (480, 640, 3)
+saved recordings/armcam_20261028_133753.png
+exit 0
+```
+
+The last line is the shell exit code.
 
 ## Safety notes
 
