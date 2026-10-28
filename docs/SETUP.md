@@ -844,7 +844,8 @@ with `yes`, the motors run at 10 % of the SDK speed caps, and
 every control cycle re-checks the next step. A failed solve
 prints the reason and moves nothing. Targets below 80 mm hover
 are refused in this module (the real tip sits about 13 mm lower
-than FK).
+than FK). Option `--hold-s` sets the hover hold time in seconds
+(default 2 s, up to 30 s), used for hand measurements during the hold.
 
 Safety steps for the human:
 

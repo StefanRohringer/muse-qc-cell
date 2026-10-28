@@ -270,6 +270,37 @@ def test_first_move_plan_exception_prints_and_enables_nothing():
     assert not _touched(arm2.groups["arm"])
 
 
+def test_hold_s_10_gives_1000_hold_waypoints(monkeypatch):
+    monkeypatch.setattr(hover_move, "solve_hover", _fake_solve_ok)
+    arm = FakeArm(REST_DEG)
+    lines = []
+    code = hover_move.main(
+        ["--table-mm", "495.9", "322.7", "--hold-s", "10"],
+        sdk_factory=lambda: arm,
+        check_fn=_always_ok, tip_fn=_fake_tip,
+        joint_limits=TEST_LIMITS, out=lines.append,
+    )
+    assert code == 0
+    holds = [line for line in lines
+             if line.startswith("wp ") and "[hold]" in line]
+    assert len(holds) == 1000
+    assert not _touched(arm.groups["arm"])
+
+
+@pytest.mark.parametrize("hold_s", ["0.1", "31"])
+def test_hold_s_out_of_range_refused_without_connect(hold_s):
+    def connect(_=None):
+        raise AssertionError("must not connect on --hold-s refusal")
+
+    with pytest.raises(SystemExit) as exc:
+        hover_move.main(
+            ["--table-mm", "495.9", "322.7", "--hold-s", hold_s],
+            sdk_factory=connect,
+            out=lambda line: None,
+        )
+    assert exc.value.code == 2
+
+
 def test_first_move_plan_fn_none_still_builds_old_plan():
     arm = FakeArm(REST_DEG)
     lines = []

@@ -34,6 +34,7 @@ from muse_qc.first_move import dry_run as first_dry_run
 from muse_qc.first_move import execute as first_execute
 from muse_qc.first_move_plan import (
     HOLD_CYCLES,
+    LOOP_RATE_HZ,
     SETTLE_HOLD_CYCLES,
     clamp_to_limits,
     ramp_waypoints,
@@ -48,7 +49,7 @@ from muse_qc.target_pose import (
 MIN_HOVER_MM = 80.0
 
 SEG_HOVER = "hover"  # ramp from the rest reading to the hover joints
-SEG_HOLD = "hold"  # hold the hover joints for 2 s
+SEG_HOLD = "hold"  # hold the hover joints (--hold-s, default 2 s)
 SEG_RETURN = "return"  # ramp from the hover joints to the clamped rest
 SEG_SETTLE = "settle"  # hold the clamped rest for 1 s before disable
 
@@ -57,8 +58,9 @@ def build_hover_return_plan(
     start_deg: object,
     goal_deg: object,
     joint_limits: object = None,
+    hold_cycles: int = HOLD_CYCLES,
 ) -> list[tuple[str, tuple[float, ...]]]:
-    """Ramp rest -> hover, hold 2 s, ramp back, hold 1 s. Pure, no hardware.
+    """Ramp rest -> hover, hold, ramp back, hold 1 s. Pure, no hardware.
 
     Returns (segment, waypoint) pairs. The return ramp ends exactly
     on the rest reading clamped into its URDF limits, and the final
@@ -78,7 +80,7 @@ def build_hover_return_plan(
     return_pts = ramp_waypoints(goal, rest)
     return_pts[-1] = rest  # exact end, so disable happens at the rest pose
     plan = [(SEG_HOVER, point) for point in hover_pts]
-    plan += [(SEG_HOLD, goal)] * HOLD_CYCLES
+    plan += [(SEG_HOLD, goal)] * int(hold_cycles)
     plan += [(SEG_RETURN, point) for point in return_pts]
     plan += [(SEG_SETTLE, rest)] * SETTLE_HOLD_CYCLES
     return plan
@@ -89,6 +91,7 @@ def make_hover_return_plan_fn(
     hover_mm: float,
     joint_limits: object = None,
     out: object = print,
+    hold_cycles: int = HOLD_CYCLES,
 ):
     """Return plan_fn(start_deg) for first_move over a table target.
 
@@ -127,7 +130,7 @@ def make_hover_return_plan_fn(
         out(f"fk tip table mm: x={table_tip[0]:+.2f} "
             f"y={table_tip[1]:+.2f} z={tip[2]:+.2f}")
         out(f"error to target: {solved['error_mm']:.2f} mm")
-        return build_hover_return_plan(start, joints, joint_limits)
+        return build_hover_return_plan(start, joints, joint_limits, hold_cycles)
 
     return plan_fn
 
@@ -148,12 +151,16 @@ def main(argv: object = None, sdk_factory: object = None, **kwargs: object) -> i
                         help="tip height above the table in mm")
     parser.add_argument("--execute", action="store_true",
                         help="move the arm after confirmation")
+    parser.add_argument("--hold-s", type=float, default=2.0,
+                        help="hover hold time in seconds (0.5 to 30.0)")
     args = parser.parse_args(argv)
+    if not 0.5 <= args.hold_s <= 30.0:
+        parser.error("--hold-s must be within 0.5 to 30.0 seconds")
     out = kwargs.get("out", print)
     joint_limits = kwargs.get("joint_limits", None)
     plan_fn = make_hover_return_plan_fn(
         (args.table_mm[0], args.table_mm[1]), args.hover,
-        joint_limits, out,
+        joint_limits, out, round(args.hold_s * LOOP_RATE_HZ),
     )
     kwargs = dict(kwargs)
     kwargs["plan_fn"] = plan_fn
