@@ -771,6 +771,52 @@ recordings/report.html
 
 The page showed "parts inspected: 2, good: 1, bad: 1" with the BAD card first and the GOOD card second; the times on the page are UTC.
 
+## 22. Target pose dry run (by hand only)
+
+This step turns a part position in table millimetres (as printed by
+`muse_qc/vision_sam.py`, table frame of `muse_qc/table_coords.py`:
+origin at the centre of marker 0, +x towards marker 1, +y towards
+marker 2 away from the arm) into an arm pose with the gripper tip
+straight above the part at a hover height. `muse_qc/target_pose.py`
+converts the table target to the arm base frame (joint 1 axis at
+table (495.9, 22.7) mm from the human tape measurement of
+2026-10-28), places `end_link` 30 mm above the tip with the tool
+axis pointing straight down, solves the SDK IK
+(`compute_ik` from `reBotArm_control_py.kinematics`) seeded with
+the start joints, verifies the FK tip against the target (2 mm),
+then ramps from the start joints to the solved joints at the
+`first_move` speed (5 deg/s at 100 Hz) plus a 2 s hold and checks
+every waypoint with `safety.check_target`. Dry run only: nothing
+is enabled, nothing is sent, and the module offers no motion flag.
+From the project root, offline first (needs no hardware):
+
+```bash
+uv run python -m muse_qc.target_pose --table-mm 495.9 322.7 --start home
+```
+
+Then with the arm power supply on (still no motion, reads the
+current joints once through the read-only `muse_qc/arm.py`):
+
+```bash
+uv run python -m muse_qc.target_pose --table-mm 495.9 322.7 --start arm
+```
+
+Exit codes: 0 plan ok, 1 unreachable or a waypoint rejected,
+2 arm read failed. The output shows the table target, the base
+target, the hover height, the IK joints in degrees, the FK tip in
+base and table mm, the error to the target in mm, the number of
+waypoints, and either "all waypoints ok" or the first rejected
+waypoint with the safety reason, always ending with
+"dry run: no motion". The forward kinematics check showed the real
+tip about 13 mm lower than computed (DEVLOG 2026-10-28), so a
+100 mm hover is about 87 mm in reality.
+
+Recorded output (after the first human run):
+
+```text
+(to be filled in by the human)
+```
+
 ## Safety notes
 
 Read-only review of the SDK file
