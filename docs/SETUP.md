@@ -843,8 +843,7 @@ run (no enable, no send); with `--execute` the human confirms
 with `yes`, the motors run at 10 % of the SDK speed caps, and
 every control cycle re-checks the next step. A failed solve
 prints the reason and moves nothing. Targets below 80 mm hover
-are refused in this module (the real tip sits about 13 mm lower
-than FK). Option `--hold-s` sets the hover hold time in seconds
+are refused in this module (the real tip sits lower than FK, see docs/DEVLOG.md 2026-10-28). Option `--hold-s` sets the hover hold time in seconds
 (default 2 s, up to 30 s), used for hand measurements during the hold.
 
 Safety steps for the human:
@@ -885,7 +884,7 @@ stopping: the motors will be disabled now
 
 In this first run joint 4 moved in small steps and joint 5 jittered slightly; this is open and not yet explained.
 
-In a second run the human measured the tip at about 65 mm above the table for an FK hover of 100 mm; until this is explained, no target below 100 mm FK hover. After the motion, `--execute` prints three `hold ...` lines showing the commanded hold joints, the measured hold joints and the measured tip position in mm.
+In a second run the human measured the tip at about 65 mm above the table for an FK hover of 100 mm; until this is explained, no target below 100 mm FK hover. Further measurements on 2026-10-28 located the error between joint 3 and joint 4 (about 5 deg at the hover pose); see docs/DEVLOG.md. No correction is applied in code yet. After the motion, `--execute` prints three `hold ...` lines showing the commanded hold joints, the measured hold joints and the measured tip position in mm.
 
 ## Safety notes
 

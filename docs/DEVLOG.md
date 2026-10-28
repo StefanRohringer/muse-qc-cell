@@ -388,3 +388,53 @@ cycle period: mean 10.12 ms, p95 10.17 ms, max 10.20 ms (target 10.00 ms)
 motion finished, arm holds the settle pose
 stopping: the motors will be disabled now
 ```
+Human work on the tip height (2026-10-28 evening): the human ran seven more hover moves by hand (one without a clear reading is not listed) (arm power supply on, hand on the power supply switch, nothing on the table), measured heights with a ruler and a folding rule (from the table top, about +-5 mm), measured joint axis heights and the gripper length with the power supply off, checked the joints for play by hand, and ran two offline helper scripts (one-off, in the git-ignored recordings/ folder). Together this located the height error.
+- Human ran python -m muse_qc.hover_move --table-mm 495.9 322.7 --execute a third time with the new hold lines: OK. The measured hold joints match the commanded ones within 0.08 deg and FK of the measured joints gives z = 100.0 mm, so the motors reach their targets.
+```text
+hold commanded deg: -0.00 -97.43 -82.51 +75.08 +0.00 +0.01
+hold measured deg: -0.01 -97.45 -82.52 +75.16 -0.03 -0.03
+hold measured tip mm: x=+299.6 y=+0.1 z=+100.0
+motion finished, arm holds the settle pose
+stopping: the motors will be disabled now
+```
+- Human ran python -m muse_qc.hover_move --table-mm 495.9 322.7 --hover 150 --execute: OK. Ruler at the jaw tips: about 130 mm (FK 149.9 mm).
+```text
+cycle work: mean 1.98 ms, p95 2.08 ms, max 7.98 ms over 4246 cycles
+cycle period: mean 10.11 ms, p95 10.16 ms, max 11.56 ms (target 10.00 ms)
+hold commanded deg: -0.00 -98.10 -94.85 +86.74 +0.00 +0.01
+hold measured deg: -0.01 -98.13 -94.85 +86.72 -0.01 -0.01
+hold measured tip mm: x=+300.1 y=-0.0 z=+149.9
+motion finished, arm holds the settle pose
+stopping: the motors will be disabled now
+```
+- Human ran python -m muse_qc.hover_move --table-mm 495.9 242.7 --execute (220 mm in front of the base): OK. Ruler at the jaw tips: about 80 mm (FK 100.0 mm).
+```text
+cycle period: mean 10.12 ms, p95 10.17 ms, max 10.24 ms (target 10.00 ms)
+hold commanded deg: -0.00 -79.99 -65.48 +75.49 +0.00 +0.01
+hold measured deg: -0.01 -80.01 -65.49 +75.66 -0.01 -0.01
+hold measured tip mm: x=+219.2 y=-0.0 z=+100.0
+motion finished, arm holds the settle pose
+stopping: the motors will be disabled now
+```
+- First offline fit (recordings/z_offset_fit.py) over the three tip readings, model true joint = reading + offset. Columns: model z / residual in mm. It could not tell the models apart; the measurements below superseded it.
+```text
+(a) j2 off -5.7 deg | +72.4/-7.4 +122.0/+8.0 +80.4/-0.4 | rms 6.28
+(b) j3 off +6.2 deg | +75.2/-10.2 +125.1/+4.9 +75.3/+4.7 | rms 7.09
+(c) j4 off -0.6 deg | +99.9/-34.9 +149.9/-19.9 +99.9/-19.9 | rms 25.90
+(d) j2j3 off -5.00 +0.75 deg | +72.9/-7.9 +122.6/+7.4 +79.9/+0.1 | rms 6.26
+(e) zshift dz -24.9 mm | +75.0/-10.0 +124.9/+5.1 +75.0/+5.0 | rms 7.09
+best single: (a) j2 dx at P1 -5.4 mm
+```
+- Human ran the 495.9 322.7 hover twice more: jaw tips about 60 mm; gripper mounting face on joint 6 about 260 mm.
+- Second offline script (recordings/link_angles.py) printed model joint positions: at the rest pose the upper arm (joint 2 to joint 3) is horizontal, pointing backwards, and the forearm rises about 58 mm from joint 3 to joint 4; at the hover pose the joint 6 mounting face (link6) is at z = 285.3 mm in base_link.
+- Human measured with the power supply off, arm on its support (table top to the centre of each joint axis): joint 2 135 mm, joint 3 135 mm, joint 4 190 mm (model 140, 140, 198.5 mm). So the upper arm is level as in the model, the forearm rise matches within about 1 deg, and the base sits about 5 mm lower than the model assumes. Gripper length from the end of motor 6 to the finger tips: 190 mm (the code uses 185 mm). No play felt at joints 2 and 3 when moved by hand.
+- Human ran python -m muse_qc.hover_move --table-mm 495.9 322.7 --hold-s 15 --execute and measured during the 15 s hold, from the table top: finger tips 75 mm, mounting face 263 mm, joint 4 centre 365 mm, joint 3 centre 395 mm. Expected from the model (base 5 mm lower, gripper 190 mm): 90, 280, 387, 397 mm.
+```text
+cycle period: mean 10.08 ms, p95 10.10 ms, max 11.10 ms (target 10.00 ms)
+hold commanded deg: -0.00 -97.43 -82.51 +75.08 +0.00 +0.01
+hold measured deg: -0.01 -97.45 -82.52 +75.07 -0.01 +0.05
+hold measured tip mm: x=+300.1 y=-0.0 z=+99.9
+motion finished, arm holds the settle pose
+stopping: the motors will be disabled now
+```
+Result: shoulder and upper arm match the model (joint 3 within 2 mm). The error starts between joint 3 and joint 4: in this pose the forearm points about 5 deg lower than joint 3 reports, about 22 mm at joint 4; everything after joint 4 matches again (263 - 190 = 73 mm vs 75 mm measured). At the rest pose the forearm matches within 1 deg. Open: a joint 3 ratio error at large angles or the forearm giving way under its own weight; a pose with joint 3 strongly bent and little forearm load will tell them apart. Two small corrections are known: base about 5 mm lower, gripper 190 mm. No correction is applied in code yet. Rule until then: no target below 100 mm FK hover; the final approach to a part will descend slowly until the gripper touch sensors report contact.
