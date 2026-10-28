@@ -4,8 +4,10 @@ Two steps: SAM 3.1 first finds the part on the full image with
 PART_PROMPT, then SAM 3.1 counts the levers on the cropped and
 enlarged part with LEVER_PROMPT. Boxes at or above MIN_CONFIDENCE
 are kept, overlapping duplicates are merged (IoU above
-IOU_THRESHOLD keeps the higher confidence). Prints the part box,
-one line per kept lever box plus "levers: N" and
+IOU_THRESHOLD keeps the higher confidence), and boxes shorter than
+MIN_BAR_HEIGHT_FRAC of the crop height are dropped as remnants.
+Prints the part box, one dropped line per remnant, one line per
+kept lever box plus "levers: N" and
 "verdict: good|bad", and saves two annotated copies:
 recordings/count_<timestamp>.png (full image with the part box)
 and recordings/count_<timestamp>_crop.png (enlarged crop with the
@@ -45,6 +47,7 @@ LEVER_PROMPT = "orange bar"
 GRIPPER_ZONE_Y = 380
 CROP_MARGIN_PX = 15
 CROP_SCALE = 8
+MIN_BAR_HEIGHT_FRAC = 0.3
 
 
 def _iou(first: dict, second: dict) -> float:
@@ -87,6 +90,20 @@ def count_levers(boxes: list[dict]) -> list[dict]:
         if all(_iou(box, other) <= IOU_THRESHOLD for other in kept):
             kept.append(box)
     return kept
+
+
+def drop_short_bars(
+    boxes: list[dict], crop_height: int
+) -> tuple[list[dict], list[dict]]:
+    """Split lever boxes into bars and too-short remnants.
+
+    A bar is at least MIN_BAR_HEIGHT_FRAC of the crop height; a
+    box of exactly that height is kept.
+    """
+    limit = MIN_BAR_HEIGHT_FRAC * crop_height
+    bars = [box for box in boxes if box["y2"] - box["y1"] >= limit]
+    short = [box for box in boxes if box["y2"] - box["y1"] < limit]
+    return bars, short
 
 
 def verdict(count: int) -> str:
@@ -153,33 +170,7 @@ def draw_levers(frame: numpy.ndarray, boxes: list[dict], count: int) -> numpy.nd
 
 def draw_part(frame: numpy.ndarray, box: dict, count: int) -> numpy.ndarray:
     """Return a copy of frame with the part box and count drawn."""
-    annotated = draw_boxes(frame, [box])
-    cv2.putText(
-        annotated,
-        f"levers: {count}",
-        (10, 30),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        1.0,
-        (0, 255, 0),
-        2,
-    )
-    return annotated
-
-
-def save_annotated(
-    frame: numpy.ndarray,
-    boxes: list[dict],
-    count: int,
-    recordings_dir: str | Path = "recordings",
-) -> Path:
-    """Save the frame with boxes and count drawn, return the path."""
-    target_dir = Path(recordings_dir)
-    target_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    path = target_dir / f"count_{stamp}.png"
-    if not cv2.imwrite(str(path), draw_levers(frame, boxes, count)):
-        raise RuntimeError(f"failed to write image to {path}")
-    return path
+    return draw_levers(frame, [box], count)
 
 
 def save_pair(
@@ -209,9 +200,10 @@ def run_count(
 ) -> int:
     """Find the part, count its levers; return the exit code.
 
-    Prints "part: box=(...) confidence=...", one line per kept
-    lever box (id, box, confidence), then "levers: N",
-    "verdict: good|bad" and both annotated image paths. Returns 0
+    Prints "part: box=(...) confidence=...", one dropped line per
+    too-short remnant, one line per kept lever box (id, box,
+    confidence), then "levers: N", "verdict: good|bad" and both
+    annotated image paths. Returns 0
     on success, 3 when no part is found, 2 when the key is missing
     or an API request fails, 1 when the crop or an annotated image
     cannot be written. Errors print a short message without a
@@ -249,7 +241,15 @@ def run_count(
     except Exception as exc:  # noqa: BLE001 - mapped to a short message
         print(f"request failed: {exc}")
         return 2
-    kept = count_levers(parse_output_text(lever_text))
+    kept, dropped = drop_short_bars(
+        count_levers(parse_output_text(lever_text)), crop.shape[0]
+    )
+    for box in dropped:
+        print(
+            f"dropped (too short): id {box['id']}"
+            f" box=({box['x1']}, {box['y1']}, {box['x2']}, {box['y2']})"
+            f" confidence={box['confidence']:.2f}"
+        )
     for box in kept:
         center_x, center_y = box["center"]
         print(

@@ -678,7 +678,10 @@ or above `MIN_CONFIDENCE` (0.5). Then it crops that box plus
 the crop `CROP_SCALE` = 8 times with `cv2.INTER_CUBIC`, and sends
 the crop with `LEVER_PROMPT` ("orange bar") to SAM 3.1 again. Lever
 boxes at or above confidence 0.5 are kept, overlapping duplicates
-are merged (IoU above 0.5 keeps the higher confidence). The program
+are merged (IoU above 0.5 keeps the higher confidence), and boxes
+shorter than `MIN_BAR_HEIGHT_FRAC` = 0.3 of the crop height are
+dropped as torn-out remnants (printed as
+`dropped (too short): ...`). The program
 prints `part: box=(...) confidence=...`, one line per kept lever
 box with its confidence, then `levers: N` and
 `verdict: good|bad` (good means exactly `EXPECTED_LEVERS` = 3

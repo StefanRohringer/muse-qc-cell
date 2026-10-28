@@ -11,7 +11,7 @@ import numpy
 
 import muse_qc.count_clips as count_clips
 import muse_qc.vision_sam as vision_sam
-from muse_qc.count_clips import count_levers, find_part, verdict
+from muse_qc.count_clips import count_levers, drop_short_bars, find_part, verdict
 from muse_qc.vision_sam import parse_output_text, run_detection
 
 SECRET = "[REDACTED]"
@@ -26,15 +26,25 @@ PART_AND_GRIPPER = (
 )
 GRIPPER_ONLY = "8<|box;x1=423;y1=402;x2=456;y2=429;w=33;h=27;c=0.76|>"
 LOW_PART = "7<|box;x1=317;y1=187;x2=352;y2=233;w=35;h=46;c=0.49|>"
+# Real lever numbers from the first two-step human run on 2026-10-28
+# (crop height 608): the good part has three bars 250 to 257 px
+# high, the bad part has two such bars plus a 90 px remnant in the
+# slot of the torn-out lever.
 THREE_BARS = (
-    "1<|box;x1=10;y1=10;x2=50;y2=50;w=40;h=40;c=0.68|>,"
-    "2<|box;x1=60;y1=10;x2=100;y2=50;w=40;h=40;c=0.70|>,"
-    "3<|box;x1=110;y1=10;x2=150;y2=50;w=40;h=40;c=0.70|>"
+    "1<|box;x1=158;y1=206;x2=210;y2=457;w=52;h=251;c=0.70|>,"
+    "2<|box;x1=237;y1=206;x2=289;y2=457;w=52;h=251;c=0.70|>,"
+    "0<|box;x1=313;y1=213;x2=363;y2=464;w=50;h=251;c=0.68|>"
 )
 TWO_BARS = (
-    "1<|box;x1=10;y1=10;x2=50;y2=50;w=40;h=40;c=0.76|>,"
-    "2<|box;x1=60;y1=10;x2=100;y2=50;w=40;h=40;c=0.77|>"
+    "2<|box;x1=241;y1=201;x2=290;y2=457;w=49;h=256;c=0.77|>,"
+    "0<|box;x1=162;y1=205;x2=212;y2=458;w=50;h=253;c=0.75|>"
 )
+BAD_BARS = (
+    "2<|box;x1=241;y1=201;x2=290;y2=457;w=49;h=256;c=0.77|>,"
+    "0<|box;x1=162;y1=205;x2=212;y2=458;w=50;h=253;c=0.75|>,"
+    "1<|box;x1=323;y1=206;x2=364;y2=296;w=41;h=90;c=0.59|>"
+)
+PART_BAD = "9<|box;x1=319;y1=186;x2=354;y2=232;w=35;h=46;c=0.76|>"
 ONE_BOX = "1<|box;x1=100;y1=200;x2=300;y2=400;w=200;h=200;c=0.95|>"
 
 
@@ -325,7 +335,51 @@ def test_duplicates_are_merged_keep_higher_confidence():
 
 def test_non_overlapping_boxes_are_all_kept():
     kept = count_levers(parse_output_text(THREE_BARS))
-    assert [box["id"] for box in kept] == [2, 3, 1]
+    assert [box["id"] for box in kept] == [1, 2, 0]
+
+
+def test_bad_part_short_remnant_is_dropped(tmp_path, capsys):
+    before = _real_count_files()
+    code = count_clips.run_count(
+        SECRET, _arm_frame(), "orange bar",
+        lambda key: _SeqClient([PART_BAD, BAD_BARS]),
+        recordings_dir=tmp_path,
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "part: box=(319, 186, 354, 232) confidence=0.76" in out
+    assert (
+        "dropped (too short): id 1 box=(323, 206, 364, 296)"
+        " confidence=0.59" in out
+    )
+    assert "levers: 3" not in out
+    assert "levers: 2" in out
+    assert "verdict: bad" in out
+    assert out.index("dropped (too short)") < out.index("levers: 2")
+    assert _real_count_files() == before
+
+
+def test_good_part_drops_nothing(tmp_path, capsys):
+    code = count_clips.run_count(
+        SECRET, _arm_frame(), "orange bar",
+        lambda key: _SeqClient([PART_AND_GRIPPER, THREE_BARS]),
+        recordings_dir=tmp_path,
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "dropped (too short)" not in out
+    assert "levers: 3" in out
+    assert "verdict: good" in out
+
+
+def test_bar_of_exactly_min_height_is_kept():
+    boxes = parse_output_text(
+        "1<|box;x1=0;y1=0;x2=10;y2=180;w=10;h=180;c=0.9|>,"
+        "2<|box;x1=20;y1=0;x2=30;y2=179;w=10;h=179;c=0.9|>"
+    )
+    kept, dropped = drop_short_bars(boxes, 600)
+    assert [box["id"] for box in kept] == [1]
+    assert [box["id"] for box in dropped] == [2]
 
 
 def test_run_prints_every_kept_box_with_confidence(tmp_path, capsys):
