@@ -568,3 +568,20 @@ motion finished, gripper back at the open width
 stopping: the motors will be disabled now
 ```
 The width at contact (about 15 mm by the scale) is below the part width because the soft Fin-Ray fingers wrap around the part.
+- Human ran python -m muse_qc.gripper_grip --open-mm 40 --execute with the new default speed 15 deg/s (2026-10-28, arm power supply on, hand on the power supply switch, one connector part held between the jaws): OK, held with all four finger sensors, the gripper lagged about 3 deg behind the command while closing.
+```text
+gripper rest deg: -126.32 (width about 40.0 mm)
+phases at 100 Hz: open at 15 deg/s, wait 3 s (place the part), close at 15 deg/s to bilateral contact, squeeze, hold 3 s, open back, hold 1 s
+arm hold: ok
+place the part between the jaws now
+contact: gripper commanded deg -44.63 measured deg -47.97 contacts L1 R2
+grip held at deg -42.63 width about 14.1 mm contacts L1 L2 R1 R2
+hold end: gripper commanded deg -42.63 measured deg -42.63
+gripper final deg: commanded -126.23 measured -126.43
+motion finished, gripper back at the open width
+```
+- Human measured the x/y error of the tip at three points (2026-10-28, arm power supply on, hand on the power supply switch, method as in SETUP section 27; "small part" found no box this time, "white cube" did, confidence 0.62 to 0.88). The arm reached its commanded joints within 0.21 deg every time (joint 4 visibly oscillated a little while holding), so the error is outside the motor control.
+  P1 A=(394.6, 318.6) B=(376.5, 331.3); hold measured tip mm: x=+297.1 y=+101.6 z=+99.7
+  P2 A=(505.0, 348.7) B=(491.6, 371.8); hover output not kept
+  P3 A=(690.4, 307.6) B=(698.2, 333.4); hold measured tip mm: x=+285.6 y=-195.0 z=+99.7
+  A first try for P2 at table (509.7, 383.2) = base (360.5, -13.8) was refused before moving: "plan failed: unreachable: IK did not converge". With the gripper pointing straight down at 100 mm hover the reach ends between 345 mm (P3 worked) and 360 mm from the joint 1 axis.

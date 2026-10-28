@@ -45,6 +45,7 @@ from muse_qc.target_pose import (
     solve_hover,
     table_to_base_mm,
 )
+from muse_qc.xy_correction import correct_base_target_mm
 
 MIN_HOVER_MM = 80.0
 # NOTE: the arm_calibration correction was verified by the human on
@@ -95,6 +96,7 @@ def make_hover_return_plan_fn(
     joint_limits: object = None,
     out: object = print,
     hold_cycles: int = HOLD_CYCLES,
+    use_xy_correction: bool = True,
 ):
     """Return plan_fn(start_deg) for first_move over a table target.
 
@@ -104,6 +106,9 @@ def make_hover_return_plan_fn(
     lines as target_pose.run, then builds the hover-return plan. A
     failed solve or a hover below 80 mm raises RuntimeError with
     the reason, so first_move prints it and moves nothing.
+    With use_xy_correction the base target is shifted through
+    xy_correction.correct_base_target_mm first, so the real tip
+    lands on the part; --no-xy-correction flies uncorrected.
     """
     table_x, table_y = float(table_xy[0]), float(table_xy[1])
     hover = float(hover_mm)
@@ -113,6 +118,12 @@ def make_hover_return_plan_fn(
         base_x, base_y = table_to_base_mm(table_x, table_y)
         out(f"table target: x={table_x:+.2f} y={table_y:+.2f} mm")
         out(f"base target: x={base_x:+.2f} y={base_y:+.2f} mm")
+        solve_table = (table_x, table_y)
+        if use_xy_correction:
+            corr_x, corr_y = correct_base_target_mm(base_x, base_y)
+            out(f"corrected base target: x={corr_x:+.2f} y={corr_y:+.2f} "
+                "mm (xy correction)")
+            solve_table = base_to_table_mm(corr_x, corr_y)
         out(f"hover: {hover:+.1f} mm")
         out("start joints deg: " + " ".join(f"{v:+.2f}" for v in start))
         if hover < MIN_HOVER_MM:
@@ -120,7 +131,7 @@ def make_hover_return_plan_fn(
                 f"hover too low: {hover:.1f} mm below {MIN_HOVER_MM:.0f} mm "
                 "(real tip sits about 13 mm lower than FK)"
             )
-        solved = solve_hover((table_x, table_y), hover, start)
+        solved = solve_hover(solve_table, hover, start)
         if not solved.get("ok"):
             raise RuntimeError(str(solved.get("reason", "unreachable")))
         joints = solved["joints_deg"]
@@ -161,6 +172,8 @@ def main(argv: object = None, sdk_factory: object = None, **kwargs: object) -> i
                         help="move the arm after confirmation")
     parser.add_argument("--hold-s", type=float, default=2.0,
                         help="hover hold time in seconds (0.5 to 30.0)")
+    parser.add_argument("--no-xy-correction", action="store_true",
+                        help="fly the uncorrected target (for A/B tests)")
     args = parser.parse_args(argv)
     if not 0.5 <= args.hold_s <= 30.0:
         parser.error("--hold-s must be within 0.5 to 30.0 seconds")
@@ -169,6 +182,7 @@ def main(argv: object = None, sdk_factory: object = None, **kwargs: object) -> i
     plan_fn = make_hover_return_plan_fn(
         (args.table_mm[0], args.table_mm[1]), args.hover,
         joint_limits, out, round(args.hold_s * LOOP_RATE_HZ),
+        use_xy_correction=not args.no_xy_correction,
     )
     kwargs = dict(kwargs)
     kwargs["plan_fn"] = plan_fn

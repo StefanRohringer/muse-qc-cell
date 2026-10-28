@@ -1055,6 +1055,57 @@ reading clamped into its URDF limits, one `safety.check_target`,
 commanded every cycle, 10 % vlims, J6 ref handling) is the same as in
 `gripper_motor`.
 
+## 27. x/y correction of the tip
+
+The gripper tip landed about 2 cm off the part in x/y. Three human
+measurements of 2026-10-28 show a fixed pattern in the arm base frame
+(base x forward, base y left, origin on the joint 1 axis): the real
+tip is rotated a little to the LEFT (counter-clockwise seen from
+above) and reaches FURTHER OUT than commanded, and the reach error
+grows with the distance.
+
+Method: the human placed the white 25 mm cube, the table camera
+measured it (`python -m muse_qc.vision_sam "white cube"` gives
+table_mm A), the arm hovered at 100 mm over A
+(`python -m muse_qc.hover_move --table-mm A --hold-s 30 --execute`),
+the human slid the cube exactly under the centre between the finger
+tips while the arm held, and after the return the camera measured the
+cube again (table_mm B). B is where the real tip was when commanded
+to A. Table to base uses `target_pose.table_to_base_mm`
+(base_x = table_y - 22.7, base_y = -(table_x - 495.9)).
+
+Data (table mm):
+
+| point | commanded A | measured B |
+| ----- | ----------- | ---------- |
+| P1 | (394.6, 318.6) | (376.5, 331.3) |
+| P2 | (505.0, 348.7) | (491.6, 371.8) |
+| P3 | (690.4, 307.6) | (698.2, 333.4) |
+
+`muse_qc/xy_correction.py` (140 lines) models this in base polar
+coordinates: real_angle = cmd_angle + YAW_DEG, real_r = cmd_r plus a
+radial error R_ERR linear in cmd_r. YAW_DEG is the mean of the three
+yaw errors; R_ERR is the least-squares line over the three radial
+errors. Outside the fitted radius range R_ERR holds the end value
+and never extrapolates. `correct_base_target_mm` inverts the model,
+so commanding its output puts the real tip on the part. Offline fit
+report (`python -m muse_qc.xy_correction`):
+
+```text
+yaw: YAW_DEG=1.94 deg (mean of +2.25, +2.30, +1.25)
+radial: R_ERR(cmd_r) = 0.2320 * cmd_r -53.78 mm, fitted cmd_r in [312.8, 345.0] mm
+P1: cmd_r=312.8 mm r_err=+18.8 mm residual=1.94 mm
+P2: cmd_r=326.1 mm r_err=+21.9 mm residual=2.50 mm
+P3: cmd_r=345.0 mm r_err=+26.3 mm residual=4.45 mm
+```
+
+The correction is verified only between the smallest and largest
+measured radius (312.8 to 345.0 mm from the joint 1 axis). Every
+`hover_move` run applies it after the table-to-base conversion and
+prints a `corrected base target:` line; `--no-xy-correction` flies
+the uncorrected target for A/B tests. Covered by
+`tests/test_xy_correction.py` (offline, fake SDK only).
+
 ## Safety notes
 
 Read-only review of the SDK file
