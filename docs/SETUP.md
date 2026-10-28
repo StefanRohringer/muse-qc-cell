@@ -550,6 +550,10 @@ reading. On a refusal or Ctrl+C the program keeps commanding
 the last commanded position (never a live reading, which can
 be 0.0 on missing feedback), then stops the loop and
 disconnects (motors unpowered). The FK model is loaded once.
+After the home hold the plan appends a settle segment: it ramps
+to the rest reading clamped into its URDF limits and holds it
+for 1 s, so the arm rests on its support before the motors are
+disabled.
 `RebotArmEndPose`, zeroing and the home routine are never used.
 
 Safety steps for the human:

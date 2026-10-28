@@ -8,8 +8,10 @@ import pytest
 
 from muse_qc import first_move, safety
 from muse_qc.first_move_plan import (
+    SEG_SETTLE,
     STEP_DEG,
     build_plan,
+    clamp_to_limits,
     ramp_waypoints,
     read_sdk_vlims,
     scale_vlim,
@@ -18,6 +20,15 @@ from muse_qc.first_move_plan import (
 REST_DEG = [-3.33, 1.58, -1.45, 2.72, 0.91, -3.97]
 REST_TIP_M = (0.2865, -0.0201, 0.1988)
 VLIMS = [5.0, 5.0, 5.0, 3.0, 3.0, 3.0]
+TEST_LIMITS = {
+    "joint1": (-160.0, 160.0),
+    "joint2": (-180.0, 0.0),
+    "joint3": (-180.0, 0.0),
+    "joint4": (-107.0, 90.0),
+    "joint5": (-90.0, 90.0),
+    "joint6": (-180.0, 180.0),
+}
+CLAMPED_REST = (-3.33, 0.0, -1.45, 2.72, 0.91, -3.97)
 
 
 class FakeGroup:
@@ -111,6 +122,7 @@ def test_dry_run_never_modes_enables_loops_or_sends():
     lines = []
     before = safety.J6_REF
     assert first_move.dry_run(arm, check_fn=_always_ok, tip_fn=_fake_tip,
+                              joint_limits=TEST_LIMITS,
                               out=lines.append) == 0
     assert "connect" in arm.calls and "disconnect" in arm.calls
     assert not any(call in ("enable", "loop") or call[0] in ("mode", "send")
@@ -144,7 +156,8 @@ def test_loop_runs_at_planned_rate_with_caps_on_every_send():
     arm = FakeArm(REST_DEG)
     result = first_move.execute(arm, input_fn=lambda prompt: "yes",
                                 check_fn=_always_ok, tip_fn=_fake_tip,
-                                vlims=VLIMS, out=lambda line: None)
+                                vlims=VLIMS, joint_limits=TEST_LIMITS,
+                                out=lambda line: None)
     assert result == 0
     assert arm.loop_rate == LOOP_RATE_HZ == 50.0
     slow = [v * 0.1 for v in VLIMS]
@@ -163,7 +176,8 @@ def test_bad_reading_refuses_and_holds_last_command():
     lines = []
     result = first_move.execute(arm, input_fn=lambda prompt: "yes",
                                 check_fn=None, tip_fn=_fake_tip,
-                                vlims=VLIMS, out=lines.append)
+                                vlims=VLIMS, joint_limits=TEST_LIMITS,
+                                out=lines.append)
     assert result == 1
     sends = [call[1] for call in arm.groups["arm"].calls if call[0] == "send"]
     assert all(abs(values[2]) > 0.0 for values in sends)
@@ -176,7 +190,8 @@ def test_execute_without_yes_never_enables():
     lines = []
     result = first_move.execute(arm, input_fn=lambda prompt: "no",
                                 check_fn=_always_ok, tip_fn=_fake_tip,
-                                vlims=VLIMS, out=lines.append)
+                                vlims=VLIMS, joint_limits=TEST_LIMITS,
+                                out=lines.append)
     assert result == 2
     assert not any(call in ("enable", "loop") or call[0] in ("mode", "send")
                    for call in arm.groups["arm"].calls)
@@ -188,7 +203,8 @@ def test_first_streamed_command_is_current_reading():
     expected = [math.radians(v) for v in REST_DEG]
     result = first_move.execute(arm, input_fn=lambda prompt: "yes",
                                 check_fn=_always_ok, tip_fn=_fake_tip,
-                                vlims=VLIMS, out=lambda line: None)
+                                vlims=VLIMS, joint_limits=TEST_LIMITS,
+                                out=lambda line: None)
     assert result == 0
     group = arm.groups["arm"]
     assert ("mode", [v * 0.1 for v in VLIMS]) in group.calls
@@ -199,16 +215,46 @@ def test_first_streamed_command_is_current_reading():
 
 
 def test_ramp_steps_stay_within_speed_budget():
-    waypoints = build_plan(REST_DEG)
+    plan = build_plan(REST_DEG, TEST_LIMITS)
+    assert plan
     previous = list(REST_DEG)
-    for waypoint in waypoints:
+    for _, waypoint in plan:
         assert len(waypoint) == 6
         peak = max(abs(w - p) for w, p in zip(waypoint, previous))
         assert peak <= STEP_DEG + 1e-9
         previous = list(waypoint)
-    assert waypoints[-1] == (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-    assert any(abs(w[0] - 5.0) < 1e-9 for w in waypoints)
+    assert any(abs(w[0] - 5.0) < 1e-9 for _, w in plan)
     assert ramp_waypoints([1.0] * 6, [1.0] * 6)[-1] == (1.0,) * 6
+
+
+def test_plan_ends_with_clamped_settle_target():
+    assert clamp_to_limits(REST_DEG, TEST_LIMITS) == CLAMPED_REST
+    plan = build_plan(REST_DEG, TEST_LIMITS)
+    assert plan[-1] == (SEG_SETTLE, CLAMPED_REST)
+    settle_points = [point for segment, point in plan if segment == SEG_SETTLE]
+    assert len(settle_points) > 50  # ramp from home plus the 1 s hold
+    previous = [0.0] * 6  # the segment before settle holds home
+    for point in settle_points:
+        peak = max(abs(w - p) for w, p in zip(point, previous))
+        assert peak <= STEP_DEG + 1e-9
+        previous = list(point)
+
+
+def test_execute_sends_settle_after_home_hold():
+    arm = FakeArm(REST_DEG)
+    result = first_move.execute(arm, input_fn=lambda prompt: "yes",
+                                check_fn=_always_ok, tip_fn=_fake_tip,
+                                vlims=VLIMS, joint_limits=TEST_LIMITS,
+                                out=lambda line: None)
+    assert result == 0
+    sends = [list(call[1]) for call in arm.groups["arm"].calls
+             if call[0] == "send"]
+    sends_deg = [[math.degrees(v) for v in values] for values in sends]
+    last_home = max(i for i, joints in enumerate(sends_deg)
+                    if all(abs(v) < 1e-9 for v in joints))
+    assert sends_deg[-1] == pytest.approx(list(CLAMPED_REST))
+    assert sends_deg[-50:] == [pytest.approx(list(CLAMPED_REST))] * 50
+    assert last_home < len(sends_deg) - 50
 
 
 def test_refusal_stops_ramp_and_holds_last_reading():

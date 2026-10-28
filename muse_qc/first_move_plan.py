@@ -13,7 +13,6 @@ from __future__ import annotations
 import importlib.util
 import math
 import re
-import threading
 import time
 from pathlib import Path
 
@@ -25,7 +24,14 @@ STEP_DEG = JOINT_SPEED_DEG_S / LOOP_RATE_HZ  # 0.1 deg per command.
 J1_TEST_DEG = 5.0
 HOLD_S = 2.0
 HOLD_CYCLES = int(HOLD_S * LOOP_RATE_HZ)
+SETTLE_HOLD_S = 1.0
+SETTLE_HOLD_CYCLES = int(SETTLE_HOLD_S * LOOP_RATE_HZ)
 SETTLE_CYCLES = HOLD_CYCLES // 2
+SEG_HOME = "home"  # ramp from the rest reading to home
+SEG_OUT = "out"  # ramp from home to joint1 +5 deg
+SEG_BACK = "back"  # ramp from joint1 +5 deg back to home
+SEG_HOLD = "hold"  # hold home for 2 s
+SEG_SETTLE = "settle"  # ramp home to the clamped rest reading, hold 1 s
 SPEED_FRACTION = 0.1  # Plan speed as a fraction for safety.check_target.
 VLIM_FRACTION = 0.1  # Motor speed caps run at 10 % of the SDK values.
 HOME_DEG = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
@@ -58,17 +64,44 @@ def ramp_waypoints(
     ]
 
 
-def build_plan(start_deg: object) -> list[tuple[float, ...]]:
-    """Full waypoint list: to home, joint1 +5 deg, back, hold 2 s."""
+def clamp_to_limits(
+    start_deg: object, joint_limits: dict[str, tuple[float, float]]
+) -> tuple[float, ...]:
+    """Clamp each joint of the rest reading into its URDF limits."""
+    start = [float(value) for value in start_deg]
+    if len(start) != 6:
+        raise ValueError("Need six joint angles for the start.")
+    clamped = []
+    for name, value in zip(safety.JOINT_NAMES, start):
+        low, high = joint_limits[name]
+        clamped.append(min(high, max(low, value)))
+    return tuple(clamped)
+
+
+def build_plan(
+    start_deg: object, joint_limits: object = None
+) -> list[tuple[str, tuple[float, ...]]]:
+    """Full labelled plan: home, joint1 +5 deg, back, hold, settle.
+
+    Returns (segment, waypoint) pairs. The settle segment ramps from
+    home to the rest reading clamped into its URDF limits, then holds
+    it for 1 s, so the arm rests on its support before disable.
+    """
+    limits = safety.JOINT_LIMITS_DEG if joint_limits is None else joint_limits
+    if limits is None:
+        raise RuntimeError("Joint limits unavailable, cannot build the plan.")
     start = tuple(float(value) for value in start_deg)
     if len(start) != 6:
         raise ValueError("Need six joint angles for the start.")
+    settle = clamp_to_limits(start, limits)
     middle = (J1_TEST_DEG,) + HOME_DEG[1:]
-    waypoints = ramp_waypoints(start, HOME_DEG)
-    waypoints += ramp_waypoints(HOME_DEG, middle)
-    waypoints += ramp_waypoints(middle, HOME_DEG)
-    waypoints += [HOME_DEG] * HOLD_CYCLES
-    return waypoints
+    plan = [(SEG_HOME, point) for point in ramp_waypoints(start, HOME_DEG)]
+    plan += [(SEG_OUT, point) for point in ramp_waypoints(HOME_DEG, middle)]
+    plan += [(SEG_BACK, point) for point in ramp_waypoints(middle, HOME_DEG)]
+    plan += [(SEG_HOLD, HOME_DEG)] * HOLD_CYCLES
+    plan += [(SEG_SETTLE, point) for point in ramp_waypoints(HOME_DEG, settle)]
+    plan += [(SEG_SETTLE, settle)] * SETTLE_HOLD_CYCLES
+    return plan
 
 
 def scale_vlim(vlims: object, fraction: float = VLIM_FRACTION) -> list[float]:
@@ -198,8 +231,7 @@ def real_tip_m(joints_deg: object) -> tuple[float, float, float]:
 
 def validate_and_print(
     group: object,
-    start_deg: list[float],
-    waypoints: list[tuple[float, ...]],
+    plan: list[tuple[str, tuple[float, ...]]],
     check_fn: object = None,
     tip_fn: object = None,
     out: object = print,
@@ -209,7 +241,7 @@ def validate_and_print(
     tip_of = real_tip_m if tip_fn is None else tip_fn
     target_tips: list[tuple[float, float, float]] = []
     all_ok = True
-    for index, waypoint in enumerate(waypoints):
+    for index, (segment, waypoint) in enumerate(plan):
         read_start = time.monotonic()
         current_deg = read_current_deg(group)
         age_ms = (time.monotonic() - read_start) * 1000.0
@@ -229,93 +261,8 @@ def validate_and_print(
             all_ok = False
         tip_mm = (target_tip[0] * 1000.0, target_tip[1] * 1000.0,
                   target_tip[2] * 1000.0)
-        out(format_line(index, len(waypoints), waypoint, tip_mm, result))
+        out(format_line(index, len(plan), waypoint, tip_mm, result, segment))
     return all_ok, target_tips
-
-
-class WaypointStream:
-    """Control-loop callback: stream waypoints with a per-cycle check."""
-
-    def __init__(self, group, waypoints, target_tips, vlim, initial_rad,
-                 check_fn, tip_fn):
-        self.group = group
-        self.waypoints = waypoints
-        self.target_tips = target_tips
-        self.vlim = [float(v) for v in vlim]
-        self.last_commanded_rad = [float(v) for v in initial_rad]
-        self.check = safety.check_target if check_fn is None else check_fn
-        self.tip_of = real_tip_m if tip_fn is None else tip_fn
-        self.index = 0
-        self.refusal: dict | None = None
-        self.halt = False
-        self.settle = 0
-        self.done = threading.Event()
-
-    def _send(self, joint_rad: list[float]) -> None:
-        try:
-            self.group.send_pos_vel([float(v) for v in joint_rad],
-                                    vlim=self.vlim)
-        except Exception:
-            pass
-
-    def _hold(self) -> None:
-        # Hold the last commanded position, never a live reading: the
-        # SDK reports 0.0 for missing feedback, which must never be sent.
-        if self.settle <= 0:
-            self.settle = SETTLE_CYCLES
-        self._send(self.last_commanded_rad)
-        self.settle -= 1
-        if self.settle <= 0:
-            self.done.set()
-
-    def _refuse(self, reason: str, value: object, limit: object) -> None:
-        self.refusal = {"ok": False, "reason": reason,
-                        "value": value, "limit": limit}
-        self._hold()
-
-    def __call__(self, _sdk: object, _dt: float) -> None:
-        read_start = time.monotonic()
-        try:
-            current_rad = [float(v) for v in self.group.get_positions()]
-            if len(current_rad) != 6:
-                raise ValueError(f"got {len(current_rad)} positions")
-        except Exception as exc:
-            self._refuse("read-failed", str(exc), "six joint angles")
-            return
-        age_ms = (time.monotonic() - read_start) * 1000.0
-        current_deg = [math.degrees(v) for v in current_rad]
-        if self.refusal is not None or self.halt or self.index >= len(self.waypoints):
-            if self.refusal is None and self.halt and self.index < len(self.waypoints):
-                self._refuse("user-halt", self.index, len(self.waypoints))
-                return
-            self._hold()
-            return
-        waypoint = self.waypoints[self.index]
-        target_tip = self.target_tips[self.index]
-        try:
-            current_tip = self.tip_of(current_deg)
-        except Exception as exc:
-            self._refuse("read-failed", str(exc), "tool tip")
-            return
-        target = safety.Target(
-            x=target_tip[0], y=target_tip[1], z=target_tip[2],
-            joints_deg=tuple(waypoint), speed=SPEED_FRACTION,
-        )
-        current = safety.CurrentState(
-            x=current_tip[0], y=current_tip[1], z=current_tip[2],
-            joints_deg=tuple(current_deg), reading_age_ms=age_ms,
-        )
-        result = self.check(target, current)
-        if not result.get("ok"):
-            self.refusal = dict(result)
-            self._hold()
-            return
-        commanded = [math.radians(v) for v in waypoint]
-        self._send(commanded)
-        self.last_commanded_rad = commanded
-        self.index += 1
-        if self.index >= len(self.waypoints):
-            self.done.set()
 
 
 def format_line(
@@ -324,6 +271,7 @@ def format_line(
     joints_deg: tuple[float, ...] | list[float],
     tip_mm: tuple[float, float, float] | None,
     result: dict,
+    segment: str = "",
 ) -> str:
     """One printable line per waypoint for the human log."""
     joints = " ".join(f"{v:+.2f}" for v in joints_deg)
@@ -332,4 +280,5 @@ def format_line(
         verdict = "ok"
     else:
         verdict = f"REFUSED {result.get('reason')}"
-    return f"wp {index + 1:03d}/{count:03d} joints=[{joints}] tip=[{tip}] {verdict}"
+    tag = f"[{segment}] " if segment else ""
+    return f"wp {index + 1:03d}/{count:03d} {tag}joints=[{joints}] tip=[{tip}] {verdict}"

@@ -7,8 +7,9 @@ motors and never sends anything.
 
 With --execute the same validation runs first and the human confirms
 with "yes". Only then the arm ramps to home, moves joint1 to +5 deg
-and back, and holds, at 10 % of the SDK speed caps with a fresh
-safety check in every control cycle.
+and back, holds, and settles to the clamped rest reading, at 10 %
+of the SDK speed caps with a fresh safety check in every control
+cycle.
 """
 
 from __future__ import annotations
@@ -17,19 +18,108 @@ import argparse
 import json
 import math
 import sys
+import threading
+import time
 
 from muse_qc import safety
 from muse_qc.first_move_plan import (
     LOOP_RATE_HZ,
-    WaypointStream,
+    SETTLE_CYCLES,
+    SPEED_FRACTION,
     build_plan,
     read_current_deg,
     read_sdk_vlims,
+    real_tip_m,
     scale_vlim,
     validate_and_print,
 )
 
 CONFIRM_WORD = "yes"
+
+
+class WaypointStream:
+    """Control-loop callback: stream waypoints with a per-cycle check."""
+
+    def __init__(self, group, waypoints, target_tips, vlim, initial_rad,
+                 check_fn, tip_fn):
+        self.group = group
+        self.waypoints = waypoints
+        self.target_tips = target_tips
+        self.vlim = [float(v) for v in vlim]
+        self.last_commanded_rad = [float(v) for v in initial_rad]
+        self.check = safety.check_target if check_fn is None else check_fn
+        self.tip_of = real_tip_m if tip_fn is None else tip_fn
+        self.index = 0
+        self.refusal: dict | None = None
+        self.halt = False
+        self.settle = 0
+        self.done = threading.Event()
+
+    def _send(self, joint_rad: list[float]) -> None:
+        try:
+            self.group.send_pos_vel([float(v) for v in joint_rad],
+                                    vlim=self.vlim)
+        except Exception:
+            pass
+
+    def _hold(self) -> None:
+        # Hold the last commanded position, never a live reading: the
+        # SDK reports 0.0 for missing feedback, which must never be sent.
+        if self.settle <= 0:
+            self.settle = SETTLE_CYCLES
+        self._send(self.last_commanded_rad)
+        self.settle -= 1
+        if self.settle <= 0:
+            self.done.set()
+
+    def _refuse(self, reason: str, value: object, limit: object) -> None:
+        self.refusal = {"ok": False, "reason": reason,
+                        "value": value, "limit": limit}
+        self._hold()
+
+    def __call__(self, _sdk: object, _dt: float) -> None:
+        read_start = time.monotonic()
+        try:
+            current_rad = [float(v) for v in self.group.get_positions()]
+            if len(current_rad) != 6:
+                raise ValueError(f"got {len(current_rad)} positions")
+        except Exception as exc:
+            self._refuse("read-failed", str(exc), "six joint angles")
+            return
+        age_ms = (time.monotonic() - read_start) * 1000.0
+        current_deg = [math.degrees(v) for v in current_rad]
+        if self.refusal is not None or self.halt or self.index >= len(self.waypoints):
+            if self.refusal is None and self.halt and self.index < len(self.waypoints):
+                self._refuse("user-halt", self.index, len(self.waypoints))
+                return
+            self._hold()
+            return
+        waypoint = self.waypoints[self.index]
+        target_tip = self.target_tips[self.index]
+        try:
+            current_tip = self.tip_of(current_deg)
+        except Exception as exc:
+            self._refuse("read-failed", str(exc), "tool tip")
+            return
+        target = safety.Target(
+            x=target_tip[0], y=target_tip[1], z=target_tip[2],
+            joints_deg=tuple(waypoint), speed=SPEED_FRACTION,
+        )
+        current = safety.CurrentState(
+            x=current_tip[0], y=current_tip[1], z=current_tip[2],
+            joints_deg=tuple(current_deg), reading_age_ms=age_ms,
+        )
+        result = self.check(target, current)
+        if not result.get("ok"):
+            self.refusal = dict(result)
+            self._hold()
+            return
+        commanded = [math.radians(v) for v in waypoint]
+        self._send(commanded)
+        self.last_commanded_rad = commanded
+        self.index += 1
+        if self.index >= len(self.waypoints):
+            self.done.set()
 
 
 def _group(sdk: object) -> object:
@@ -48,6 +138,7 @@ def dry_run(
     sdk: object,
     check_fn: object = None,
     tip_fn: object = None,
+    joint_limits: object = None,
     out: object = print,
 ) -> int:
     """Validate the plan without enabling or sending anything."""
@@ -58,10 +149,10 @@ def dry_run(
         old_ref = safety.J6_REF
         safety.set_j6_ref(start_deg[5])
         try:
-            waypoints = build_plan(start_deg)
-            out(f"plan: {len(waypoints)} waypoints at {LOOP_RATE_HZ:.0f} Hz")
+            plan = build_plan(start_deg, joint_limits)
+            out(f"plan: {len(plan)} waypoints at {LOOP_RATE_HZ:.0f} Hz")
             ok, _ = validate_and_print(
-                _group(sdk), start_deg, waypoints,
+                _group(sdk), plan,
                 check_fn=check_fn, tip_fn=tip_fn, out=out,
             )
             out("dry run: all waypoints pass" if ok else "dry run: plan refused")
@@ -78,6 +169,7 @@ def execute(
     check_fn: object = None,
     tip_fn: object = None,
     vlims: object = None,
+    joint_limits: object = None,
     out: object = print,
 ) -> int:
     """Validate the plan, ask for confirmation, then move at 10 % speed."""
@@ -89,10 +181,10 @@ def execute(
         old_ref = safety.J6_REF
         safety.set_j6_ref(start_deg[5])
         try:
-            waypoints = build_plan(start_deg)
-            out(f"plan: {len(waypoints)} waypoints at {LOOP_RATE_HZ:.0f} Hz")
+            plan = build_plan(start_deg, joint_limits)
+            out(f"plan: {len(plan)} waypoints at {LOOP_RATE_HZ:.0f} Hz")
             ok, target_tips = validate_and_print(
-                group, start_deg, waypoints,
+                group, plan,
                 check_fn=check_fn, tip_fn=tip_fn, out=out,
             )
             if not ok:
@@ -113,6 +205,7 @@ def execute(
             first_rad = [math.radians(v) for v in read_current_deg(group)]
             group.send_pos_vel(first_rad, vlim=slow)
             group.enable()
+            waypoints = [point for _, point in plan]
             stream = WaypointStream(group, waypoints, target_tips, slow,
                                     first_rad, check_fn, tip_fn)
             sdk.start_control_loop(stream, rate=LOOP_RATE_HZ)
