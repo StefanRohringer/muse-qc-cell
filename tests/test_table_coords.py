@@ -33,11 +33,21 @@ OFFSET_X = 100.0
 OFFSET_Y = 80.0
 CELL_PX = 20
 SIDE_PX = 6 * CELL_PX
-WIDTH = int(977.0 * SCALE_PX_PER_MM) + 2 * int(OFFSET_X)
-HEIGHT = int(531.0 * SCALE_PX_PER_MM) + 2 * int(OFFSET_Y)
+LAYOUT_MAX_X = max(x for x, _ in TABLE_MARKER_LAYOUT_MM.values())
+LAYOUT_MAX_Y = max(y for _, y in TABLE_MARKER_LAYOUT_MM.values())
+WIDTH = int(LAYOUT_MAX_X * SCALE_PX_PER_MM) + 2 * int(OFFSET_X)
+HEIGHT = int(LAYOUT_MAX_Y * SCALE_PX_PER_MM) + 2 * int(OFFSET_Y)
 
 MARKER_CELLS_SIDE = 6
-MEASURED_DIAGONAL_MM = 1110.0
+# All six hand-measured centre-to-centre marker distances in mm.
+MEASURED_DISTANCES_MM = {
+    (0, 1): 982.0,
+    (2, 3): 977.0,
+    (0, 2): 531.0,
+    (1, 3): 530.0,
+    (0, 3): 1117.0,
+    (1, 2): 1110.0,
+}
 
 
 def _cells(marker_id: int) -> numpy.ndarray:
@@ -110,12 +120,11 @@ def test_marker_sides_about_40mm():
         assert sides[marker_id] == pytest.approx(TABLE_MARKER_SIZE_MM, abs=1.5)
 
 
-def test_layout_diagonal_matches_measurement():
-    corner_1 = TABLE_MARKER_LAYOUT_MM[1]
-    corner_2 = TABLE_MARKER_LAYOUT_MM[2]
-    assert math.dist(corner_1, corner_2) == pytest.approx(
-        MEASURED_DIAGONAL_MM, abs=5.0
-    )
+def test_layout_distances_match_hand_measurements():
+    for (first, second), expected in MEASURED_DISTANCES_MM.items():
+        assert math.dist(
+            TABLE_MARKER_LAYOUT_MM[first], TABLE_MARKER_LAYOUT_MM[second]
+        ) == pytest.approx(expected, abs=0.5)
 
 
 def test_draw_grid_returns_annotated_copy():
@@ -160,8 +169,10 @@ CAL_HEIGHT = 1080
 CAL_SCALE_PX_PER_MM = 1.7
 CAL_CELL_PX = 11
 CAL_SIDE_PX = 6 * CAL_CELL_PX
-CAL_OFF_X = (CAL_WIDTH - 977.0 * CAL_SCALE_PX_PER_MM) / 2.0
-CAL_OFF_Y = (CAL_HEIGHT - 531.0 * CAL_SCALE_PX_PER_MM) / 2.0
+CAL_LAYOUT_MAX_X = max(x for x, _ in TABLE_MARKER_LAYOUT_MM.values())
+CAL_LAYOUT_MAX_Y = max(y for _, y in TABLE_MARKER_LAYOUT_MM.values())
+CAL_OFF_X = (CAL_WIDTH - CAL_LAYOUT_MAX_X * CAL_SCALE_PX_PER_MM) / 2.0
+CAL_OFF_Y = (CAL_HEIGHT - CAL_LAYOUT_MAX_Y * CAL_SCALE_PX_PER_MM) / 2.0
 CAL_RMS_PX = 0.199
 CAL_MID_MM = (300.0, 300.0)
 

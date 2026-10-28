@@ -19,18 +19,18 @@ TABLE_MARKER_IDS = (0, 1, 2, 3)
 TABLE_MARKER_SIZE_MM = 40.0
 MARKER_CELLS = 6
 
-# Table frame in millimetres, measured by hand (centre to centre of the
-# black marker squares): origin at the centre of marker 0, +x towards
-# marker 1, +y towards marker 2 (away from the arm). IDs 2 to 3 are
-# 977 mm apart, IDs 0 to 2 are 531 mm apart, the diagonal from ID 2 to
-# ID 1 is 1110 mm. The ID 0 to ID 1 distance was not measurable (the
-# arm is in the way) and is assumed from the rectangle, which the
-# diagonal confirms (sqrt(977^2 + 531^2) = 1112 mm).
+# Table frame in millimetres, fitted by least squares (residuals under
+# 0.5 mm) to all six hand-measured centre-to-centre distances between
+# the black marker squares: ID0-ID1 982 mm, ID2-ID3 977 mm,
+# ID0-ID2 531 mm, ID1-ID3 530 mm, ID0-ID3 1117 mm, ID1-ID2 1110 mm.
+# Origin at the centre of marker 0, +x towards the centre of marker 1.
+# The table is slightly skewed, so the markers form a general
+# quadrilateral, not a rectangle.
 TABLE_MARKER_LAYOUT_MM = {
     0: (0.0, 0.0),
-    1: (977.0, 0.0),
-    2: (0.0, 531.0),
-    3: (977.0, 531.0),
+    1: (982.0, 0.0),
+    2: (6.9, 530.8),
+    3: (983.6, 529.9),
 }
 
 

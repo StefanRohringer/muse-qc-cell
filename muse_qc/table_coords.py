@@ -1,7 +1,7 @@
 """Convert table camera pixels into table millimetres.
 
 The four printed table markers (see muse_qc.table_markers) span a known
-rectangle on the table. Their detected centres give a homography from
+quadrilateral on the table. Their detected centres give a homography from
 pixel coordinates to the table frame defined by TABLE_MARKER_LAYOUT_MM
 (origin at the centre of marker 0, +x towards marker 1, +y towards
 marker 2 away from the arm, units mm). When a calibration record is
@@ -39,8 +39,8 @@ from muse_qc.table_markers import (
     TABLE_MARKER_SIZE_MM,
 )
 
-# Order around the rectangle, so source and destination points match.
-RECTANGLE_ORDER = (0, 1, 3, 2)
+# Order around the quadrilateral, so source and destination points match.
+CORNER_ORDER = (0, 1, 3, 2)
 
 
 def load_table_calibration(path: str | Path = CALIBRATION_PATH) -> dict | None:
@@ -67,12 +67,12 @@ def table_homography(markers: dict, calibration: dict | None = None) -> numpy.nd
     missing = [marker_id for marker_id in TABLE_MARKER_IDS if marker_id not in markers]
     if missing:
         raise RuntimeError(f"missing table markers: {missing}")
-    centers = [markers[marker_id]["center"] for marker_id in RECTANGLE_ORDER]
+    centers = [markers[marker_id]["center"] for marker_id in CORNER_ORDER]
     if calibration is not None:
         centers = undistort_points(centers, calibration)
     source = numpy.array(centers, dtype=numpy.float32)
     target = numpy.array(
-        [TABLE_MARKER_LAYOUT_MM[marker_id] for marker_id in RECTANGLE_ORDER],
+        [TABLE_MARKER_LAYOUT_MM[marker_id] for marker_id in CORNER_ORDER],
         dtype=numpy.float32,
     )
     return cv2.getPerspectiveTransform(source, target)
@@ -144,9 +144,9 @@ def draw_grid(
 ) -> numpy.ndarray:
     """Return a copy of frame with a 100 mm table grid drawn over it.
 
-    Grid lines run every step_mm over the marker rectangle, the
-    rectangle border is drawn, and the origin plus the +x and +y axes
-    are labelled. With a calibration the grid is distorted back onto
+    Grid lines run every step_mm over the marker quadrilateral, the
+    quadrilateral border is drawn, and the origin plus the +x and +y
+    axes are labelled. With a calibration the grid is distorted back onto
     the raw frame; the frame itself is never undistorted.
     """
     grid = frame.copy()
@@ -167,7 +167,7 @@ def draw_grid(
     while y <= max_y:
         cv2.line(grid, to_px((0.0, y)), to_px((max_x, y)), green, 1)
         y += step_mm
-    border = [to_px(TABLE_MARKER_LAYOUT_MM[marker_id]) for marker_id in RECTANGLE_ORDER]
+    border = [to_px(TABLE_MARKER_LAYOUT_MM[marker_id]) for marker_id in CORNER_ORDER]
     for i in range(4):
         cv2.line(grid, border[i], border[(i + 1) % 4], red, 2)
     origin = to_px((0.0, 0.0))

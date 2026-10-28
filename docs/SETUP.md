@@ -264,13 +264,13 @@ This step opens the real camera, so only the human runs it, never CI
 and never an agent. `muse_qc/table_coords.py` converts table camera
 pixels into table millimetres. The frame is defined in
 `muse_qc/table_markers.py` as `TABLE_MARKER_LAYOUT_MM`: origin at the
-centre of marker 0, +x towards marker 1, +y towards marker 2 (away
-from the arm), units mm. The values were measured by hand with a tape
-measure, centre to centre of the black marker squares: ID 2 to ID 3
-977 mm, ID 0 to ID 2 531 mm, diagonal ID 2 to ID 1 1110 mm
-(rectangle check 1112 mm). ID 0 to ID 1 could not be measured (the
-arm is in the way) and is assumed from the rectangle. From the
-project root:
+centre of marker 0, +x towards the centre of marker 1, units mm. The
+four points are a least-squares fit (residuals under 0.5 mm) to all
+six hand-measured centre-to-centre distances of the black marker
+squares: ID0-ID1 982 mm, ID2-ID3 977 mm, ID0-ID2 531 mm,
+ID1-ID3 530 mm, diagonals ID0-ID3 1117 mm and ID1-ID2 1110 mm. The
+markers form a slightly skewed quadrilateral, not a rectangle. From
+the project root:
 
 ```bash
 uv run python -m muse_qc.table_coords
@@ -279,17 +279,19 @@ uv run python -m muse_qc.table_coords
 Expected result: one line per ID with centre in pixels, centre in
 millimetres and side length in millimetres (expected 40 mm), then the
 table position of the image centre, then the path of one grid copy
-(grid lines every 100 mm over the marker rectangle, origin and axes
-labelled) at `recordings/table_grid_<YYYYmmdd_HHMMSS>.png`, for
-example:
+(grid lines every 100 mm over the marker quadrilateral, origin and
+axes labelled) at `recordings/table_grid_<YYYYmmdd_HHMMSS>.png`.
+Real human run with the calibration and the fitted quadrilateral
+layout:
 
 ```text
-ID 0 center_px=(212.0, 932.0) center_mm=(-0.0, 0.0) side=37.2 mm (expected 40 mm)
-ID 1 center_px=(1755.0, 928.8) center_mm=(977.0, 0.0) side=37.5 mm (expected 40 mm)
-ID 2 center_px=(216.5, 98.0) center_mm=(0.0, 531.0) side=37.0 mm (expected 40 mm)
-ID 3 center_px=(1755.5, 93.0) center_mm=(977.0, 531.0) side=37.8 mm (expected 40 mm)
-image center px=(960.0, 540.0) mm=(473.4, 248.0)
-recordings/table_grid_20261028_003926.png
+calibration: calibration/table_camera.json (rms 0.199 px)
+ID 0 center_px=(212.2, 931.5) center_mm=(-0.0, 0.0) side=39.5 mm (expected 40 mm)
+ID 1 center_px=(1754.5, 928.8) center_mm=(982.0, 0.0) side=39.6 mm (expected 40 mm)
+ID 2 center_px=(216.8, 98.0) center_mm=(6.9, 530.8) side=39.3 mm (expected 40 mm)
+ID 3 center_px=(1755.5, 93.0) center_mm=(983.6, 529.9) side=39.9 mm (expected 40 mm)
+image center px=(960.0, 540.0) mm=(478.5, 248.4)
+recordings/table_grid_20261028_084104.png
 ```
 
 The command fails when a marker is missing, naming the missing IDs.
@@ -312,9 +314,14 @@ Known limitation without the calibration file: the lens distortion
 of the table camera is not corrected. The marker sides come out at
 about 37 mm instead of 40 mm, and a 25 mm cube placed by tape
 measure at x = 300 mm, y = 300 mm appeared about 15 mm too far in
--x (y matched). Good enough to locate parts roughly; the arm camera
-refines the position before a grasp. The example output above was
-recorded without a calibration.
+-x (y matched). With the calibration the cube re-read from the
+grid image drawn with the previous rectangle layout sat at about
+x = 291 mm, y = 311 mm. With the calibration and the fitted layout
+the same unchanged cube reads about x = 297 mm, y = 312 mm, so
+3 mm off in x and 12 mm in y; the remaining y offset is probably
+the tape-measure placement and will be checked with the arm. Good
+enough to locate parts roughly; the arm camera refines the position
+before a grasp.
 
 ## 13. Calibration checkerboard (print by hand)
 
