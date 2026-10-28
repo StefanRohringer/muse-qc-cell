@@ -23,8 +23,8 @@ The reBot B601-DM sorts them into a good bin and a bad bin.
 | --- | ---- |
 | Tue 27.10 | Rules, plan and safety.py done, table camera with ArUco markers and table coordinates |
 | Wed 28.10 | Table camera calibration with a checkerboard |
-| Thu 29.10 | First safe move, SAM 3.1 finds parts and checks levers |
-| Fri 30.10 | Arm camera, gripper sensors read-only, agent loop |
+| Thu 29.10 | First safe move, SAM 3.1 finds parts and checks levers (done 28.10, early) |
+| Fri 30.10 | Arm camera, gripper sensors read-only, agent loop (arm camera done 28.10, early) |
 | Sat 31.10 | Grip and sort, two full runs in a row |
 | Sun 1.11 | Test series with 20 parts |
 | Mon 2.11 | Demo video |

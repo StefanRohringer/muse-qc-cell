@@ -624,8 +624,6 @@ uv run python -m muse_qc.first_move
 uv run python -m muse_qc.first_move --execute
 ```
 
-Recorded output follows after the first human run.
-
 ## 19. Arm camera test (by hand only)
 
 This step opens the real arm camera, so only the human runs it, never CI

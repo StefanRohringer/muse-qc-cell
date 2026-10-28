@@ -18,6 +18,7 @@ from pathlib import Path
 
 from muse_qc import fk_check, safety
 from muse_qc.cycle_timing import summarize_ms
+from muse_qc.sdk_config import _scalar
 
 LOOP_RATE_HZ = 100.0
 JOINT_SPEED_DEG_S = 5.0
@@ -141,23 +142,6 @@ def _config_dir(config_dir: object = None) -> Path | None:
         except OSError:
             continue
     return None
-
-
-def _scalar(path: Path, key: str) -> str | None:
-    """Return a "key: value" scalar without a YAML parser."""
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or ":" not in stripped:
-            continue
-        name, _, value = stripped.partition(":")
-        if name.strip() != key:
-            continue
-        cleaned = value.split("#", 1)[0].strip().strip("\"'")
-        return cleaned or None
 
 
 def read_sdk_vlims(config_dir: object = None) -> list[float] | None:

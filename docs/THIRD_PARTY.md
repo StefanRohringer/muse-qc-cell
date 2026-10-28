@@ -47,9 +47,14 @@ Official Seeed sources are used for the reBot Arm B601-DM. No third-party code i
 
 ## opencv-python-headless (installed)
 
-- Purpose: table camera capture and image saving for `muse_qc/camera_top.py`
-  (one frame via VideoCapture, 180-degree rotation, PNG output).
-  ArUco marker generation and detection (cv2.aruco).
+- Purpose: table and arm camera capture and image saving
+  (`muse_qc/camera_top.py`, `muse_qc/camera_arm.py`), ArUco marker
+  generation and detection (`muse_qc/table_markers.py`,
+  `muse_qc/detect_markers.py`, cv2.aruco), checkerboard calibration
+  (`muse_qc/capture_calibration.py`, `muse_qc/calibrate_camera.py`),
+  annotation and grid drawing (`muse_qc/table_coords.py`,
+  `muse_qc/inspection/draw.py`), and the SAM crop-and-enlarge step
+  (`muse_qc/count_clips.py`, `muse_qc/vision_sam.py`).
 - Source (PyPI): `opencv-python-headless>=5.0.0.93` (resolved to 5.0.0.93).
 - License: Apache 2.0 (PyPI package metadata).
 - Installed with: `uv add opencv-python-headless`.
@@ -58,10 +63,52 @@ Official Seeed sources are used for the reBot Arm B601-DM. No third-party code i
 
 - Purpose: client for the Meta Model API in `muse_qc/model_check.py`
   (hand-run connection check: one `GET /v1/models` call against the
-  base URL `https://api.meta.ai/v1`).
+  base URL `https://api.meta.ai/v1`), `muse_qc/vision_sam.py` (SAM 3.1
+  box detection through one `POST /v1/responses` call), and
+  `muse_qc/count_clips.py` (through the `vision_sam.py` request code).
 - Source (PyPI): `openai>=3.40.0` (resolved to 3.40.0).
 - License: Apache-2.0 (PyPI package metadata).
 - Installed with: `uv add openai`.
+
+## numpy (installed, transitive)
+
+- Purpose: array math used directly by `muse_qc/calibrate_camera.py`,
+  `muse_qc/capture_calibration.py`, `muse_qc/count_clips.py`,
+  `muse_qc/detect_markers.py`, `muse_qc/table_coords.py`,
+  `muse_qc/table_markers.py`, `muse_qc/vision_sam.py`, and
+  `muse_qc/inspection/draw.py`.
+- Source (PyPI): installed today as a dependency of opencv (not yet
+  declared in `pyproject.toml`).
+- License: BSD-3-Clause.
+
+## pinocchio (installed through the Seeed SDK)
+
+- Purpose: kinematics used by `muse_qc/fk_check.py` through the Seeed SDK
+  (`reBotArm_control_py.kinematics`).
+- License: BSD-2-Clause.
+
+## pytest (dev dependency)
+
+- Purpose: offline test suite in `tests/` (fake arm, fake camera,
+  fake model; no hardware, camera, or network).
+- Source (PyPI): `pytest>=9.1.1` (dev dependency group in `pyproject.toml`).
+- License: MIT.
+
+## Meta models (used through the Meta Model API)
+
+- sam-3.1: box detection at run time in `muse_qc/vision_sam.py`
+  (table view) and `muse_qc/count_clips.py` (arm camera part and lever
+  boxes). No model code or weights are in this repository.
+- muse-spark-1.3: powers Muse Code, which wrote the code (see
+  docs/MUSE_CODE_LOG.md); its use as the decision maker in the agent
+  loop is planned.
+- Use follows the Meta Model API terms of the hackathon. The
+  meta-sam-parser package (SAM License) is not used; boxes are parsed
+  by our own code in `muse_qc/vision_sam.py`.
+
+## Muse Code (build tool)
+
+- The code was written with Muse Code (Meta), logged in docs/MUSE_CODE_LOG.md.
 
 ## Author's public gripper project (declared, not vendored)
 

@@ -17,19 +17,19 @@ Built during the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026).
 - API key only from .env (MODEL_API_KEY), loaded by the program, never printed
 
 ## Design
-- muse_qc/safety.py is the only path to the motors. The model never sends raw motor commands.
-- muse_qc/safety.py is inside every tool that moves the arm; the agent cannot call or bypass it.
-- Tools take part IDs and bin names only, never coordinates.
+- Every motion command passes through safety.check_target; safety.py itself sends nothing. The model never sends raw motor commands.
+- safety.check_target is inside every tool that moves the arm; the agent cannot call or bypass it.
+- Tools take part IDs and bin names only, never coordinates (target design, planned, not built yet: current tools pass pixel and table coordinates).
 - Every safety limit has pytest tests, including targets that must be rejected.
 - Small modules, one file per job, max 300 lines per module (tests excluded).
-- One tool per file.
+- One tool per file (target design, planned, not built yet: current entry points are main(), run_detection() and run_count()).
 
-## Agent loop
+## Agent loop (target design, planned, not built yet)
 - The agent loop has a round limit and a cost limit per run.
 - Progress is saved after each round.
 - The loop pauses instead of crashing, and resume is possible.
 
-## Evidence and report
+## Evidence and report (target design, planned, not built yet)
 - Findings cite the image ID as evidence.
 - The final report needs user confirmation.
 
@@ -44,12 +44,12 @@ Built during the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026).
 ## Layout
 muse_qc/ (safety.py, arm.py, usb_devices.py, sdk_config.py, preflight.py,
 diagnose_joints.py, gripper.py (planned), camera_top.py, table_markers.py,
-make_markers.py, detect_markers.py, table_coords.py, checkerboard.py, capture_calibration.py, calibrate_camera.py, camera_hand.py (planned), vision_sam.py (planned),
-inspection.py (planned), tools/ (planned), agent.py (planned)), tests/, docs/
+make_markers.py, detect_markers.py, table_coords.py, checkerboard.py, capture_calibration.py, calibrate_camera.py, camera_hand.py (planned), vision_sam.py,
+inspection/ (record.py, draw.py, report.py), tools/ (planned), agent.py (planned)), tests/, docs/
 
 ## Ground rules for Muse Code
 - Build only what is asked, then stop and report files changed, what was run and limitations.
-- One tool per file with definitions() and run().
+- One tool per file with definitions() and run() (target design, planned, not built yet).
 - The agent system prompt is generic.
 - Devices are found by USB ID, never by port order.
 - Nothing is pushed to the public repository before the user has reviewed it.
