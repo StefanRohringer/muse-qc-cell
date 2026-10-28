@@ -811,10 +811,21 @@ waypoint with the safety reason, always ending with
 tip about 13 mm lower than computed (DEVLOG 2026-10-28), so a
 100 mm hover is about 87 mm in reality.
 
-Recorded output (after the first human run):
+Recorded output (--start arm after the check_plan fix, 2026-10-28):
 
 ```text
-(to be filled in by the human)
+table target: x=+495.90 y=+322.70 mm
+base target: x=+300.00 y=-0.00 mm
+hover: +100.0 mm
+start joints deg: -1.89 +0.69 -0.23 +2.55 +1.30 -0.08
+ik joints deg: -0.00 -97.43 -82.51 +75.08 +0.00 +0.01
+fk tip base mm: x=+300.00 y=-0.00 z=+99.99
+fk tip table mm: x=+495.90 y=+322.70 z=+99.99
+error to target: 0.01 mm
+waypoints: 2163
+all waypoints ok
+dry run: no motion
+exit 0
 ```
 
 ## Safety notes

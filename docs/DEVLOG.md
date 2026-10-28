@@ -298,3 +298,46 @@ recordings/report.html
 
 The generated report.html showed "parts inspected: 2, good: 1, bad: 1", the bad card first (BAD, levers 2 / expected 3, dropped remnant id 1 box=(323, 206, 364, 296)) and the good card second (GOOD, levers 3 / expected 3, no dropped remnants). OK. Found in that run: confidence was shown with 16 decimals and the card time was UTC without a label while file names use local time; both fixed in this change. Images, JSON and the report are not committed.
 - Human measured the arm base position with a tape measure (2026-10-28, arm power supply off): distance from the centre of the joint 1 axis to the centre of marker 0 495 mm, to marker 1 485 mm, to marker 2 705 mm; least-squares fit with TABLE_MARKER_LAYOUT_MM gives the joint 1 axis at table (495.9, 22.7) mm with residuals of at most 1.6 mm. The arm base stands directly on the table top (as delivered by Seeed), so base z 0 is the table surface; with joint 1 at 0 the arm points along table +y (away from the table edge).
+- Human ran python -m muse_qc.target_pose --table-mm 495.9 322.7 --start home (2026-10-28, offline, no hardware): OK, exit 0.
+```text
+table target: x=+495.90 y=+322.70 mm
+base target: x=+300.00 y=-0.00 mm
+hover: +100.0 mm
+ik joints deg: -0.00 -97.43 -82.51 +75.08 -0.00 +0.01
+fk tip base mm: x=+300.00 y=+0.00 z=+100.00
+fk tip table mm: x=+495.90 y=+322.70 z=+100.00
+error to target: 0.00 mm
+waypoints: 2149
+all waypoints ok
+dry run: no motion
+exit 0
+```
+- Human ran the same target with --start arm (2026-10-28, arm power supply on, joints read once, no motion): FAIL, exit 1. The first waypoint is the real rest reading, where joint 2 sits slightly above its URDF limit; check_plan checked every waypoint against itself, so the LIMIT_RECOVERY_DEG rule could not see the motion back into range. The start joints were not printed in this version.
+```text
+table target: x=+495.90 y=+322.70 mm
+base target: x=+300.00 y=-0.00 mm
+hover: +100.0 mm
+ik joints deg: -0.00 -97.43 -82.51 +75.08 +0.00 +0.01
+fk tip base mm: x=+300.00 y=-0.00 z=+99.99
+fk tip table mm: x=+495.90 y=+322.70 z=+99.99
+error to target: 0.01 mm
+waypoints: 2163
+waypoint 1/2163 REFUSED joint-limit
+dry run: no motion
+exit 1
+```
+- Human ran --start arm again after the check_plan fix (2026-10-28, arm power supply on, joints read once, no motion): OK, exit 0; joint 2 started at +0.69 deg and the recovery rule accepted the motion back into range.
+```text
+table target: x=+495.90 y=+322.70 mm
+base target: x=+300.00 y=-0.00 mm
+hover: +100.0 mm
+start joints deg: -1.89 +0.69 -0.23 +2.55 +1.30 -0.08
+ik joints deg: -0.00 -97.43 -82.51 +75.08 +0.00 +0.01
+fk tip base mm: x=+300.00 y=-0.00 z=+99.99
+fk tip table mm: x=+495.90 y=+322.70 z=+99.99
+error to target: 0.01 mm
+waypoints: 2163
+all waypoints ok
+dry run: no motion
+exit 0
+```

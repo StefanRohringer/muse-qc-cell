@@ -159,48 +159,41 @@ def build_hover_plan(
 
 def check_plan(
     plan: list[tuple[str, tuple[float, ...]]],
+    start_deg: object,
 ) -> tuple[bool, int, dict | None]:
     """Check every waypoint with safety.check_target. Pure, moves nothing.
 
-    Each waypoint is checked as its own fresh reading (one loop
-    period old), so the check verifies limits, workspace, tool
-    height, cable and speed for every pose; step continuity between
-    consecutive waypoints is measured directly against the same
-    MAX_STEP limits the check enforces.
+    Mirrors first_move_plan.validate_and_print (same Target and
+    CurrentState shape, same check): each waypoint is checked
+    against the previous commanded pose, so step limits and the
+    LIMIT_RECOVERY_DEG rule see the real motion. That helper
+    cannot be reused itself: it reads live hardware per cycle
+    and raises on 0.0, which the dry run has none of. The chain
+    is seeded with the start joints when they form a valid
+    current state (six finite nonzero angles; 0.0 means missing
+    feedback); otherwise the first waypoint is validated as a
+    pose in itself.
     """
-    previous_tip: tuple[float, float, float] | None = None
-    previous_joints: tuple[float, ...] | None = None
+    seed = tuple(float(value) for value in start_deg)
+    if len(seed) != 6 or not all(math.isfinite(v) and v != 0.0 for v in seed):
+        seed = None
+    previous: tuple[float, ...] | None = seed
     for index, (_, waypoint) in enumerate(plan):
         target_tip = real_tip_m(list(waypoint))
         target = safety.Target(
             x=target_tip[0], y=target_tip[1], z=target_tip[2],
             joints_deg=tuple(waypoint), speed=SPEED_FRACTION,
         )
+        current_joints = tuple(waypoint) if previous is None else previous
+        current_tip = target_tip if previous is None else real_tip_m(list(previous))
         current = safety.CurrentState(
-            x=target_tip[0], y=target_tip[1], z=target_tip[2],
-            joints_deg=tuple(waypoint), reading_age_ms=READING_AGE_MS,
+            x=current_tip[0], y=current_tip[1], z=current_tip[2],
+            joints_deg=current_joints, reading_age_ms=READING_AGE_MS,
         )
         result = safety.check_target(target, current)
         if not result.get("ok"):
             return False, index, result
-        if previous_tip is not None:
-            assert previous_joints is not None
-            step_m = math.dist(previous_tip, target_tip)
-            if step_m > safety.MAX_STEP_M:
-                return False, index, {
-                    "ok": False, "reason": "step-cartesian",
-                    "value": step_m, "limit": safety.MAX_STEP_M,
-                }
-            peak = max(
-                abs(w - p) for w, p in zip(waypoint, previous_joints)
-            )
-            if peak > safety.MAX_STEP_JOINT_DEG:
-                return False, index, {
-                    "ok": False, "reason": "step-joint",
-                    "value": peak, "limit": safety.MAX_STEP_JOINT_DEG,
-                }
-        previous_tip = target_tip
-        previous_joints = tuple(waypoint)
+        previous = tuple(waypoint)
     return True, -1, None
 
 
@@ -228,6 +221,7 @@ def run(
     out(f"table target: x={table_x:+.2f} y={table_y:+.2f} mm")
     out(f"base target: x={base_x:+.2f} y={base_y:+.2f} mm")
     out(f"hover: {float(hover_mm):+.1f} mm")
+    out("start joints deg: " + " ".join(f"{v:+.2f}" for v in start_deg))
     old_ref = safety.J6_REF
     safety.set_j6_ref(float(start_deg[5]))
     try:
@@ -248,7 +242,7 @@ def run(
         out(f"error to target: {solved['error_mm']:.2f} mm")
         plan = build_hover_plan(start_deg, joints)
         out(f"waypoints: {len(plan)}")
-        ok, bad_index, result = check_plan(plan)
+        ok, bad_index, result = check_plan(plan, start_deg)
         if ok:
             out("all waypoints ok")
         else:

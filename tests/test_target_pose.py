@@ -75,6 +75,29 @@ def test_hover_side_target_keeps_joint6_near_seed():
     assert abs(solved["joints_deg"][5]) <= 10.0
 
 
+REST_20261028 = [-3.33, 1.58, -1.45, 2.72, 0.91, -3.97]
+
+
+def test_rest_j2_recovery_plan_ok(capsys):
+    _need_sdk_kinematics()
+    from muse_qc.target_pose import run
+
+    code = run((495.9, 322.7), 100.0, list(REST_20261028))
+    assert code == 0
+    assert "all waypoints ok" in capsys.readouterr().out
+
+
+def test_j2_beyond_recovery_refused(capsys):
+    _need_sdk_kinematics()
+    from muse_qc.target_pose import run
+
+    start = list(REST_20261028)
+    start[1] = 5.0
+    code = run((495.9, 322.7), 100.0, start)
+    assert code == 1
+    assert "REFUSED joint-limit" in capsys.readouterr().out
+
+
 def test_far_target_is_unreachable(capsys):
     _need_sdk_kinematics()
     from muse_qc.target_pose import main
