@@ -191,14 +191,18 @@ def run_detection(
     recordings_dir: str | Path = "recordings",
     load_calibration: Callable[[], dict | None] = load_table_calibration,
     detect_markers: Callable[[numpy.ndarray], dict] = detect_table_markers,
+    map_table: bool = True,
 ) -> int:
     """Run one detection on frame; return the exit code.
 
     Prints the table mapping status, one line per box (id, box,
     center px, confidence, table_mm when the mapping works), the
-    count and the annotated image path. Returns 0 on success, 2 when
-    the key is missing, 1 otherwise. Errors print a short message
-    without a stack trace and never include the key.
+    count and the annotated image path. With map_table=False the
+    table mapping is skipped (saved image files) and the status
+    line reads "table mapping: skipped (image file)". Returns 0
+    on success, 2 when the key is missing, 1 otherwise. Errors
+    print a short message without a stack trace and never include
+    the key.
     """
     if not api_key or not api_key.strip():
         print(f"{KEY_NAME} is missing: set it in .env or the environment")
@@ -221,10 +225,14 @@ def run_detection(
         print(f"request failed: {exc}")
         return 1
     boxes = parse_output_text(text)
-    status, table_points = boxes_to_table_mm(
-        boxes, frame, load_calibration, detect_markers
-    )
-    print(f"table mapping: {status}")
+    if map_table:
+        status, table_points = boxes_to_table_mm(
+            boxes, frame, load_calibration, detect_markers
+        )
+        print(f"table mapping: {status}")
+    else:
+        table_points = [None] * len(boxes)
+        print("table mapping: skipped (image file)")
     for box, point_mm in zip(boxes, table_points):
         confidence = (
             f"{box['confidence']:.2f}"
@@ -275,7 +283,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"request failed: {exc}")
         return 1
     return run_detection(
-        read_api_key(), args.phrase, frame, _default_client_factory
+        read_api_key(),
+        args.phrase,
+        frame,
+        _default_client_factory,
+        map_table=(args.image is None),
     )
 
 
