@@ -765,7 +765,13 @@ uv run python -m muse_qc.inspection.report --recordings recordings --out recordi
 Exit codes: 0 report written, 1 write failed. The command prints
 the output path.
 
-Recorded output will be added after the first human run.
+Recorded output:
+
+```text
+recordings/report.html
+```
+
+The page showed "parts inspected: 2, good: 1, bad: 1" with the BAD card first and the GOOD card second; the times on the page are UTC.
 
 ## Safety notes
 

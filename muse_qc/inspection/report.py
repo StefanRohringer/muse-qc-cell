@@ -37,6 +37,14 @@ def _badge(verdict: str) -> str:
     )
 
 
+def _format_confidence(value: object) -> str:
+    """Return a confidence value rounded to two decimals for display."""
+    try:
+        return f"{float(str(value)):.2f}"
+    except (TypeError, ValueError):
+        return html.escape(str(value))
+
+
 def _card(record: dict, base: Path) -> str:
     """Return one inspection card HTML for a record (text escaped)."""
     timestamp = html.escape(str(record.get("timestamp", "?")))
@@ -54,7 +62,7 @@ def _card(record: dict, base: Path) -> str:
             f" {html.escape(str(box.get('y1', '?')))},"
             f" {html.escape(str(box.get('x2', '?')))},"
             f" {html.escape(str(box.get('y2', '?')))}"
-            f") confidence={html.escape(str(box.get('confidence', '?')))}</li>"
+            f") confidence={_format_confidence(box.get('confidence', '?'))}</li>"
             for box in dropped
         )
         remnants = f"<p>dropped remnants:</p><ul>{items}</ul>"
@@ -62,7 +70,7 @@ def _card(record: dict, base: Path) -> str:
         remnants = "<p>no dropped remnants</p>"
     return (
         '<div class="card">'
-        f"<p><strong>{timestamp}</strong> {badge}</p>"
+        f"<p><strong>{timestamp} UTC</strong> {badge}</p>"
         f'<p><img src="{html.escape(crop, quote=True)}"'
         ' alt="crop with lever boxes"></p>'
         f'<p><a href="{html.escape(full, quote=True)}">full image</a></p>'
@@ -103,7 +111,7 @@ body {{ font-family: sans-serif; margin: 2em; }}
 </head>
 <body>
 <h1>{html.escape(TITLE)}</h1>
-<p>generated: {html.escape(generated)}</p>
+<p>generated: {html.escape(generated)} UTC</p>
 <p>parts inspected: {len(records)}, good: {good}, bad: {bad}</p>
 {body}
 </body>

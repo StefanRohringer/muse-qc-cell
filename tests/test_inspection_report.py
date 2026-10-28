@@ -82,6 +82,47 @@ def test_empty_folder_says_no_inspections(tmp_path):
     assert "parts inspected: 0, good: 0, bad: 0" in page
 
 
+def test_confidence_shown_with_two_decimals(tmp_path):
+    full = tmp_path / "count_20261028_120100.png"
+    crop = tmp_path / "count_20261028_120100_crop.png"
+    full.write_bytes(b"png")
+    crop.write_bytes(b"png")
+    record = {
+        "timestamp": "2026-10-28T12:01:00+00:00",
+        "source_image": "armcam.png",
+        "full_image": str(full),
+        "crop_image": str(crop),
+        "part_box": {"x1": 319, "y1": 186, "x2": 354, "y2": 232},
+        "part_confidence": 0.5936508178710938,
+        "lever_prompt": "orange bar",
+        "kept_boxes": [],
+        "dropped_boxes": [
+            {"id": 1, "x1": 323, "y1": 206, "x2": 364,
+             "y2": 296, "confidence": 0.5936508178710938}
+        ],
+        "levers": 2,
+        "verdict": "bad",
+        "expected_levers": 3,
+    }
+    record_path = write_record(record, tmp_path)
+    out = tmp_path / "report.html"
+    assert main(["--recordings", str(tmp_path), "--out", str(out)]) == 0
+    page = out.read_text(encoding="utf-8")
+    assert "confidence=0.59" in page
+    assert "0.5936508178710938" not in page
+    assert "0.5936508178710938" in record_path.read_text(encoding="utf-8")
+
+
+def test_times_labelled_utc(tmp_path):
+    _record(tmp_path, "20261028_120000", "good", 3)
+    out = tmp_path / "report.html"
+    assert main(["--recordings", str(tmp_path), "--out", str(out)]) == 0
+    page = out.read_text(encoding="utf-8")
+    assert "2026-10-28T12:00:00+00:00 UTC" in page
+    assert "generated:" in page
+    assert page.count(" UTC") >= 2
+
+
 def test_write_failure_gives_exit_code_1(tmp_path):
     _record(tmp_path, "20261028_120000", "good", 3)
     assert main(["--recordings", str(tmp_path),
