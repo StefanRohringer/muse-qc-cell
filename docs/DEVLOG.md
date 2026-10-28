@@ -3,6 +3,9 @@
 ## 2026-10-26
 
 - Set up accounts, environment, repository, and Muse Code.
+- Human ran the first read-only arm check (started by the human, arm power supply on, USB connected, no motion command): the first reading returned 0.0 for joints without feedback yet.
+- Human ran the read-only arm check again after the retry fix (arm power supply on, no motion command): preflight overall OK, read_joints and read_gripper returned real angles for all six joints and the gripper.
+- (The two entries above were added on 2026-10-28 from docs/MUSE_CODE_LOG.md; the DEVLOG rule was introduced on 2026-10-27.)
 
 ## 2026-10-27
 
@@ -179,3 +182,4 @@
   tests/test_checkerboard.py with a black-only-squares check. The
   generator was not run by the agent, nothing committed.
 - Human ran python -m muse_qc.checkerboard (no hardware): docs/checkerboard.svg written, 35 black squares of 25 mm, 100 mm scale line, instruction text in the top margin; full suite green (187 passed).
+- Fixed review findings: arm.py wraps unreadable position values as JointStateUnavailable (new test), safety.py J6_REF comment corrected and dead joint-step filter removed, docs/SETUP.md sections 6, 9, 10, 11 and Safety notes fixed, docs/PLAN.md schedule and README wording updated, missing 2026-10-26 arm-check entries backfilled from docs/MUSE_CODE_LOG.md. No hardware touched, nothing committed.

@@ -89,7 +89,7 @@ uv run python --version  # must report Python 3.11.x
 ```
 
 `uv run pytest` is the project test command (see AGENTS.md);
-it runs the suite in `tests/` (tests/test_arm.py, tests/test_diagnose.py, tests/test_preflight.py, tests/test_safety.py, tests/test_sdk_config.py, tests/test_usb_devices.py).
+it runs every file in `tests/`.
 All tests run without the Seeed SDK; one test in tests/test_safety.py reads the real joint limits and is skipped when the SDK is not installed.
 
 ## 7. Trying muse_qc/arm.py on the real arm (by hand only)
@@ -163,9 +163,9 @@ and never an agent. `muse_qc/camera_top.py` finds the table camera by
 USB vendor and product ID through `muse_qc/usb_devices.py`
 (read-only sysfs lookup under `/sys/class/video4linux`, capture nodes
 only), opens exactly one matching device with the V4L2 backend, requests
-MJPG at 1920x1080, discards 45 warm-up frames (about 1.5 s at 30 fps,
+MJPG at 1920x1080, discards 45 warm-up frames (a short settle time,
 letting the camera settle after the settings are applied), then reads
-the returned frame and saves it. The camera runs in MJPG at 30 fps. It
+the returned frame and saves it. It
 imports no arm code and moves nothing. From the project root:
 
 ```bash
@@ -173,11 +173,11 @@ uv run python -m muse_qc.camera_top
 ```
 
 Expected result: one new file `recordings/table_<YYYYmmdd_HHMMSS>.png`
-at 1920x1080 and one printed line with path, width and height, for
-example:
+at 1920x1080 and one printed line with path, width, height and the
+read-back settings, for example:
 
 ```text
-recordings/table_20261027_123456.png 1920x1080
+recordings/table_20261027_123456.png 1920x1080 auto_exposure=1 exposure=450 gain=0 brightness=160 contrast=150 auto_wb=0 wb_temperature=3200
 ```
 
 With the camera unplugged the command fails with
@@ -223,9 +223,9 @@ there. It can be generated again with the command above.
 Print the page at 100 % (actual size, no scaling to fit the page).
 Then check with a ruler: the scale line must measure exactly 100 mm
 and every black marker square exactly 40 mm. Cut out the four markers
-and stick one marker per table corner. Which ID ends up in which corner
-does not matter: the detection added later finds the corner of each ID
-by itself.
+and stick one marker per table corner with the fixed assignment in
+`TABLE_MARKER_LAYOUT_MM`: ID 0 bottom left next to the arm (the
+origin), ID 1 bottom right, ID 2 top left, ID 3 top right.
 
 ## 11. Table marker detection (by hand only)
 
@@ -246,22 +246,17 @@ uv run python -m muse_qc.detect_markers
 Expected result: one line per ID with image corner, center in pixels
 and side in pixels, then the scale in px/mm, then the path of one
 annotated copy (marker outlines and IDs drawn) at
-`recordings/table_markers_<YYYYmmdd_HHMMSS>.png`, for example:
+`recordings/table_markers_<YYYYmmdd_HHMMSS>.png`. Each line has the
+form `ID <id> <image-corner> center=(<x>, <y>) side=<s> px`, followed
+by a `scale: <v> px/mm` line and the PNG path. On the real table the
+human run found ID 2 top-left, ID 3 top-right, ID 0 bottom-left and
+ID 1 bottom-right, with marker sides from 58.1 to 59.3 px and a scale
+of 1.465 px/mm.
 
-```text
-ID 0 top-left center=(194.5, 174.5) side=149.0 px
-ID 1 top-right center=(1724.5, 174.5) side=149.0 px
-ID 2 bottom-left center=(194.5, 904.5) side=149.0 px
-ID 3 bottom-right center=(1724.5, 904.5) side=149.0 px
-scale: 3.725 px/mm
-recordings/table_markers_20261027_123456.png
-```
-
-Which ID sits in which table corner does not matter: the image corner
-of each ID (`top-left`, `top-right`, `bottom-left`, `bottom-right`) is
-found from its center relative to the image center, and the command
-fails when two markers fall into the same image corner. The scale is
-the mean marker side in pixels divided by 40 mm.
+The image corner of each ID (`top-left`, `top-right`, `bottom-left`,
+`bottom-right`) is found from its center relative to the image center,
+and the command fails when two markers fall into the same image
+corner. The scale is the mean marker side in pixels divided by 40 mm.
 
 ## 12. Table coordinates (by hand only)
 
@@ -366,9 +361,9 @@ Read-only review of the SDK file
   `disable_all()` the motors no longer hold position, so the arm can sag
   under its own weight.
 - The `muse_qc/arm.py` wrapper adds no thread and no bus traffic of its own:
-  `Arm.__init__` (`muse_qc/arm.py:78-80`) only stores the factory,
-  `Arm.connect` (`muse_qc/arm.py:87-93`) only calls `sdk.connect()`, and
-  `Arm.disconnect` (`muse_qc/arm.py:95-102`) only calls `sdk.disconnect()`.
+  `Arm.__init__` only stores the factory,
+  `Arm.connect` only calls `sdk.connect()`, and
+  `Arm.disconnect` only calls `sdk.disconnect()`.
 - Not verified: the exact bytes the `motorbridge` package
   (`Controller.disable_all`, `shutdown`, `close`, `send_*`) puts on the
   bus. That package was outside this review.

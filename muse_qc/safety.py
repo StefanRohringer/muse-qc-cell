@@ -50,8 +50,8 @@ GRIP_RIGHT = frozenset({"R1", "R2"})
 GRIP_PHASES = ("open", "open-moving", "closed", "holding-moving", "holding-lowering")
 
 # Camera-cable reference for joint 6, in degrees. None until the user
-# sets it via set_j6_ref(); while None, every move that changes joint 6
-# is refused.
+# sets it via set_j6_ref(); while None, every move is refused, even one
+# that leaves joint 6 where it is.
 J6_REF: float | None = None
 
 _STOP_REASON: str | None = None
@@ -234,7 +234,7 @@ def check_target(target: Target, current_state: CurrentState) -> dict:
     step = math.dist((current_state.x, current_state.y, current_state.z), (target.x, target.y, target.z))
     if step > MAX_STEP_M:
         return _refuse("step-cartesian", step, MAX_STEP_M)
-    peak = max(abs(t - c) for t, c in zip(target.joints_deg, current_state.joints_deg) if c is not None)
+    peak = max(abs(t - c) for t, c in zip(target.joints_deg, current_state.joints_deg))
     if peak > MAX_STEP_JOINT_DEG:
         return _refuse("step-joint", peak, MAX_STEP_JOINT_DEG)
     return {"ok": True, "speed": speed, "detail": "target passes all safety checks"}

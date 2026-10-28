@@ -140,7 +140,12 @@ class Arm:
     def _group_positions(group: object) -> tuple[list[str], list[float]]:
         """Return joint names with raw radian positions of one group."""
         names = list(group.joint_names)
-        positions = [float(value) for value in group.get_positions()]
+        try:
+            positions = [float(value) for value in group.get_positions()]
+        except (TypeError, ValueError) as exc:
+            raise JointStateUnavailable(
+                f"No joint feedback: unreadable position values ({exc})."
+            ) from exc
         if len(positions) != len(names):
             raise JointStateUnavailable(
                 f"Got {len(positions)} positions for {len(names)} joints."

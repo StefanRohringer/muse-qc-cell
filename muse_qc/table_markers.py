@@ -1,6 +1,6 @@
 """Shared constants for the four printed table markers.
 
-The detection added later imports these constants too, so both the
+The detector imports these constants too, so both the
 generator (muse_qc.make_markers) and the detector agree on the
 dictionary, the IDs and the printed size.
 

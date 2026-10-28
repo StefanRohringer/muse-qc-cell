@@ -307,3 +307,14 @@ def test_errors_share_base_class():
 def test_creating_arm_without_factory_touches_no_hardware():
     arm = Arm()
     assert not arm.connected
+
+
+def test_unreadable_position_values_raise_joint_state_unavailable():
+    for bad in (None, "not-a-number", object()):
+        arm, _ = make_arm(arm_positions=[bad] * len(ARM_NAMES))
+        arm.connect()
+        try:
+            with pytest.raises(JointStateUnavailable):
+                arm.read_joints()
+        finally:
+            arm.disconnect()
