@@ -160,6 +160,7 @@ def dry_run(
     tip_fn: object = None,
     joint_limits: object = None,
     out: object = print,
+    plan_fn: object = None,
 ) -> int:
     """Validate the plan without enabling or sending anything."""
     sdk.connect()
@@ -169,7 +170,14 @@ def dry_run(
         old_ref = safety.J6_REF
         safety.set_j6_ref(start_deg[5])
         try:
-            plan = build_plan(start_deg, joint_limits)
+            if plan_fn is None:
+                plan = build_plan(start_deg, joint_limits)
+            else:
+                try:
+                    plan = plan_fn(start_deg)
+                except Exception as exc:
+                    out(f"plan failed: {exc}")
+                    return 1
             out(f"plan: {len(plan)} waypoints at {LOOP_RATE_HZ:.0f} Hz")
             ok, _ = validate_and_print(
                 _group(sdk), plan,
@@ -191,6 +199,7 @@ def execute(
     vlims: object = None,
     joint_limits: object = None,
     out: object = print,
+    plan_fn: object = None,
 ) -> int:
     """Validate the plan, ask for confirmation, then move at 10 % speed."""
     sdk.connect()
@@ -201,7 +210,14 @@ def execute(
         old_ref = safety.J6_REF
         safety.set_j6_ref(start_deg[5])
         try:
-            plan = build_plan(start_deg, joint_limits)
+            if plan_fn is None:
+                plan = build_plan(start_deg, joint_limits)
+            else:
+                try:
+                    plan = plan_fn(start_deg)
+                except Exception as exc:
+                    out(f"plan failed: {exc}")
+                    return 1
             out(f"plan: {len(plan)} waypoints at {LOOP_RATE_HZ:.0f} Hz")
             ok, target_tips = validate_and_print(
                 group, plan,

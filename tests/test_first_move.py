@@ -262,10 +262,15 @@ def test_execute_sends_settle_after_home_hold():
 
 
 def test_refusal_stops_ramp_and_holds_last_reading():
+    # Validation makes exactly len(plan) checks, so the stub refuses
+    # only after that: validation passes, the motion refuses.
+    plan_len = len(build_plan(REST_DEG, TEST_LIMITS))
+    calls = [0]
+
     def refuse_once_moved(target, current):
-        # Dynamic cause: validation sees the arm at rest and passes,
-        # the motion sees the moved arm and refuses.
-        if current.joints_deg[0] > 1.0:
+        # Dynamic cause: validation passes, the moved arm refuses.
+        calls[0] += 1
+        if calls[0] > plan_len and current.joints_deg[0] > 1.0:
             return {"ok": False, "reason": "test-refusal",
                     "value": current.joints_deg[0], "limit": 1.0}
         return {"ok": True, "speed": 0.1, "detail": "stub"}

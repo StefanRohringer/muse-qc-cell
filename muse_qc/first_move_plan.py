@@ -29,6 +29,7 @@ HOLD_CYCLES = int(HOLD_S * LOOP_RATE_HZ)
 SETTLE_HOLD_S = 1.0
 SETTLE_HOLD_CYCLES = int(SETTLE_HOLD_S * LOOP_RATE_HZ)
 SETTLE_CYCLES = HOLD_CYCLES // 2
+SIM_ZERO_DEG = 1e-6  # Stand-in for exact 0.0 in a chained current state.
 SEG_HOME = "home"  # ramp from the rest reading to home
 SEG_OUT = "out"  # ramp from home to joint1 +5 deg
 SEG_BACK = "back"  # ramp from joint1 +5 deg back to home
@@ -221,27 +222,48 @@ def validate_and_print(
     tip_fn: object = None,
     out: object = print,
 ) -> tuple[bool, list[tuple[float, float, float]]]:
-    """Check every waypoint against a fresh reading; print one line each."""
+    """Check every waypoint; print one line each.
+
+    One live read per waypoint keeps reading_age_ms and the
+    dry-run cycle work timing fresh. The first waypoint is checked
+    against that live reading; every later waypoint is checked
+    against the previous waypoint as the current state (its joints
+    and its tip via tip_of), so the step limits see the planned
+    motion, not the distance from the rest pose. Same idea as
+    target_pose.check_plan. Exact 0.0 in a chained waypoint is a
+    command (home, or the clamped rest), not missing feedback, so
+    it is nudged to SIM_ZERO_DEG for the current-state validity
+    rule that rejects 0.0 live reads; steps and limits are
+    unaffected at that size.
+    """
     check = safety.check_target if check_fn is None else check_fn
     tip_of = real_tip_m if tip_fn is None else tip_fn
     target_tips: list[tuple[float, float, float]] = []
     all_ok = True
     work_ms: list[float] = []
+    previous: tuple[float, ...] | None = None
     for index, (segment, waypoint) in enumerate(plan):
         work_start = time.perf_counter()
         read_start = time.monotonic()
         current_deg = read_current_deg(group)
         age_ms = (time.monotonic() - read_start) * 1000.0
-        current_tip = tip_of(current_deg)
         target_tip = tip_of(list(waypoint))
         target_tips.append(target_tip)
+        if previous is None:
+            base_joints = tuple(current_deg)
+            base_tip = tip_of(current_deg)
+        else:
+            base_joints = tuple(
+                SIM_ZERO_DEG if value == 0.0 else value for value in previous
+            )
+            base_tip = tip_of(list(previous))
         target = safety.Target(
             x=target_tip[0], y=target_tip[1], z=target_tip[2],
             joints_deg=tuple(waypoint), speed=SPEED_FRACTION,
         )
         current = safety.CurrentState(
-            x=current_tip[0], y=current_tip[1], z=current_tip[2],
-            joints_deg=tuple(current_deg), reading_age_ms=age_ms,
+            x=base_tip[0], y=base_tip[1], z=base_tip[2],
+            joints_deg=base_joints, reading_age_ms=age_ms,
         )
         result = check(target, current)
         work_ms.append((time.perf_counter() - work_start) * 1000.0)
@@ -250,6 +272,7 @@ def validate_and_print(
         tip_mm = (target_tip[0] * 1000.0, target_tip[1] * 1000.0,
                   target_tip[2] * 1000.0)
         out(format_line(index, len(plan), waypoint, tip_mm, result, segment))
+        previous = tuple(waypoint)
     if work_ms:
         out(f"cycle work (dry run): {summarize_ms(work_ms)}"
             f" over {len(work_ms)} waypoints")

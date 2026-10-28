@@ -828,6 +828,44 @@ dry run: no motion
 exit 0
 ```
 
+## 23. Hover move (by hand only)
+
+Program: `muse_qc/hover_move.py`, checked by
+`tests/test_hover_move.py` (fake arm only). It moves the gripper
+tip from the current rest pose to the hover pose above a table
+target (the same pose `muse_qc/target_pose.py` already solves and
+checks: table frame of `muse_qc/table_coords.py`, IK seeded with
+the start joints), holds it for 2 s, ramps back to the rest
+reading clamped into its URDF limits, holds it for 1 s, and only
+then lets `first_move` disable the motors. The arm is never
+disabled while it is away from the rest pose. Default is a dry
+run (no enable, no send); with `--execute` the human confirms
+with `yes`, the motors run at 10 % of the SDK speed caps, and
+every control cycle re-checks the next step. A failed solve
+prints the reason and moves nothing. Targets below 80 mm hover
+are refused in this module (the real tip sits about 13 mm lower
+than FK).
+
+Safety steps for the human:
+
+1. Hand on the power supply switch (emergency stop), nothing on
+   the table near the arm.
+2. Watch all links during the motion: `safety.py` checks only
+   the tool tip, not link collisions.
+3. On Ctrl+C the program holds the last commanded position and
+   then disables; the arm can drop.
+
+```bash
+uv run python -m muse_qc.hover_move --table-mm 495.9 322.7
+uv run python -m muse_qc.hover_move --table-mm 495.9 322.7 --execute
+```
+
+Recorded output:
+
+```text
+(to be filled in by the human)
+```
+
 ## Safety notes
 
 Read-only review of the SDK file
