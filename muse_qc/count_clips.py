@@ -1,12 +1,15 @@
 """Count orange levers on an arm camera image with SAM 3.1 (hand-run).
 
-Loads a saved arm camera image, sends it with a noun phrase to
-SAM 3.1 through the muse_qc.vision_sam request code, keeps boxes
-at or above MIN_CONFIDENCE, merges overlapping duplicates
-(IoU above IOU_THRESHOLD keeps the higher confidence), prints one
-line per kept box plus "levers: N" and "verdict: good|bad", and
-saves an annotated copy to recordings/count_<timestamp>.png.
-A good part has exactly EXPECTED_LEVERS levers.
+Two steps: SAM 3.1 first finds the part on the full image with
+PART_PROMPT, then SAM 3.1 counts the levers on the cropped and
+enlarged part with LEVER_PROMPT. Boxes at or above MIN_CONFIDENCE
+are kept, overlapping duplicates are merged (IoU above
+IOU_THRESHOLD keeps the higher confidence). Prints the part box,
+one line per kept lever box plus "levers: N" and
+"verdict: good|bad", and saves two annotated copies:
+recordings/count_<timestamp>.png (full image with the part box)
+and recordings/count_<timestamp>_crop.png (enlarged crop with the
+lever boxes). A good part has exactly EXPECTED_LEVERS levers.
 
 Run by the human only (it contacts the Meta Model API):
 
@@ -37,6 +40,11 @@ from muse_qc.vision_sam import (
 EXPECTED_LEVERS = 3
 MIN_CONFIDENCE = 0.5
 IOU_THRESHOLD = 0.5
+PART_PROMPT = "small part"
+LEVER_PROMPT = "orange bar"
+GRIPPER_ZONE_Y = 380
+CROP_MARGIN_PX = 15
+CROP_SCALE = 8
 
 
 def _iou(first: dict, second: dict) -> float:
@@ -86,9 +94,66 @@ def verdict(count: int) -> str:
     return "good" if count == EXPECTED_LEVERS else "bad"
 
 
+def find_part(boxes: list[dict]) -> dict | None:
+    """Return the part box above the gripper zone, or None.
+
+    Ignores boxes without confidence, below MIN_CONFIDENCE, or
+    inside the gripper zone (center y at or above GRIPPER_ZONE_Y).
+    Picks the remaining box with the highest confidence.
+    """
+    candidates = [
+        box
+        for box in boxes
+        if isinstance(box.get("confidence"), (int, float))
+        and box["confidence"] >= MIN_CONFIDENCE
+        and box["center"][1] < GRIPPER_ZONE_Y
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda box: box["confidence"])
+
+
+def crop_and_enlarge(frame: numpy.ndarray, box: dict) -> numpy.ndarray:
+    """Crop the box plus margin and enlarge it.
+
+    Adds CROP_MARGIN_PX on each side (clamped to the image) and
+    scales the crop by CROP_SCALE with cv2.INTER_CUBIC.
+    """
+    height, width = frame.shape[:2]
+    x1 = max(0, int(box["x1"]) - CROP_MARGIN_PX)
+    y1 = max(0, int(box["y1"]) - CROP_MARGIN_PX)
+    x2 = min(width, int(box["x2"]) + CROP_MARGIN_PX)
+    y2 = min(height, int(box["y2"]) + CROP_MARGIN_PX)
+    if x2 <= x1 or y2 <= y1:
+        raise RuntimeError("part box is outside the image")
+    crop = frame[y1:y2, x1:x2]
+    return cv2.resize(
+        crop,
+        None,
+        fx=CROP_SCALE,
+        fy=CROP_SCALE,
+        interpolation=cv2.INTER_CUBIC,
+    )
+
+
 def draw_levers(frame: numpy.ndarray, boxes: list[dict], count: int) -> numpy.ndarray:
     """Return a copy of frame with boxes and the lever count drawn."""
     annotated = draw_boxes(frame, boxes)
+    cv2.putText(
+        annotated,
+        f"levers: {count}",
+        (10, 30),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        1.0,
+        (0, 255, 0),
+        2,
+    )
+    return annotated
+
+
+def draw_part(frame: numpy.ndarray, box: dict, count: int) -> numpy.ndarray:
+    """Return a copy of frame with the part box and count drawn."""
+    annotated = draw_boxes(frame, [box])
     cv2.putText(
         annotated,
         f"levers: {count}",
@@ -117,6 +182,24 @@ def save_annotated(
     return path
 
 
+def save_pair(
+    full: numpy.ndarray,
+    crop: numpy.ndarray,
+    recordings_dir: str | Path = "recordings",
+) -> tuple[Path, Path]:
+    """Save full and crop under one timestamp, return both paths."""
+    target_dir = Path(recordings_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    full_path = target_dir / f"count_{stamp}.png"
+    crop_path = target_dir / f"count_{stamp}_crop.png"
+    ok_full = cv2.imwrite(str(full_path), full)
+    ok_crop = cv2.imwrite(str(crop_path), crop)
+    if not ok_full or not ok_crop:
+        raise RuntimeError(f"failed to write images to {target_dir}")
+    return full_path, crop_path
+
+
 def run_count(
     api_key: str | None,
     frame: numpy.ndarray,
@@ -124,25 +207,49 @@ def run_count(
     make_client: Callable[[str], object],
     recordings_dir: str | Path = "recordings",
 ) -> int:
-    """Count levers on frame; return the exit code.
+    """Find the part, count its levers; return the exit code.
 
-    Prints one line per kept box (id, box, confidence), then
-    "levers: N", "verdict: good|bad" and the annotated image path.
-    Returns 0 on success, 2 when the key is missing or the API
-    request fails, 1 when the annotated image cannot be written.
-    Errors print a short message without a stack trace and never
-    include the key.
+    Prints "part: box=(...) confidence=...", one line per kept
+    lever box (id, box, confidence), then "levers: N",
+    "verdict: good|bad" and both annotated image paths. Returns 0
+    on success, 3 when no part is found, 2 when the key is missing
+    or an API request fails, 1 when the crop or an annotated image
+    cannot be written. Errors print a short message without a
+    stack trace and never include the key.
     """
     if not api_key or not api_key.strip():
         print(f"{KEY_NAME} is missing: set it in .env or the environment")
         return 2
     try:
         client = make_client(api_key)
-        text = fetch_output_text(client, prompt, image_to_data_url(frame))
+        part_text = fetch_output_text(
+            client, PART_PROMPT, image_to_data_url(frame)
+        )
     except Exception as exc:  # noqa: BLE001 - mapped to a short message
         print(f"request failed: {exc}")
         return 2
-    kept = count_levers(parse_output_text(text))
+    part = find_part(parse_output_text(part_text))
+    if part is None:
+        print("part: not found")
+        return 3
+    print(
+        f"part: box=({part['x1']}, {part['y1']},"
+        f" {part['x2']}, {part['y2']})"
+        f" confidence={part['confidence']:.2f}"
+    )
+    try:
+        crop = crop_and_enlarge(frame, part)
+    except Exception as exc:  # noqa: BLE001 - mapped to a short message
+        print(f"request failed: {exc}")
+        return 1
+    try:
+        lever_text = fetch_output_text(
+            client, prompt, image_to_data_url(crop)
+        )
+    except Exception as exc:  # noqa: BLE001 - mapped to a short message
+        print(f"request failed: {exc}")
+        return 2
+    kept = count_levers(parse_output_text(lever_text))
     for box in kept:
         center_x, center_y = box["center"]
         print(
@@ -154,11 +261,16 @@ def run_count(
     print(f"levers: {len(kept)}")
     print(f"verdict: {verdict(len(kept))}")
     try:
-        path = save_annotated(frame, kept, len(kept), recordings_dir)
+        full_path, crop_path = save_pair(
+            draw_part(frame, part, len(kept)),
+            draw_levers(crop, kept, len(kept)),
+            recordings_dir,
+        )
     except (OSError, RuntimeError) as exc:
         print(f"request failed: {exc}")
         return 1
-    print(path)
+    print(full_path)
+    print(crop_path)
     return 0
 
 
@@ -168,7 +280,7 @@ def main(argv: list[str] | None = None) -> int:
         description="Count orange levers on an arm camera image."
     )
     parser.add_argument("--image", required=True, help="saved image file")
-    parser.add_argument("--prompt", default="orange lever")
+    parser.add_argument("--prompt", default=LEVER_PROMPT)
     args = parser.parse_args(argv)
     try:
         frame = load_image(args.image)

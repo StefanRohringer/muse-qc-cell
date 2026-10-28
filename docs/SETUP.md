@@ -666,30 +666,47 @@ The last line is the shell exit code.
 ## 20. Count levers on an arm camera image (by hand only)
 
 This step contacts the Meta Model API, so only the human runs it,
-never CI and never an agent. `muse_qc/count_clips.py` loads a saved
-arm camera image (for example from section 19), sends it with a
-noun phrase to SAM 3.1 through the `muse_qc/vision_sam.py` request
-code, keeps boxes at or above confidence 0.5, merges overlapping
-duplicates (IoU above 0.5 keeps the higher confidence), prints one
-line per kept box with its confidence, then `levers: N` and
-`verdict: good|bad` (good means exactly 3 levers), and saves an
-annotated copy (boxes plus count drawn on it) to
-`recordings/count_<YYYYmmdd_HHMMSS>.png`, checking the write
-result. With `--image`, `muse_qc/vision_sam.py` skips the table
-mapping and prints `table mapping: skipped (image file)`. The API
-key comes only from the existing `.env` loading code and is never
-printed. From the project root:
+never CI and never an agent. `muse_qc/count_clips.py` works in two
+steps on a saved arm camera image (for example from section 19).
+First it sends the full image with `PART_PROMPT` ("small part") to
+SAM 3.1 through the `muse_qc/vision_sam.py` request code, ignores
+boxes in the gripper zone (box center y at or above
+`GRIPPER_ZONE_Y` = 380 px; the gripper is fixed in the arm camera
+image) and picks the remaining box with the highest confidence at
+or above `MIN_CONFIDENCE` (0.5). Then it crops that box plus
+`CROP_MARGIN_PX` = 15 on each side (clamped to the image), enlarges
+the crop `CROP_SCALE` = 8 times with `cv2.INTER_CUBIC`, and sends
+the crop with `LEVER_PROMPT` ("orange bar") to SAM 3.1 again. Lever
+boxes at or above confidence 0.5 are kept, overlapping duplicates
+are merged (IoU above 0.5 keeps the higher confidence). The program
+prints `part: box=(...) confidence=...`, one line per kept lever
+box with its confidence, then `levers: N` and
+`verdict: good|bad` (good means exactly `EXPECTED_LEVERS` = 3
+levers), and saves two annotated copies under one timestamp:
+`recordings/count_<YYYYmmdd_HHMMSS>.png` (full image with the part
+box and `levers: N`) and
+`recordings/count_<YYYYmmdd_HHMMSS>_crop.png` (enlarged crop with
+the lever boxes), checking both write results. With `--image`,
+`muse_qc/vision_sam.py` skips the table mapping and prints
+`table mapping: skipped (image file)`. The API key comes only from
+the existing `.env` loading code and is never printed. From the
+project root:
 
 ```bash
 uv run python -m muse_qc.count_clips --image recordings/armcam_test.png
-uv run python -m muse_qc.count_clips --image recordings/armcam_test.png --prompt "orange lever"
+uv run python -m muse_qc.count_clips --image recordings/armcam_test.png --prompt "orange bar"
 ```
 
-Exit codes: 0 done, 1 image not readable (or the annotated copy
-cannot be written), 2 API error (missing key or failed request).
+`--prompt` overrides only the lever prompt; the part prompt is
+always `PART_PROMPT`. All values above are constants at the top of
+`muse_qc/count_clips.py`.
+
+Exit codes: 0 done, 1 image not readable (or the crop or an
+annotated copy cannot be written), 2 API error (missing key or
+failed request), 3 no part found (`part: not found`).
 
 Images in `recordings/` are never committed (`recordings/` is
-git-ignored). The recorded output will be added after the first
+git-ignored). The recorded output will be added after the next
 human run.
 
 ## Safety notes
