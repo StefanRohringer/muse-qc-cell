@@ -516,8 +516,18 @@ tip: x=+256.6 y=-15.8 z=+228.6 mm (offset 30 mm along end_link z)
 That run showed the wrong tip direction (30 mm straight up while
 the gripper points forward) and led to this fix: the tip is now
 projected along the tool axis from link6 to end_link instead of
-along the end_link z axis. Example output of the fixed version
-will be added after the next human run.
+along the end_link z axis. Recorded output of the fixed version (recorded output is never edited):
+
+```text
+joint1: -3.33 deg
+joint2: +1.58 deg
+joint3: -1.45 deg
+joint4: +2.72 deg
+joint5: +0.91 deg
+joint6: -3.97 deg
+end_link: x=+256.6 y=-17.9 z=+198.6 mm roll=-3.97 pitch=-0.32 yaw=-4.24 deg
+tip: x=+286.5 y=-20.1 z=+198.8 mm (offset 30 mm along tool axis)
+```
 
 ## Safety notes
 
