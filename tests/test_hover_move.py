@@ -97,8 +97,10 @@ def _fake_solve_ok(table_xy, hover_mm, seed):
         "ok": True,
         "joints_deg": tuple(GOAL_DEG),
         "tip_base_mm": (300.0, 0.0, float(hover_mm)),
+        "tip_table_mm": (300.0, 0.0, float(hover_mm)),
         "error_mm": 0.01,
         "tilt_deg": 0.0,
+        "iterations": 3,
     }
 
 
@@ -156,6 +158,7 @@ def test_dry_run_never_enables_or_sends(monkeypatch):
     assert code == 0
     assert any(line.startswith("table target:") for line in lines)
     assert any(line.startswith("ik joints deg:") for line in lines)
+    assert any(line.startswith("corrected tip table mm:") for line in lines)
     assert not _touched(arm.groups["arm"])
 
 

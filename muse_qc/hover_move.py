@@ -47,6 +47,9 @@ from muse_qc.target_pose import (
 )
 
 MIN_HOVER_MM = 80.0
+# NOTE: DEVLOG 2026-10-28 keeps a stricter rule until the human has
+# verified the arm_calibration correction on the real arm: use no
+# target below 100 mm hover. The 80 mm floor above stays regardless.
 
 SEG_HOVER = "hover"  # ramp from the rest reading to the hover joints
 SEG_HOLD = "hold"  # hold the hover joints (--hold-s, default 2 s)
@@ -130,6 +133,11 @@ def make_hover_return_plan_fn(
         out(f"fk tip table mm: x={table_tip[0]:+.2f} "
             f"y={table_tip[1]:+.2f} z={tip[2]:+.2f}")
         out(f"error to target: {solved['error_mm']:.2f} mm")
+        corr = solved["tip_table_mm"]
+        corr_table = base_to_table_mm(corr[0], corr[1])
+        out(f"corrected tip table mm: x={corr_table[0]:+.2f} "
+            f"y={corr_table[1]:+.2f} z={corr[2]:+.2f} "
+            f"(iterations {solved['iterations']})")
         return build_hover_return_plan(start, joints, joint_limits, hold_cycles)
 
     return plan_fn

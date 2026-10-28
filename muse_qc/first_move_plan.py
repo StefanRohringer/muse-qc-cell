@@ -16,7 +16,7 @@ import re
 import time
 from pathlib import Path
 
-from muse_qc import fk_check, safety
+from muse_qc import arm_calibration, safety
 from muse_qc.cycle_timing import summarize_ms
 from muse_qc.sdk_config import _scalar
 
@@ -209,10 +209,9 @@ def read_current_deg(group: object) -> list[float]:
 
 
 def real_tip_m(joints_deg: object) -> tuple[float, float, float]:
-    """Tool tip in metres for six joint angles in degrees via fk_check."""
-    pose = fk_check.pose_mm([math.radians(float(v)) for v in joints_deg])
-    tip = fk_check.tip_mm(pose)
-    return (tip["x_mm"] / 1000.0, tip["y_mm"] / 1000.0, tip["z_mm"] / 1000.0)
+    """Corrected tool tip in metres for six joint angles in degrees."""
+    tip = arm_calibration.tip_table_mm([float(v) for v in joints_deg])
+    return (tip[0] / 1000.0, tip[1] / 1000.0, tip[2] / 1000.0)
 
 
 def validate_and_print(

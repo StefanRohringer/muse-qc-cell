@@ -1,13 +1,9 @@
 """Target pose dry run for the reBot B601-DM arm. The human runs it by hand.
 
 Given a part position in table millimetres (table frame of
-muse_qc.table_coords: origin at the centre of marker 0, +x towards
-marker 1, +y towards marker 2 away from the arm), this module
-computes the arm pose with the gripper tip straight above the part
-at a hover height, plans the joint ramp from the current joints to
-that pose, and checks every waypoint with safety.check_target.
-Dry run only: nothing is enabled, nothing is sent, and this
-module offers no motion flag at all.
+muse_qc.table_coords), this module solves the hover joints with the
+corrected tip above the part, plans the joint ramp, and checks every
+waypoint with safety.check_target. Dry run only, no motion flag.
 """
 
 from __future__ import annotations
@@ -15,7 +11,7 @@ from __future__ import annotations
 import argparse
 import math
 
-from muse_qc import fk_check, safety
+from muse_qc import arm_calibration, fk_check, safety
 from muse_qc.first_move_plan import (
     HOLD_CYCLES,
     LOOP_RATE_HZ,
@@ -24,16 +20,13 @@ from muse_qc.first_move_plan import (
     real_tip_m,
 )
 
-# Joint 1 axis in table mm, from human tape measurements (2026-10-28,
-# arm power supply off): 495 mm to marker 0, 485 mm to marker 1,
-# 705 mm to marker 2; least-squares fit with TABLE_MARKER_LAYOUT_MM
-# gives (495.9, 22.7) mm with residuals of at most 1.6 mm.
+# Joint 1 axis in table mm, from human tape measurements (2026-10-28):
+# least-squares fit gives (495.9, 22.7) mm, residuals at most 1.6 mm.
 ARM_BASE_IN_TABLE_MM = (495.9, 22.7)
 
 HOVER_MM = 100.0
 TIP_TOL_MM = 2.0
 AXIS_TOL_DEG = 2.0
-# Rotation with the tool axis (+x of end_link at home) pointing down.
 TOOL_DOWN_ROT = ((0.0, 0.0, 1.0), (0.0, 1.0, 0.0), (-1.0, 0.0, 0.0))
 READING_AGE_MS = 1000.0 / LOOP_RATE_HZ
 SEG_MOVE = "move"
@@ -67,19 +60,14 @@ def tool_axis(pose: dict) -> tuple[float, float, float]:
     return (axis[0] / norm, axis[1] / norm, axis[2] / norm)
 
 
-def solve_hover(
+def _solve_nominal(
     table_xy: tuple[float, float],
     hover_mm: float,
     seed_joints_deg: object,
 ) -> dict:
-    """Solve the hover joints for a table target. Pure SDK math, no bus.
+    """Nominal (uncorrected) hover joints via the SDK IK. No bus.
 
-    Places end_link so the tip (TIP_OFFSET_MM further along the tool
-    axis, pointing straight down) sits at the target, calls the SDK
-    IK (compute_ik) with the seed joints, and verifies with FK that
-    the tip is within TIP_TOL_MM of the target. The local solver
-    starts from the seed, so the solution stays near the seed,
-    including joint 6 (gripper cable).
+    Used by arm_calibration.solve_corrected for each iteration.
     """
     import numpy as np
 
@@ -101,9 +89,7 @@ def solve_hover(
         tip_m[1],
         (hover + fk_check.TIP_OFFSET_MM) / 1000.0,
     )
-    # Turn the tool-down orientation about the vertical axis by the
-    # joint 1 direction, so side targets need no wrist twist and
-    # joint 6 stays near the seed (gripper cable).
+    # Turn tool-down about z by the joint 1 direction (joint 6 cable).
     yaw = math.atan2(base_y, base_x)
     cos_yaw, sin_yaw = math.cos(yaw), math.sin(yaw)
     turn = (
@@ -147,6 +133,44 @@ def solve_hover(
     }
 
 
+def solve_hover(
+    table_xy: tuple[float, float],
+    hover_mm: float,
+    seed_joints_deg: object,
+) -> dict:
+    """Hover joints so the corrected tip lands on the target.
+
+    Iterates the nominal IK (arm_calibration.solve_corrected).
+    tip_base_mm stays the nominal FK tip; tip_table_mm is the
+    corrected tip (base x/y, table z), plus the iteration count.
+    """
+    try:
+        table = (float(table_xy[0]), float(table_xy[1]))
+    except (TypeError, ValueError, IndexError):
+        return {"ok": False, "reason": "unreachable: bad table target"}
+    base_x, base_y = table_to_base_mm(table[0], table[1])
+    solved = arm_calibration.solve_corrected(
+        (base_x, base_y), hover_mm, seed_joints_deg)
+    if not solved.get("ok"):
+        return {"ok": False, "reason": str(solved.get("reason"))}
+    joints = solved["joints_deg"]
+    pose = fk_check.pose_mm([math.radians(v) for v in joints])
+    tip = fk_check.tip_mm(pose)
+    axis = tool_axis(pose)
+    tilt_deg = math.degrees(math.acos(max(-1.0, min(1.0, -axis[2]))))
+    if tilt_deg > AXIS_TOL_DEG:
+        return {"ok": False, "reason": "unreachable: tool axis not down"}
+    return {
+        "ok": True,
+        "joints_deg": joints,
+        "tip_base_mm": (tip["x_mm"], tip["y_mm"], tip["z_mm"]),
+        "tip_table_mm": solved["tip_table_mm"],
+        "error_mm": solved["error_mm"],
+        "tilt_deg": tilt_deg,
+        "iterations": solved["iterations"],
+    }
+
+
 def build_hover_plan(
     start_deg: object, goal_deg: object
 ) -> list[tuple[str, tuple[float, ...]]]:
@@ -161,19 +185,7 @@ def check_plan(
     plan: list[tuple[str, tuple[float, ...]]],
     start_deg: object,
 ) -> tuple[bool, int, dict | None]:
-    """Check every waypoint with safety.check_target. Pure, moves nothing.
-
-    Mirrors first_move_plan.validate_and_print (same Target and
-    CurrentState shape, same check): each waypoint is checked
-    against the previous commanded pose, so step limits and the
-    LIMIT_RECOVERY_DEG rule see the real motion. That helper
-    cannot be reused itself: it reads live hardware per cycle
-    and raises on 0.0, which the dry run has none of. The chain
-    is seeded with the start joints when they form a valid
-    current state (six finite nonzero angles; 0.0 means missing
-    feedback); otherwise the first waypoint is validated as a
-    pose in itself.
-    """
+    """Check every waypoint with safety.check_target (chained). Pure."""
     seed = tuple(float(value) for value in start_deg)
     if len(seed) != 6 or not all(math.isfinite(v) and v != 0.0 for v in seed):
         seed = None
@@ -240,6 +252,11 @@ def run(
         out(f"fk tip table mm: x={table_tip[0]:+.2f} "
             f"y={table_tip[1]:+.2f} z={tip[2]:+.2f}")
         out(f"error to target: {solved['error_mm']:.2f} mm")
+        corr = solved["tip_table_mm"]
+        corr_table = base_to_table_mm(corr[0], corr[1])
+        out(f"corrected tip table mm: x={corr_table[0]:+.2f} "
+            f"y={corr_table[1]:+.2f} z={corr[2]:+.2f} "
+            f"(iterations {solved['iterations']})")
         plan = build_hover_plan(start_deg, joints)
         out(f"waypoints: {len(plan)}")
         ok, bad_index, result = check_plan(plan, start_deg)
