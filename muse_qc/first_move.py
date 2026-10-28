@@ -221,7 +221,7 @@ def execute(
             if stream.refusal is not None:
                 out(f"REFUSED {json.dumps(stream.refusal)}")
                 return 1
-            out("motion finished, arm holds home")
+            out("motion finished, arm holds the settle pose")
             return 0
         finally:
             safety.set_j6_ref(old_ref)

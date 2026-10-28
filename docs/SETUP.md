@@ -552,8 +552,38 @@ be 0.0 on missing feedback), then stops the loop and
 disconnects (motors unpowered). The FK model is loaded once.
 After the home hold the plan appends a settle segment: it ramps
 to the rest reading clamped into its URDF limits and holds it
-for 1 s, so the arm rests on its support before the motors are
-disabled.
+for 1 s. The arm is brought back close to its rest reading
+(joints outside their URDF limits stay at the limit), so it
+barely drops when the motors are disabled.
+
+Recorded settle run (2026-10-28, arm power supply on, vlim 10 %):
+
+```text
+rest joints deg: ['-2.26', '+0.12', '-0.08', '+2.31', '+0.86', '-0.08']
+plan: 298 waypoints at 50 Hz
+wp 001/298 [home] joints=[-2.17 +0.12 -0.07 +2.21 +0.83 -0.07] tip=[+289.5 -14.0 +181.7] ok
+...
+wp 024/298 [home] joints=[+0.00 +0.00 +0.00 +0.00 +0.00 +0.00] tip=[+290.3 +0.0 +191.7] ok
+...
+wp 074/298 [out] joints=[+5.00 +0.00 +0.00 +0.00 +0.00 +0.00] tip=[+289.2 +25.3 +191.7] ok
+...
+wp 124/298 [back] joints=[+0.00 +0.00 +0.00 +0.00 +0.00 +0.00] tip=[+290.3 +0.0 +191.7] ok
+wp 125/298 [hold] joints=[+0.00 +0.00 +0.00 +0.00 +0.00 +0.00] tip=[+290.3 +0.0 +191.7] ok
+...
+wp 224/298 [hold] joints=[+0.00 +0.00 +0.00 +0.00 +0.00 +0.00] tip=[+290.3 +0.0 +191.7] ok
+wp 225/298 [settle] joints=[-0.09 +0.00 -0.00 +0.10 +0.04 -0.00] tip=[+290.3 -0.6 +191.2] ok
+...
+wp 248/298 [settle] joints=[-2.26 +0.00 -0.08 +2.31 +0.86 -0.08] tip=[+289.5 -14.7 +180.7] ok
+...
+wp 298/298 [settle] joints=[-2.26 +0.00 -0.08 +2.31 +0.86 -0.08] tip=[+289.5 -14.7 +180.7] ok
+SDK vlim: ['5.0', '5.0', '5.0', '3.0', '3.0', '3.0'] -> 10 %: ['0.50', '0.50', '0.50', '0.30', '0.30', '0.30']
+Type yes to move the arm: yes
+motion finished, arm holds home
+stopping: the motors will be disabled now
+```
+
+Note: the end message was changed to "arm holds the settle pose"
+after this run, because the plan ends in the settle pose.
 `RebotArmEndPose`, zeroing and the home routine are never used.
 
 Safety steps for the human:
