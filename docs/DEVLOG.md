@@ -438,3 +438,62 @@ motion finished, arm holds the settle pose
 stopping: the motors will be disabled now
 ```
 Result: shoulder and upper arm match the model (joint 3 within 2 mm). The error starts between joint 3 and joint 4: in this pose the forearm points about 5 deg lower than joint 3 reports, about 22 mm at joint 4; everything after joint 4 matches again (263 - 190 = 73 mm vs 75 mm measured). At the rest pose the forearm matches within 1 deg. Open: a joint 3 ratio error at large angles or the forearm giving way under its own weight; a pose with joint 3 strongly bent and little forearm load will tell them apart. Two small corrections are known: base about 5 mm lower, gripper 190 mm. No correction is applied in code yet. Rule until then: no target below 100 mm FK hover; the final approach to a part will descend slowly until the gripper touch sensors report contact.
+Human verified the arm_calibration tip correction (2026-10-28 evening, arm power supply on, hand on the power supply switch, nothing on the table): two hover moves at 100 mm with --hold-s 15, finger tips measured with a ruler from the table top (about +-5 mm). Before the correction the same targets gave 60 to 75 mm and 80 mm.
+- Human ran python -m muse_qc.hover_move --table-mm 495.9 322.7 --hold-s 15 --execute: OK. Ruler at the finger tips: 100 mm (target 100 mm).
+```text
+rest joints deg: ['-2.74', '+1.08', '-1.34', '+2.09', '+1.48', '-0.47']
+table target: x=+495.90 y=+322.70 mm
+base target: x=+300.00 y=-0.00 mm
+hover: +100.0 mm
+ik joints deg: -0.00 -103.55 -97.02 +83.47 -0.00 +0.01
+fk tip base mm: x=+326.52 y=+0.00 z=+131.20
+fk tip table mm: x=+495.90 y=+349.22 z=+131.20
+error to target: 0.21 mm
+corrected tip table mm: x=+495.90 y=+322.73 z=+99.79 (iterations 3)
+plan: 5764 waypoints at 100 Hz
+cycle work: mean 2.04 ms, p95 2.15 ms, max 5.71 ms over 5764 cycles
+cycle period: mean 10.08 ms, p95 10.15 ms, max 12.93 ms (target 10.00 ms)
+hold commanded deg: -0.00 -103.55 -97.02 +83.47 -0.00 +0.01
+hold measured deg: -0.01 -103.57 -97.03 +83.53 -0.01 -0.01
+hold measured tip mm: x=+299.8 y=-0.0 z=+99.8
+motion finished, arm holds the settle pose
+stopping: the motors will be disabled now
+```
+- Human ran python -m muse_qc.hover_move --table-mm 495.9 242.7 --hold-s 15 --execute: OK. Ruler at the finger tips: 100 mm (target 100 mm).
+```text
+rest joints deg: ['-2.74', '+1.02', '-1.41', '+2.07', '+1.48', '-0.47']
+table target: x=+495.90 y=+242.70 mm
+base target: x=+220.00 y=-0.00 mm
+hover: +100.0 mm
+ik joints deg: -0.00 -84.70 -75.69 +80.99 -0.00 +0.01
+fk tip base mm: x=+241.19 y=+0.00 z=+126.69
+fk tip table mm: x=+495.90 y=+263.89 z=+126.69
+error to target: 0.21 mm
+corrected tip table mm: x=+495.90 y=+242.61 z=+99.81 (iterations 3)
+plan: 5010 waypoints at 100 Hz
+cycle work: mean 2.02 ms, p95 2.13 ms, max 7.56 ms over 5010 cycles
+cycle period: mean 10.09 ms, p95 10.16 ms, max 13.20 ms (target 10.00 ms)
+hold commanded deg: -0.00 -84.70 -75.69 +80.99 -0.00 +0.01
+hold measured deg: -0.01 -84.71 -75.70 +80.97 -0.01 -0.01
+hold measured tip mm: x=+220.1 y=-0.0 z=+99.8
+motion finished, arm holds the settle pose
+stopping: the motors will be disabled now
+```
+- Agent ran python -m muse_qc.arm_calibration (offline fit report, no hardware):
+```text
+A1: measured=75.0 ratio z=71.7 r=-3.3 load z=73.4 r=-1.6
+A2: measured=263.0 ratio z=261.1 r=-1.9 load z=262.9 r=-0.1
+A3: measured=365.0 ratio z=366.8 r=+1.8 load z=368.8 r=+3.8
+A4: measured=395.0 ratio z=397.0 r=+2.0 load z=397.0 r=+2.0
+B: measured=65.0 ratio z=71.7 r=+6.7 load z=73.4 r=+8.4
+C1: measured=60.0 ratio z=71.7 r=+11.7 load z=73.4 r=+13.4
+C2: measured=260.0 ratio z=261.1 r=+1.1 load z=262.9 r=+2.9
+D: measured=130.0 ratio z=119.0 r=-11.0 load z=123.6 r=-6.4
+E: measured=80.0 ratio z=75.4 r=-4.6 load z=73.5 r=-6.5
+F1: measured=135.0 ratio z=135.2 r=+0.2 load z=135.2 r=+0.2
+F2: measured=135.0 ratio z=135.2 r=+0.2 load z=135.2 r=+0.2
+F3: measured=190.0 ratio z=193.3 r=+3.3 load z=176.4 r=-13.6
+ratio: k=-0.0556 rms=5.45 mm
+load: g=4.1395 deg rms=6.76 mm
+```
+Result: with the correction both 100 mm hovers land at 100 mm (within the ruler accuracy); the nominal model would have put the tip at 131 and 127 mm for these joints. The nominal 150 mm hover at 495.9 322.7 is outside the tool-down workspace once corrected (joint 4 limit), which matches the 130 mm measured there before. Verified only at these two points; heights below 100 mm are not verified yet, and the final approach to a part will still descend slowly until the gripper touch sensors report contact.

@@ -47,9 +47,9 @@ from muse_qc.target_pose import (
 )
 
 MIN_HOVER_MM = 80.0
-# NOTE: DEVLOG 2026-10-28 keeps a stricter rule until the human has
-# verified the arm_calibration correction on the real arm: use no
-# target below 100 mm hover. The 80 mm floor above stays regardless.
+# NOTE: the arm_calibration correction was verified by the human on
+# 2026-10-28 at two 100 mm hovers (docs/DEVLOG.md); heights below
+# 100 mm are not verified yet. The 80 mm floor above stays.
 
 SEG_HOVER = "hover"  # ramp from the rest reading to the hover joints
 SEG_HOLD = "hold"  # hold the hover joints (--hold-s, default 2 s)
