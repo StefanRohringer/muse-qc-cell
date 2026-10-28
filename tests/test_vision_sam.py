@@ -10,6 +10,7 @@ import cv2
 import numpy
 
 import muse_qc.vision_sam as vision_sam
+from muse_qc.table_coords import pixel_to_table_mm, table_homography
 from muse_qc.vision_sam import image_to_data_url, parse_output_text, run_detection
 
 SECRET = "sk-test-secret-never-print-sam456"
@@ -263,6 +264,112 @@ def test_main_uses_saved_image(monkeypatch, tmp_path, capsys):
     out = capsys.readouterr().out
     assert "boxes: 1" in out
     assert len(sorted((tmp_path / "recordings").glob("sam_*.png"))) == 1
+
+
+def _fake_markers():
+    """Return marker centres at the corners of the fake frame."""
+    return {
+        0: {"center": (10.0, 10.0)},
+        1: {"center": (150.0, 10.0)},
+        2: {"center": (10.0, 110.0)},
+        3: {"center": (150.0, 110.0)},
+    }
+
+
+def _zero_distortion_calibration():
+    """Return a calibration record with zero distortion (plain lists)."""
+    return {
+        "camera_matrix": [
+            [1000.0, 0.0, 80.0],
+            [0.0, 1000.0, 60.0],
+            [0.0, 0.0, 1.0],
+        ],
+        "dist_coeffs": [[0.0, 0.0, 0.0, 0.0, 0.0]],
+        "image_size": [160, 120],
+        "rms_px": 0.1,
+        "images_used": ["calib_test_00.png"],
+        "created": "2026-10-28",
+    }
+
+
+def _expected_table_mm(markers, calibration):
+    """Map the ONE_BOX centre through the real table mapping."""
+    homography = table_homography(markers, calibration)
+    x_mm, y_mm = pixel_to_table_mm(
+        homography, (200.0, 300.0), calibration
+    )
+    return f"table_mm=({x_mm:.1f}, {y_mm:.1f})"
+
+
+def test_table_mm_calibrated(tmp_path, capsys):
+    markers = _fake_markers()
+    calibration = _zero_distortion_calibration()
+    client = _FakeClient(output_text=ONE_BOX)
+    code = run_detection(
+        SECRET, "small part", _frame(), lambda key: client,
+        recordings_dir=tmp_path,
+        load_calibration=lambda: calibration,
+        detect_markers=lambda frame: markers,
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "table mapping: calibrated" in out
+    assert out.index("table mapping:") < out.index("id 1")
+    assert _expected_table_mm(markers, calibration) in out
+    assert "boxes: 1" in out
+    assert len(sorted(tmp_path.glob("sam_*.png"))) == 1
+
+
+def test_table_mm_raw_pixels_without_calibration(tmp_path, capsys):
+    markers = _fake_markers()
+    client = _FakeClient(output_text=ONE_BOX)
+    code = run_detection(
+        SECRET, "small part", _frame(), lambda key: client,
+        recordings_dir=tmp_path,
+        load_calibration=lambda: None,
+        detect_markers=lambda frame: markers,
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "table mapping: raw pixels" in out
+    assert _expected_table_mm(markers, None) in out
+    assert len(sorted(tmp_path.glob("sam_*.png"))) == 1
+
+
+def test_table_mm_unavailable_when_markers_missing(tmp_path, capsys):
+    client = _FakeClient(output_text=ONE_BOX)
+    code = run_detection(
+        SECRET, "small part", _frame(), lambda key: client,
+        recordings_dir=tmp_path,
+        load_calibration=lambda: None,
+        detect_markers=lambda frame: {},
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "table mapping: unavailable" in out
+    assert "table_mm=" not in out
+    assert "id 1" in out
+    assert "boxes: 1" in out
+    assert len(sorted(tmp_path.glob("sam_*.png"))) == 1
+
+
+def test_table_mm_unavailable_when_detector_raises(tmp_path, capsys):
+    def _raise(frame):
+        raise RuntimeError("missing table markers: [0, 1, 2, 3]")
+
+    client = _FakeClient(output_text=ONE_BOX)
+    code = run_detection(
+        SECRET, "small part", _frame(), lambda key: client,
+        recordings_dir=tmp_path,
+        load_calibration=lambda: None,
+        detect_markers=_raise,
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "table mapping: unavailable" in out
+    assert "missing table markers" in out
+    assert "table_mm=" not in out
+    assert len(sorted(tmp_path.glob("sam_*.png"))) == 1
 
 
 def test_never_imports_arm_safety_or_sdk_code():

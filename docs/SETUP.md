@@ -441,13 +441,17 @@ onto a copy of the image. The key is read with
 `muse_qc/model_check.py` and never printed. From the project root:
 
 ```bash
-uv run python -m muse_qc.vision_sam "grey connector"
-uv run python -m muse_qc.vision_sam "grey connector" --image path.png
+uv run python -m muse_qc.vision_sam "small part"
+uv run python -m muse_qc.vision_sam "small part" --image path.png
 ```
 
 Result format: one line per box with id, box corners, center in
 pixels and confidence, then the count, then the path of the annotated
-copy at `recordings/sam_<YYYYmmdd_HHMMSS>.png`.
+copy at `recordings/sam_<YYYYmmdd_HHMMSS>.png`. Before the box lines,
+one `table mapping:` line reports `calibrated`, `raw pixels` (no
+calibration file) or `unavailable (<reason>)`, and each box line ends
+with `table_mm=(x, y)` in millimetres (the box centre mapped onto the
+table frame on the same frame sent to SAM) when the mapping works.
 
 Real human run on a saved table image with two connectors and one
 white cube (recorded output, never edited); the technical names did
@@ -464,6 +468,9 @@ An empty answer means zero matches (`boxes: 0`), not an error. HTTP
 400 prints `prompt rejected` with the API message, 401/403 prints
 `key rejected`, network errors print a short reason; none of these
 prints a stack trace or the key.
+
+Note: the `table_mm` output is new; the recorded output above predates
+it and will be replaced after the next human run.
 
 ## Safety notes
 

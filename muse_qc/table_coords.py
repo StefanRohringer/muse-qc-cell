@@ -17,6 +17,7 @@ Run by hand only (it opens the real table camera):
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -113,6 +114,38 @@ def table_mm_to_pixel(
     if calibration is not None:
         (undistorted,) = distort_points([undistorted], calibration)
     return undistorted
+
+
+def boxes_to_table_mm(
+    boxes: list[dict],
+    frame: numpy.ndarray,
+    load_calibration: Callable[[], dict | None] = load_table_calibration,
+    detect_markers: Callable[[numpy.ndarray], dict] = detect_table_markers,
+) -> tuple[str, list[tuple[float, float] | None]]:
+    """Map each box centre to table millimetres on the same frame.
+
+    Loads the calibration (None means raw pixels), detects the table
+    markers on frame and maps every box["center"] with pixel_to_table_mm.
+    Returns the status word for the "table mapping:" line ("calibrated",
+    "raw pixels", or "unavailable (<reason>)") plus one (x_mm, y_mm)
+    point per box (None when the mapping is unavailable).
+    """
+    try:
+        calibration = load_calibration()
+    except (RuntimeError, OSError, ValueError, KeyError) as exc:
+        return f"unavailable ({exc})", [None] * len(boxes)
+    try:
+        markers = detect_markers(frame)
+        homography = table_homography(markers, calibration)
+        points = [
+            pixel_to_table_mm(homography, box["center"], calibration)
+            for box in boxes
+        ]
+    except (RuntimeError, OSError, ValueError, KeyError) as exc:
+        return f"unavailable ({exc})", [None] * len(boxes)
+    if calibration is None:
+        return "raw pixels", points
+    return "calibrated", points
 
 
 def marker_sides_mm(

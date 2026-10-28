@@ -26,6 +26,11 @@ import cv2
 import numpy
 
 from muse_qc.camera_top import open_table_camera
+from muse_qc.detect_markers import detect_table_markers
+from muse_qc.table_coords import (
+    boxes_to_table_mm,
+    load_table_calibration,
+)
 from muse_qc.model_check import (
     BASE_URL,
     KEY_NAME,
@@ -184,10 +189,13 @@ def run_detection(
     frame: numpy.ndarray,
     make_client: Callable[[str], object],
     recordings_dir: str | Path = "recordings",
+    load_calibration: Callable[[], dict | None] = load_table_calibration,
+    detect_markers: Callable[[numpy.ndarray], dict] = detect_table_markers,
 ) -> int:
     """Run one detection on frame; return the exit code.
 
-    Prints one line per box (id, box, center px, confidence), the
+    Prints the table mapping status, one line per box (id, box,
+    center px, confidence, table_mm when the mapping works), the
     count and the annotated image path. Returns 0 on success, 2 when
     the key is missing, 1 otherwise. Errors print a short message
     without a stack trace and never include the key.
@@ -213,18 +221,28 @@ def run_detection(
         print(f"request failed: {exc}")
         return 1
     boxes = parse_output_text(text)
-    for box in boxes:
+    status, table_points = boxes_to_table_mm(
+        boxes, frame, load_calibration, detect_markers
+    )
+    print(f"table mapping: {status}")
+    for box, point_mm in zip(boxes, table_points):
         confidence = (
             f"{box['confidence']:.2f}"
             if box["confidence"] is not None
             else "n/a"
         )
         center_x, center_y = box["center"]
+        table_suffix = (
+            f" table_mm=({point_mm[0]:.1f}, {point_mm[1]:.1f})"
+            if point_mm is not None
+            else ""
+        )
         print(
             f"id {box['id']}"
             f" box=({box['x1']}, {box['y1']}, {box['x2']}, {box['y2']})"
             f" center=({center_x:.1f}, {center_y:.1f})"
             f" confidence={confidence}"
+            f"{table_suffix}"
         )
     print(f"boxes: {len(boxes)}")
     try:
