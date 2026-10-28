@@ -19,9 +19,9 @@ from pathlib import Path
 from muse_qc import fk_check, safety
 from muse_qc.cycle_timing import summarize_ms
 
-LOOP_RATE_HZ = 50.0
+LOOP_RATE_HZ = 100.0
 JOINT_SPEED_DEG_S = 5.0
-STEP_DEG = JOINT_SPEED_DEG_S / LOOP_RATE_HZ  # 0.1 deg per command.
+STEP_DEG = JOINT_SPEED_DEG_S / LOOP_RATE_HZ  # 0.05 deg per command.
 J1_TEST_DEG = 5.0
 HOLD_S = 2.0
 HOLD_CYCLES = int(HOLD_S * LOOP_RATE_HZ)

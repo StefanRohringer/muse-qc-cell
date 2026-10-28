@@ -542,7 +542,7 @@ sends anything. With `--execute` the same validation runs first,
 then the human types `yes`; only then the arm ramps from the
 current reading to home (all joints 0.0 deg), moves joint1 to
 +5.0 deg and back, and holds for 2 s. The ramp is linear in joint
-space at 5.0 deg/s and 50 Hz (0.1 deg per step, loop rate set
+space at 5.0 deg/s and 100 Hz (0.05 deg per step, loop rate set
 explicitly because the SDK default is 500 Hz), the motor speed
 caps run at 10 % of the SDK config values on every send, and
 every control cycle re-checks the next step against a fresh
@@ -561,7 +561,7 @@ per-waypoint work (joint read, tip FK and safety check), and
 callback starts with the loop-rate target). Both are pure measurements
 and change neither what is sent nor when.
 
-Recorded settle run (2026-10-28, arm power supply on, vlim 10 %):
+Recorded settle run (2026-10-28, arm power supply on, vlim 10 %, recorded at 50 Hz before the switch to 100 Hz):
 
 ```text
 rest joints deg: ['-2.26', '+0.12', '-0.08', '+2.31', '+0.86', '-0.08']

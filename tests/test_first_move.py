@@ -9,6 +9,7 @@ import pytest
 from muse_qc import first_move, safety
 from muse_qc.first_move_plan import (
     SEG_SETTLE,
+    SETTLE_HOLD_CYCLES,
     STEP_DEG,
     build_plan,
     clamp_to_limits,
@@ -159,7 +160,8 @@ def test_loop_runs_at_planned_rate_with_caps_on_every_send():
                                 vlims=VLIMS, joint_limits=TEST_LIMITS,
                                 out=lambda line: None)
     assert result == 0
-    assert arm.loop_rate == LOOP_RATE_HZ == 50.0
+    assert LOOP_RATE_HZ == 100.0
+    assert arm.loop_rate == LOOP_RATE_HZ
     slow = [v * 0.1 for v in VLIMS]
     group = arm.groups["arm"]
     assert ("mode", slow) in group.calls
@@ -232,7 +234,7 @@ def test_plan_ends_with_clamped_settle_target():
     plan = build_plan(REST_DEG, TEST_LIMITS)
     assert plan[-1] == (SEG_SETTLE, CLAMPED_REST)
     settle_points = [point for segment, point in plan if segment == SEG_SETTLE]
-    assert len(settle_points) > 50  # ramp from home plus the 1 s hold
+    assert len(settle_points) > SETTLE_HOLD_CYCLES  # ramp plus the 1 s hold
     previous = [0.0] * 6  # the segment before settle holds home
     for point in settle_points:
         peak = max(abs(w - p) for w, p in zip(point, previous))
@@ -253,8 +255,10 @@ def test_execute_sends_settle_after_home_hold():
     last_home = max(i for i, joints in enumerate(sends_deg)
                     if all(abs(v) < 1e-9 for v in joints))
     assert sends_deg[-1] == pytest.approx(list(CLAMPED_REST))
-    assert sends_deg[-50:] == [pytest.approx(list(CLAMPED_REST))] * 50
-    assert last_home < len(sends_deg) - 50
+    assert sends_deg[-SETTLE_HOLD_CYCLES:] == (
+        [pytest.approx(list(CLAMPED_REST))] * SETTLE_HOLD_CYCLES
+    )
+    assert last_home < len(sends_deg) - SETTLE_HOLD_CYCLES
 
 
 def test_refusal_stops_ramp_and_holds_last_reading():
@@ -335,6 +339,8 @@ def test_dry_run_prints_work_summary():
 def test_execute_prints_work_and_period_summaries():
     import re
 
+    from muse_qc.first_move_plan import LOOP_RATE_HZ
+
     arm = FakeArm(REST_DEG)
     lines = []
     result = first_move.execute(arm, input_fn=lambda prompt: "yes",
@@ -347,8 +353,9 @@ def test_execute_prints_work_and_period_summaries():
         r"max \d+\.\d{2} ms over \d+ cycles",
         next(line for line in lines if line.startswith("cycle work:")),
     )
+    target_ms = 1000.0 / LOOP_RATE_HZ
     assert re.fullmatch(
         r"cycle period: mean \d+\.\d{2} ms, p95 \d+\.\d{2} ms, "
-        r"max \d+\.\d{2} ms \(target 20\.00 ms\)",
+        rf"max \d+\.\d{{2}} ms \(target {target_ms:.2f} ms\)",
         next(line for line in lines if line.startswith("cycle period:")),
     )
