@@ -860,11 +860,29 @@ uv run python -m muse_qc.hover_move --table-mm 495.9 322.7
 uv run python -m muse_qc.hover_move --table-mm 495.9 322.7 --execute
 ```
 
-Recorded output:
+Recorded output (--execute, 2026-10-28, arm power supply on, hand on the power supply switch, nothing on the table; per-waypoint lines cut, recorded output is never edited):
 
 ```text
-(to be filled in by the human)
+rest joints deg: ['-1.89', '+0.69', '-0.23', '+2.55', '+1.30', '-0.08']
+table target: x=+495.90 y=+322.70 mm
+base target: x=+300.00 y=-0.00 mm
+hover: +100.0 mm
+start joints deg: -1.89 +0.69 -0.23 +2.55 +1.30 -0.08
+ik joints deg: -0.00 -97.43 -82.51 +75.08 +0.00 +0.01
+fk tip base mm: x=+300.00 y=-0.00 z=+99.99
+fk tip table mm: x=+495.90 y=+322.70 z=+99.99
+error to target: 0.01 mm
+plan: 4212 waypoints at 100 Hz
+...
+cycle work (dry run): mean 1.17 ms, p95 1.23 ms, max 1.33 ms over 4212 waypoints
+SDK vlim: ['5.0', '5.0', '5.0', '3.0', '3.0', '3.0'] -> 10 %: ['0.50', '0.50', '0.50', '0.30', '0.30', '0.30']
+Type yes to move the arm: cycle work: mean 1.95 ms, p95 2.03 ms, max 2.19 ms over 4212 cycles
+cycle period: mean 10.12 ms, p95 10.17 ms, max 10.23 ms (target 10.00 ms)
+motion finished, arm holds the settle pose
+stopping: the motors will be disabled now
 ```
+
+In this first run joint 4 moved in small steps and joint 5 jittered slightly; this is open and not yet explained.
 
 ## Safety notes
 

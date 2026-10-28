@@ -341,3 +341,30 @@ all waypoints ok
 dry run: no motion
 exit 0
 ```
+Human work on the hover move (2026-10-28): the human requested muse_qc/hover_move.py, had the full diff reviewed before commit 1ae88d2 (the review found that the plan check compared every waypoint with the rest pose and would have refused the 97 deg motion; fixed before the commit), ran the dry run and the first real motion by hand, watched the arm with a hand on the power supply switch, and reported the joint 4 and joint 5 behaviour below.
+- Human ran python -m muse_qc.hover_move --table-mm 495.9 322.7 (dry run, arm power supply on, no motion): OK. Last lines of the output:
+```text
+wp 4212/4212 [settle] joints=[-1.89 +0.00 -0.23 +2.55 +1.30 -0.08] tip=[+289.4 -14.4 +180.9] ok
+cycle work (dry run): mean 1.16 ms, p95 1.22 ms, max 1.35 ms over 4212 waypoints
+dry run: all waypoints pass
+```
+- Human ran the same target with --execute, output saved with tee (2026-10-28, arm power supply on, hand on the power supply switch, nothing on the table): OK, first motion to a table target. The arm ramped from the rest pose to the hover pose 100 mm (FK) above table point (495.9, 322.7), held 2 s, ramped back to the clamped rest pose, held 1 s, then the motors were disabled. The human typed yes at the prompt (tee does not record typed input, so the prompt line shows no answer). The per-waypoint lines are cut ("..."). Observation by the human: joint 4 moved in small visible steps instead of smoothly, and joint 5 moved slightly back and forth during the motion; no refusal, the run completed. The tip height above the table was not measured in this run.
+```text
+rest joints deg: ['-1.89', '+0.69', '-0.23', '+2.55', '+1.30', '-0.08']
+table target: x=+495.90 y=+322.70 mm
+base target: x=+300.00 y=-0.00 mm
+hover: +100.0 mm
+start joints deg: -1.89 +0.69 -0.23 +2.55 +1.30 -0.08
+ik joints deg: -0.00 -97.43 -82.51 +75.08 +0.00 +0.01
+fk tip base mm: x=+300.00 y=-0.00 z=+99.99
+fk tip table mm: x=+495.90 y=+322.70 z=+99.99
+error to target: 0.01 mm
+plan: 4212 waypoints at 100 Hz
+...
+cycle work (dry run): mean 1.17 ms, p95 1.23 ms, max 1.33 ms over 4212 waypoints
+SDK vlim: ['5.0', '5.0', '5.0', '3.0', '3.0', '3.0'] -> 10 %: ['0.50', '0.50', '0.50', '0.30', '0.30', '0.30']
+Type yes to move the arm: cycle work: mean 1.95 ms, p95 2.03 ms, max 2.19 ms over 4212 cycles
+cycle period: mean 10.12 ms, p95 10.17 ms, max 10.23 ms (target 10.00 ms)
+motion finished, arm holds the settle pose
+stopping: the motors will be disabled now
+```
