@@ -428,6 +428,43 @@ With a missing key the command exits nonzero with a message that
 On network errors it prints a short reason. None of these cases prints
 a stack trace or the key.
 
+## 16. SAM 3.1 box detection (by hand only)
+
+This step opens the real table camera and contacts the Meta Model API
+over the network, so only the human runs it, never CI and never an
+agent. `muse_qc/vision_sam.py` takes one frame with
+`open_table_camera()` from `muse_qc/camera_top.py` (or a saved image
+with `--image`), sends it with a noun phrase to SAM 3.1 through the
+`openai` SDK in one `POST /v1/responses` call, parses the box records
+from the output text (masks are ignored) and draws the boxes with ids
+onto a copy of the image. The key is read with
+`muse_qc/model_check.py` and never printed. From the project root:
+
+```bash
+uv run python -m muse_qc.vision_sam "grey connector"
+uv run python -m muse_qc.vision_sam "grey connector" --image path.png
+```
+
+Result format: one line per box with id, box corners, center in
+pixels and confidence, then the count, then the path of the annotated
+copy at `recordings/sam_<YYYYmmdd_HHMMSS>.png`.
+
+Real human run on a saved table image with two connectors and one
+white cube (recorded output, never edited); the technical names did
+not match from the table camera, while "small part" found both
+connectors:
+
+```text
+id 0 box=(1167, 188, 1209, 228) center=(1188.0, 208.0) confidence=0.62
+id 1 box=(1136, 377, 1176, 415) center=(1156.0, 396.0) confidence=0.58
+boxes: 2
+```
+
+An empty answer means zero matches (`boxes: 0`), not an error. HTTP
+400 prints `prompt rejected` with the API message, 401/403 prints
+`key rejected`, network errors print a short reason; none of these
+prints a stack trace or the key.
+
 ## Safety notes
 
 Read-only review of the SDK file
