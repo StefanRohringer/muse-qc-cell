@@ -888,6 +888,47 @@ In a second run the human measured the tip at about 65 mm above the table for an
 
 Arm tip correction (`muse_qc/arm_calibration.py`, checked by `tests/test_arm_calibration.py`): from the human hold measurements of 2026-10-28 (docs/DEVLOG.md) the code corrects three small errors, so a planned target lands where the real tip goes. The base sits 5 mm lower (`BASE_Z_MM = -5.0`), the gripper reaches 190 mm from the end of motor 6 (tip offset beyond end_link derived from the model, 155.39 mm), and joint 3 gets `true_q3 = reported_q3 + k * q3` with `k = -0.0556` (ratio form, fit RMS 5.45 mm; load form RMS 6.76 mm). `first_move_plan.real_tip_m` returns this corrected tip, so every `safety.check_target` sees the real height above the table. `target_pose.solve_hover` iterates the existing IK (`solve_corrected`: solve nominal, shift by the corrected error, stop below 0.5 mm or after 10 iterations), and `target_pose.run` plus `hover_move` print one extra `corrected tip table mm: ... (iterations n)` line. The 80 mm hover floor in `hover_move` stays. On 2026-10-28 the human verified the correction at (495.9, 322.7) and (495.9, 242.7) at 100 mm: both measured 100 mm (docs/DEVLOG.md). Heights below 100 mm are not verified yet. The nominal 150 mm hover at (495.9, 322.7) is unreachable once corrected (joint 4 limit).
 
+## 24. Gripper touch sensors (by hand only)
+
+The gripper is pre-existing hardware: Fin-Ray fingers on the reBot
+gripper jaws with four magnet-plus-magnetometer sensors (L1, L2 left,
+R1, R2 right), read by a Raspberry Pi Pico over USB serial. Only the
+reader (`muse_qc/gripper.py`, checked by `tests/test_gripper.py`) is
+new in this hackathon; hardware and firmware are not part of it. No
+firmware code is used, only the documented serial line protocol, so
+this MIT repository stays clear of the gripper project's GPL-3.0 code.
+
+Run (human only, moves nothing; the tool never commands the arm):
+
+```bash
+uv run python -m muse_qc.gripper --watch 10
+```
+
+What happens: the Pico is matched by USB vendor ID 2e8a (never by
+fixed /dev number), the firmware version is asked (`v`, expected 2)
+and printed, then the tool prints "do not touch the fingers", waits
+1 s, zeroes the sensors (`n`), switches to fast mode (`f`, about
+50 lines/s) and watches for `--watch` seconds (1 to 120, default 10).
+Every change of the contact set prints one line together with what
+`safety.check_gripper` says for phase "open" (informative only; that
+phase never latches STOP, and the tool never clears a latched STOP
+itself). Ctrl+C prints a partial summary. Exit codes: 0 ok, 1 port
+cannot be opened, 2 no Pico found or bad `--watch` value.
+
+Example output shape (no human run yet):
+
+```text
+pico: /dev/ttyACM1
+firmware reply: ... (expected 2)
+do not touch the fingers
+start: contacts -
++2.3s contacts: L1 (safety open: unexpected-contact)
++4.1s contacts: - (safety open: ok)
+summary: lines=... data=... ignored=... changes=...
+events: L1=.. L2=.. R1=.. R2=..
+max magnitude uT: L1=.. L2=.. R1=.. R2=..
+```
+
 ## Safety notes
 
 Read-only review of the SDK file

@@ -9,6 +9,7 @@ dependencies = [
     "numpy>=2.4.6",
     "openai>=3.40.0",
     "opencv-python-headless>=5.0.0.93",
+    "pyserial>=3.5",
     "rebotarm-control-py",
 ]
 
