@@ -16,12 +16,10 @@ the front table edge, +y left, right-handed with z up.
 
 from __future__ import annotations
 
-import importlib.util
 import math
-import re
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from pathlib import Path
+
+from muse_qc.safety_limits import JOINT_LIMITS_DEG, _load_joint_limits_from_sdk
 
 # All limits live here, in meters and degrees.
 TABLE_FRONT_M = 0.545  # Front table edge from base center (+x).
@@ -59,49 +57,21 @@ _GRIP_RETRIES = 0
 _HOLDING_CONTACTS: frozenset[str] | None = None
 
 
-def _load_joint_limits_from_sdk() -> dict[str, tuple[float, float]] | None:
-    """Read joint1..joint6 limits from the Seeed SDK config, in degrees.
+LIMIT_RECOVERY_DEG = 3.0  # Out-of-range rest readings may move back at most this far.
 
-    Locates the installed reBotArm_control_py package without importing
-    it, follows config/rebotarm.yaml to the hardware config, then reads
-    the joint limits from the URDF file named there. Returns None when
-    any step fails; check_target() then refuses every move.
+
+def _limit_recovery_ok(target_value: float, current_value: float, low: float, high: float) -> bool:
+    """Allow an out-of-range target only when recovering toward the range.
+
+    The current reading must be outside the same limit by at most
+    LIMIT_RECOVERY_DEG, and the target must lie strictly between the
+    current reading and the limit (moving back, never further out).
     """
-    try:
-        spec = importlib.util.find_spec("reBotArm_control_py")
-        if spec is None or spec.origin is None:
-            return None
-        repo = Path(spec.origin).resolve().parent.parent
-        hardware_name = "rebotarm_dm.yaml"
-        main_text = (repo / "config" / "rebotarm.yaml").read_text(encoding="utf-8")
-        match = re.search(r'hardware_yaml\s*:\s*["\']?([\w.\-]+\.yaml)["\']?', main_text)
-        if match is not None:
-            hardware_name = match.group(1)
-        hardware_text = (repo / "config" / hardware_name).read_text(encoding="utf-8")
-        match = re.search(r'urdf_path\s*:\s*["\']?([\w./\-]+\.urdf)["\']?', hardware_text)
-        if match is None:
-            return None
-        root = ET.parse(repo / match.group(1)).getroot()
-        limits: dict[str, tuple[float, float]] = {}
-        for joint in root.iter("joint"):
-            name = joint.get("name")
-            if name not in JOINT_NAMES:
-                continue
-            limit = joint.find("limit")
-            if limit is None:
-                return None
-            limits[name] = (math.degrees(float(limit.get("lower"))), math.degrees(float(limit.get("upper"))))
-        if len(limits) != len(JOINT_NAMES):
-            return None
-        return limits
-    except (OSError, ValueError, ET.ParseError):
-        return None
-
-
-# Joint limits in degrees, read from the Seeed SDK configuration at
-# import. None means the limits could not be read, and then every move
-# is refused (fail closed).
-JOINT_LIMITS_DEG: dict[str, tuple[float, float]] | None = _load_joint_limits_from_sdk()
+    if target_value > high:
+        return current_value > high and current_value - high <= LIMIT_RECOVERY_DEG and target_value < current_value
+    if target_value < low:
+        return current_value < low and low - current_value <= LIMIT_RECOVERY_DEG and target_value > current_value
+    return True
 
 
 @dataclass(frozen=True)
@@ -216,9 +186,13 @@ def check_target(target: Target, current_state: CurrentState) -> dict:
         return _refuse("workspace-y", target.y, [WORK_Y_MIN_M, WORK_Y_MAX_M])
     if not TOOL_Z_MIN_M <= target.z <= TOOL_Z_MAX_M:
         return _refuse("tool-z", target.z, [TOOL_Z_MIN_M, TOOL_Z_MAX_M])
-    for name, value in zip(JOINT_NAMES, target.joints_deg):
+    for index, (name, value) in enumerate(zip(JOINT_NAMES, target.joints_deg)):
         low, high = JOINT_LIMITS_DEG[name]
-        if not low <= value <= high:
+        if low <= value <= high:
+            continue
+        current_value = current_state.joints_deg[index]
+        assert current_value is not None
+        if not _limit_recovery_ok(value, current_value, low, high):
             return _refuse("joint-limit", {name: value}, {name: [low, high]})
     target_j6 = target.joints_deg[5]
     current_j6 = current_state.joints_deg[5]

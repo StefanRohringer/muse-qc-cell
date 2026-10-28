@@ -8,10 +8,19 @@ and prints the end_link pose plus an estimated finger-tip position.
 
 from __future__ import annotations
 
+import functools
 import math
 
 # Estimate from a hand measurement, verify.
 TIP_OFFSET_MM = 30.0
+
+
+@functools.lru_cache(maxsize=1)
+def _load_model() -> object:
+    """Load the SDK robot model once; parsing the URDF every call is slow."""
+    from reBotArm_control_py.kinematics import load_robot_model
+
+    return load_robot_model()
 
 
 def pose_mm(joint_radians: object) -> dict:
@@ -28,7 +37,6 @@ def pose_mm(joint_radians: object) -> dict:
     from reBotArm_control_py.kinematics import (
         compute_fk,
         get_arm_joint_count,
-        load_robot_model,
         pad_q_for_model,
     )
 
@@ -37,7 +45,7 @@ def pose_mm(joint_radians: object) -> dict:
         raise ValueError(f"Need six joint angles in radians, got {len(values)}.")
     if not all(math.isfinite(value) for value in values):
         raise ValueError("Joint angles must be finite numbers.")
-    model = load_robot_model()
+    model = _load_model()
     full_q = pad_q_for_model(
         model, np.array(values), controlled_joints=get_arm_joint_count(model)
     )

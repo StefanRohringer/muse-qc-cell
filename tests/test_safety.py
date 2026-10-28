@@ -291,3 +291,41 @@ def test_workspace_y_limits_both_sides(state_y, target_y, passes):
     else:
         assert_refusal(result)
         assert result["reason"] == "workspace-y"
+
+
+def _recovery_state(current_j2):
+    joints = (10.0, current_j2, -45.0, 20.0, 30.0, 5.0)
+    return make_state(joints_deg=joints)
+
+
+def _recovery_target(target_j2):
+    joints = (10.0, target_j2, -45.0, 20.0, 30.0, 5.0)
+    return make_target(joints_deg=joints)
+
+
+def test_limit_recovery_allows_move_back_into_range():
+    result = safety.check_target(_recovery_target(1.48), _recovery_state(1.58))
+    assert result["ok"] is True
+
+
+def test_limit_recovery_refuses_move_further_out():
+    result = safety.check_target(_recovery_target(1.68), _recovery_state(1.58))
+    assert_refusal(result)
+    assert result["reason"] == "joint-limit"
+
+
+def test_limit_recovery_refuses_hold_outside_range():
+    result = safety.check_target(_recovery_target(1.58), _recovery_state(1.58))
+    assert_refusal(result)
+    assert result["reason"] == "joint-limit"
+
+
+def test_limit_recovery_refuses_when_too_far_out():
+    result = safety.check_target(_recovery_target(3.4), _recovery_state(3.5))
+    assert_refusal(result)
+    assert result["reason"] == "joint-limit"
+
+
+def test_limit_recovery_allows_move_within_range():
+    result = safety.check_target(_recovery_target(-0.5), _recovery_state(-1.0))
+    assert result["ok"] is True

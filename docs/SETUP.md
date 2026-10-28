@@ -529,6 +529,53 @@ end_link: x=+256.6 y=-17.9 z=+198.6 mm roll=-3.97 pitch=-0.32 yaw=-4.24 deg
 tip: x=+286.5 y=-20.1 z=+198.8 mm (offset 30 mm along tool axis)
 ```
 
+## 18. First arm motion (by hand only)
+
+Program: `muse_qc/first_move.py` with the plan in
+`muse_qc/first_move_plan.py`, checked by
+`tests/test_first_move.py` (fake arm only). Default is a dry run:
+connect, read the six joints, set J6_REF from the fresh joint 6
+reading, then check every waypoint through `safety.check_target`
+and print one line per waypoint (joints in deg, tip x/y/z in mm,
+safety result). The dry run never enables the motors and never
+sends anything. With `--execute` the same validation runs first,
+then the human types `yes`; only then the arm ramps from the
+current reading to home (all joints 0.0 deg), moves joint1 to
++5.0 deg and back, and holds for 2 s. The ramp is linear in joint
+space at 5.0 deg/s and 50 Hz (0.1 deg per step, loop rate set
+explicitly because the SDK default is 500 Hz), the motor speed
+caps run at 10 % of the SDK config values on every send, and
+every control cycle re-checks the next step against a fresh
+reading. On a refusal or Ctrl+C the program keeps commanding
+the last commanded position (never a live reading, which can
+be 0.0 on missing feedback), then stops the loop and
+disconnects (motors unpowered). The FK model is loaded once.
+`RebotArmEndPose`, zeroing and the home routine are never used.
+
+Safety steps for the human:
+
+1. Hand on the power supply switch (emergency stop), nothing on
+   the table near the arm.
+2. First the dry run below. It must print `ok` for every
+   waypoint. Known finding: the recorded rest position has
+   joint2 at +1.58 deg, just above the SDK URDF upper limit
+   (0.0 deg), because the arm rests on its mechanical stop.
+   `safety.check_target` therefore allows an out-of-range target
+   only when the current reading is outside the same limit by at
+   most 3.0 deg (`LIMIT_RECOVERY_DEG`) and the target moves back
+   toward the range, never further out; anything else outside
+   the limits is refused with `joint-limit` and `--execute`
+   aborts without moving. Do not move until the rest reading
+   and the plan pass the dry run.
+3. Only then `--execute`, confirm with `yes`, watch the arm.
+
+```bash
+uv run python -m muse_qc.first_move
+uv run python -m muse_qc.first_move --execute
+```
+
+Recorded output follows after the first human run.
+
 ## Safety notes
 
 Read-only review of the SDK file
