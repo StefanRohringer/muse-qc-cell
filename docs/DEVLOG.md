@@ -244,3 +244,27 @@ verdict: good
 ```
 
 Good part 3/good OK. Bad part 3/good FAIL because a short remnant box (323, 206, 364, 296), 90 px high at 0.59, was counted. Decision: MIN_BAR_HEIGHT_FRAC 0.3, to be verified with a new run.
+- Human ran count_clips with MIN_BAR_HEIGHT_FRAC 0.3 on both images of the test pair (started by the human, arm power supply off, arm tilted down by hand):
+
+```text
+=== 145156
+part: box=(317, 187, 352, 233) confidence=0.76
+id 1 box=(158, 206, 210, 457) center=(184.0, 331.5) confidence=0.70
+id 2 box=(237, 206, 289, 457) center=(263.0, 331.5) confidence=0.70
+id 0 box=(313, 213, 363, 464) center=(338.0, 338.5) confidence=0.68
+levers: 3
+verdict: good
+recordings/count_20261028_164947.png
+recordings/count_20261028_164947_crop.png
+=== 145329
+part: box=(319, 186, 354, 232) confidence=0.75
+dropped (too short): id 1 box=(323, 206, 364, 296) confidence=0.59
+id 2 box=(241, 201, 290, 457) center=(265.5, 329.0) confidence=0.77
+id 0 box=(162, 205, 212, 458) center=(187.0, 331.5) confidence=0.75
+levers: 2
+verdict: bad
+recordings/count_20261028_164952.png
+recordings/count_20261028_164952_crop.png
+```
+
+Good part 3/good OK, bad part remnant dropped, 2/bad OK. MIN_BAR_HEIGHT_FRAC 0.3 verified on the test pair. The images are not committed.
