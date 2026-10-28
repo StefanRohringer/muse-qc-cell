@@ -1147,6 +1147,8 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "motorbridge" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "openai" },
     { name = "opencv-python-headless" },
     { name = "rebotarm-control-py" },
@@ -1160,6 +1162,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "motorbridge", specifier = ">=0.4.9" },
+    { name = "numpy", specifier = ">=2.4.6" },
     { name = "openai", specifier = ">=3.40.0" },
     { name = "opencv-python-headless", specifier = ">=5.0.0.93" },
     { name = "rebotarm-control-py", editable = "../seeed-sdk" },

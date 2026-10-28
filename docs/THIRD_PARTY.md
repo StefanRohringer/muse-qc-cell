@@ -70,15 +70,14 @@ Official Seeed sources are used for the reBot Arm B601-DM. No third-party code i
 - License: Apache-2.0 (PyPI package metadata).
 - Installed with: `uv add openai`.
 
-## numpy (installed, transitive)
+## numpy (installed)
 
 - Purpose: array math used directly by `muse_qc/calibrate_camera.py`,
   `muse_qc/capture_calibration.py`, `muse_qc/count_clips.py`,
   `muse_qc/detect_markers.py`, `muse_qc/table_coords.py`,
   `muse_qc/table_markers.py`, `muse_qc/vision_sam.py`, and
   `muse_qc/inspection/draw.py`.
-- Source (PyPI): installed today as a dependency of opencv (not yet
-  declared in `pyproject.toml`).
+- Source (PyPI): `numpy>=2.4.6` (declared in `pyproject.toml`).
 - License: BSD-3-Clause.
 
 ## pinocchio (installed through the Seeed SDK)
