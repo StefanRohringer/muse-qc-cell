@@ -33,6 +33,7 @@ WORK_Y_MAX_M = TABLE_LEFT_M - EDGE_MARGIN_M  # Left reach (0.475).
 WORK_Y_MIN_M = -(TABLE_RIGHT_M - EDGE_MARGIN_M)  # Right reach (-0.475).
 TOOL_Z_MIN_M = 0.03  # Tool height above the table, minimum.
 TOOL_Z_MAX_M = 0.45  # Tool height above the table, maximum.
+GRASP_Z_MIN_M = 0.004  # Tool floor for pick lower/grip/lift segments only.
 J6_CABLE_LIMIT_DEG = 75.0  # Joint 6 hard limit around J6_REF (camera cable).
 SPEED_DEFAULT = 0.10  # Default speed fraction (10 %).
 SPEED_MAX = 0.30  # Hard speed cap (30 %).
@@ -160,8 +161,18 @@ def _check_current(state: CurrentState) -> dict | None:
     return None
 
 
-def check_target(target: Target, current_state: CurrentState) -> dict:
-    """Check a planned move against every safety limit. Pure, moves nothing."""
+def check_target(
+    target: Target,
+    current_state: CurrentState,
+    z_min_m: float | None = None,
+) -> dict:
+    """Check a planned move against every safety limit. Pure, moves nothing.
+
+    z_min_m overrides the tool height floor; None keeps TOOL_Z_MIN_M
+    for every existing caller. Only the pick module passes
+    GRASP_Z_MIN_M, and only for its lower/grip/lift/put-down
+    waypoints.
+    """
     if is_stopped():
         return _refuse("stop-latched", _STOP_REASON, None)
     if JOINT_LIMITS_DEG is None:
@@ -184,8 +195,9 @@ def check_target(target: Target, current_state: CurrentState) -> dict:
         return _refuse("workspace-x", target.x, [WORK_X_MIN_M, WORK_X_MAX_M])
     if not WORK_Y_MIN_M <= target.y <= WORK_Y_MAX_M:
         return _refuse("workspace-y", target.y, [WORK_Y_MIN_M, WORK_Y_MAX_M])
-    if not TOOL_Z_MIN_M <= target.z <= TOOL_Z_MAX_M:
-        return _refuse("tool-z", target.z, [TOOL_Z_MIN_M, TOOL_Z_MAX_M])
+    floor_m = TOOL_Z_MIN_M if z_min_m is None else float(z_min_m)
+    if not floor_m <= target.z <= TOOL_Z_MAX_M:
+        return _refuse("tool-z", target.z, [floor_m, TOOL_Z_MAX_M])
     for index, (name, value) in enumerate(zip(JOINT_NAMES, target.joints_deg)):
         low, high = JOINT_LIMITS_DEG[name]
         if low <= value <= high:

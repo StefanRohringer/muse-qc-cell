@@ -1106,6 +1106,50 @@ prints a `corrected base target:` line; `--no-xy-correction` flies
 the uncorrected target for A/B tests. Covered by
 `tests/test_xy_correction.py` (offline, fake SDK only).
 
+## 28. First pick with the arm (by hand only)
+
+One part (connector, 17 mm wide, 14.5 mm high) lies flat on the table
+at a table position the human got from `python -m muse_qc.vision_sam`.
+The arm hovers 100 mm over it, opens the gripper, lowers the tip
+slowly while watching the finger sensors, closes until the left and
+right fingers report contact, lifts the part to the hover height,
+holds, puts it back down, opens, lifts and returns to rest. Only the
+human runs it, never CI and never an agent.
+
+Three modules share the work (`tests/test_pick.py`, fake SDK, fake
+sensor and fake IK only): `muse_qc/pick_plan.py` builds the labelled
+arm waypoint plan (hover ramp, 1 mm lower ladder at 10 mm/s, lift,
+put-down 2 mm higher, raise, return ramp plus 1 s settle, all at
+100 Hz), `muse_qc/pick_loop.py` flies it in one control loop, and
+`muse_qc/pick_test.py` is the CLI. Every arm waypoint passes
+`safety.check_target` per cycle with the grasp floor
+`GRASP_Z_MIN_M` = 4 mm on the lower/lift/put-down/raise waypoints
+only; everywhere else the 30 mm floor is unchanged. Any contact
+while lowering stops the descent at once, holds 0.5 s, climbs back
+up the same ladder and returns. `--no-grip` only lowers to
+`--grip-z-mm` and holds, so the human can check the real tip height
+with a ruler first. `--grip-z-mm` takes 5 to 60 mm (default 8),
+`--open-mm` 25 to 50 mm (default 40), `--hold-s` 0.5 to 30 s
+(default 3); anything else is an argparse error (exit 2) before
+anything connects. `--no-xy-correction` flies the uncorrected target
+for A/B tests, to measure the uncorrected error near the part. No
+gripper-project code is used, only the serial line protocol and the
+SDK motor protocol.
+
+Order, with the hand on the power supply switch:
+
+```bash
+uv run python -m muse_qc.pick_test --table-mm X Y
+uv run python -m muse_qc.pick_test --table-mm X Y --no-grip --grip-z-mm 40 --execute
+uv run python -m muse_qc.pick_test --table-mm X Y --no-grip --grip-z-mm 20 --execute
+uv run python -m muse_qc.pick_test --table-mm X Y --execute
+```
+
+The height correction is verified only at 100 mm so far, hence the
+40 and 20 mm ruler stops before the grip run with one part. Parts
+must lie 31 to 34.5 cm from the joint 1 axis (the verified x/y
+correction range).
+
 ## Safety notes
 
 Read-only review of the SDK file
