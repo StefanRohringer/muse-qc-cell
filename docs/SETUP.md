@@ -477,6 +477,29 @@ An empty answer means zero matches (`boxes: 0`), not an error. HTTP
 `key rejected`, network errors print a short reason; none of these
 prints a stack trace or the key.
 
+## 17. Forward kinematics check (by hand only)
+
+This step opens the real arm bus for reading, so only the human
+runs it, never CI and never an agent. `muse_qc/fk_check.py` reads
+the six joint angles once through `muse_qc/arm.py` (read only: it
+never enables, zeroes or sends anything), computes the `end_link`
+pose with the Seeed SDK kinematics (metres and radians in the SDK,
+printed as mm and degrees) and projects the finger-tip position
+30 mm along the `end_link` z axis. The 30 mm value
+(`TIP_OFFSET_MM`) is an estimate from a hand measurement (185 mm
+from the joint 6 mounting face to the finger tips, minus the
+155.39 mm URDF `end_joint` offset) and must be verified on the arm.
+From the project root:
+
+```bash
+uv run python -m muse_qc.fk_check
+```
+
+Expected result: one line per joint with the angle in degrees, one
+`end_link:` line with x, y, z in mm and roll, pitch, yaw in
+degrees, and one `tip:` line with x, y, z in mm. Example output
+will be added after the first human run.
+
 ## Safety notes
 
 Read-only review of the SDK file
