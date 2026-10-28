@@ -453,24 +453,29 @@ calibration file) or `unavailable (<reason>)`, and each box line ends
 with `table_mm=(x, y)` in millimetres (the box centre mapped onto the
 table frame on the same frame sent to SAM) when the mapping works.
 
-Real human run on a saved table image with two connectors and one
-white cube (recorded output, never edited); the technical names did
-not match from the table camera, while "small part" found both
-connectors:
+Real human run of `uv run python -m muse_qc.vision_sam "small part"`
+on the live table camera with two connectors and one white 25 mm cube
+on the table, all four table markers visible (recorded output, never
+edited):
 
 ```text
-id 0 box=(1167, 188, 1209, 228) center=(1188.0, 208.0) confidence=0.62
-id 1 box=(1136, 377, 1176, 415) center=(1156.0, 396.0) confidence=0.58
-boxes: 2
+table mapping: calibrated
+id 0 box=(638, 417, 690, 460) center=(664.0, 438.5) confidence=0.52 table_mm=(294.8, 311.9)
+id 1 box=(1136, 377, 1176, 413) center=(1156.0, 395.0) confidence=0.65 table_mm=(600.1, 337.8)
+id 2 box=(1168, 188, 1209, 227) center=(1188.5, 207.5) confidence=0.68 table_mm=(620.0, 452.8)
+boxes: 3
+recordings/sam_20261028_105815.png
 ```
+
+id 0 is the white cube, id 1 and id 2 are the two connectors (checked
+by eye on the annotated image). In this run "small part" also matched
+the cube, so the phrase finds any small object; the arm camera check
+decides what a part really is.
 
 An empty answer means zero matches (`boxes: 0`), not an error. HTTP
 400 prints `prompt rejected` with the API message, 401/403 prints
 `key rejected`, network errors print a short reason; none of these
 prints a stack trace or the key.
-
-Note: the `table_mm` output is new; the recorded output above predates
-it and will be replaced after the next human run.
 
 ## Safety notes
 
