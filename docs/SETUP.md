@@ -884,6 +884,8 @@ stopping: the motors will be disabled now
 
 In this first run joint 4 moved in small steps and joint 5 jittered slightly; this is open and not yet explained.
 
+In a second run the human measured the tip at about 65 mm above the table for an FK hover of 100 mm; until this is explained, no target below 100 mm FK hover. After the motion, `--execute` prints three `hold ...` lines showing the commanded hold joints, the measured hold joints and the measured tip position in mm.
+
 ## Safety notes
 
 Read-only review of the SDK file

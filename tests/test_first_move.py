@@ -309,7 +309,8 @@ def test_scale_vlim_reads_config_not_hardcoded(tmp_path):
 def test_source_avoids_motion_primitives():
     from pathlib import Path
 
-    for name in ("muse_qc/first_move.py", "muse_qc/first_move_plan.py"):
+    for name in ("muse_qc/first_move.py", "muse_qc/first_move_plan.py",
+                 "muse_qc/waypoint_stream.py"):
         text = Path(name).read_text(encoding="utf-8")
         for forbidden in ("set_zero", "safe_home", "estop", "RebotArmEndPose"):
             assert forbidden not in text
@@ -364,3 +365,98 @@ def test_execute_prints_work_and_period_summaries():
         rf"max \d+\.\d{{2}} ms \(target {target_ms:.2f} ms\)",
         next(line for line in lines if line.startswith("cycle period:")),
     )
+
+
+def _drive(stream, sdk, limit=10000):
+    for _ in range(limit):
+        stream(sdk, 0.01)
+        if stream.done.is_set():
+            break
+
+
+def test_snapshot_defaults_to_none():
+    from muse_qc.waypoint_stream import WaypointStream
+
+    group = FakeGroup(REST_DEG)
+    tips = [_fake_tip(list(REST_DEG))] * 3
+    stream = WaypointStream(group, [tuple(REST_DEG)] * 3, tips,
+                            [v * 0.1 for v in VLIMS],
+                            [math.radians(v) for v in REST_DEG],
+                            _always_ok, _fake_tip)
+    assert stream.snapshot_index is None
+    assert stream.snapshot_deg is None
+    _drive(stream, object())
+    assert stream.snapshot_deg is None
+
+
+def test_snapshot_taken_at_right_index_and_sends_unchanged():
+    from muse_qc.waypoint_stream import WaypointStream
+
+    slow = [v * 0.1 for v in VLIMS]
+    wp0 = tuple(REST_DEG)
+    wp1 = (1.0, 2.0, -3.0, 4.0, 5.0, -6.0)
+    wp2 = (2.0, 3.0, -4.0, 5.0, 6.0, -7.0)
+    waypoints = [wp0, wp1, wp2]
+    tips = [_fake_tip(list(wp)) for wp in waypoints]
+    first_rad = [math.radians(v) for v in REST_DEG]
+    plain = WaypointStream(FakeGroup(REST_DEG), waypoints, tips, slow,
+                           first_rad, _always_ok, _fake_tip)
+    shot = WaypointStream(FakeGroup(REST_DEG), waypoints, tips, slow,
+                          first_rad, _always_ok, _fake_tip,
+                          snapshot_index=1)
+    _drive(plain, object())
+    _drive(shot, object())
+    assert shot.snapshot_deg == pytest.approx(list(wp0))
+    assert _sends(shot.group) == _sends(plain.group)
+
+
+def test_execute_prints_hold_lines_before_finished():
+    arm = FakeArm(REST_DEG)
+    lines = []
+    result = first_move.execute(arm, input_fn=lambda prompt: "yes",
+                                check_fn=_always_ok, tip_fn=_fake_tip,
+                                vlims=VLIMS, joint_limits=TEST_LIMITS,
+                                out=lines.append)
+    assert result == 0
+    plan = build_plan(REST_DEG, TEST_LIMITS)
+    last_hold = max(i for i, (segment, _) in enumerate(plan)
+                    if segment == "hold")
+    commanded = "hold commanded deg: " + " ".join(
+        f"{v:+.2f}" for v in plan[last_hold][1])
+    assert commanded in lines
+    measured = next(line for line in lines
+                    if line.startswith("hold measured deg: "))
+    assert measured == ("hold measured deg: "
+                        + " ".join(f"{v:+.2f}" for v in plan[last_hold][1]))
+    tip_mm = tuple(v * 1000.0 for v in REST_TIP_M)
+    assert (f"hold measured tip mm: x={tip_mm[0]:+.1f} "
+            f"y={tip_mm[1]:+.1f} z={tip_mm[2]:+.1f}") in lines
+    hold_at = [lines.index(line) for line in lines
+               if line.startswith("hold ")]
+    assert len(hold_at) == 3
+    assert hold_at == sorted(hold_at)
+    assert max(hold_at) < lines.index("motion finished, arm holds the settle pose")
+
+
+def test_dry_run_prints_no_hold_lines():
+    arm = FakeArm(REST_DEG)
+    lines = []
+    assert first_move.dry_run(arm, check_fn=_always_ok, tip_fn=_fake_tip,
+                              joint_limits=TEST_LIMITS,
+                              out=lines.append) == 0
+    assert not any(line.startswith("hold ") for line in lines)
+
+
+def test_execute_without_hold_segment_prints_no_hold_lines():
+    arm = FakeArm(REST_DEG)
+    lines = []
+    result = first_move.execute(
+        arm, input_fn=lambda prompt: "yes",
+        check_fn=_always_ok, tip_fn=_fake_tip,
+        vlims=VLIMS, joint_limits=TEST_LIMITS, out=lines.append,
+        plan_fn=lambda start: [("hover", tuple(REST_DEG)),
+                              ("settle", tuple(REST_DEG))],
+    )
+    assert result == 0
+    assert not any(line.startswith("hold ") for line in lines)
+    assert "motion finished, arm holds the settle pose" in lines

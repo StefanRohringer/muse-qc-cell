@@ -368,3 +368,23 @@ cycle period: mean 10.12 ms, p95 10.17 ms, max 10.23 ms (target 10.00 ms)
 motion finished, arm holds the settle pose
 stopping: the motors will be disabled now
 ```
+- Human ran python -m muse_qc.hover_move --table-mm 495.9 322.7 --execute a second time to measure the tip height (2026-10-28, arm power supply on, hand on the power supply switch, a ruler standing upright next to the target point): OK. The human read about 65 mm from the jaw tips to the table during the 2 s hold, about 35 mm lower than the FK hover of 100 mm (at the rest pose the difference was about 13 mm). Cause not yet known. Until it is understood, no target below 100 mm FK hover.
+```text
+rest joints deg: ['-1.89', '+1.02', '-0.34', '+2.55', '+1.34', '-0.08']
+table target: x=+495.90 y=+322.70 mm
+base target: x=+300.00 y=-0.00 mm
+hover: +100.0 mm
+start joints deg: -1.89 +1.02 -0.34 +2.55 +1.34 -0.08
+ik joints deg: -0.00 -97.43 -82.51 +75.08 +0.00 +0.01
+fk tip base mm: x=+300.00 y=-0.00 z=+99.99
+fk tip table mm: x=+495.90 y=+322.70 z=+99.99
+error to target: 0.01 mm
+plan: 4218 waypoints at 100 Hz
+...
+cycle work (dry run): mean 1.17 ms, p95 1.23 ms, max 1.34 ms over 4218 waypoints
+SDK vlim: ['5.0', '5.0', '5.0', '3.0', '3.0', '3.0'] -> 10 %: ['0.50', '0.50', '0.50', '0.30', '0.30', '0.30']
+Type yes to move the arm: cycle work: mean 1.97 ms, p95 2.07 ms, max 2.31 ms over 4218 cycles
+cycle period: mean 10.12 ms, p95 10.17 ms, max 10.20 ms (target 10.00 ms)
+motion finished, arm holds the settle pose
+stopping: the motors will be disabled now
+```

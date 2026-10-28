@@ -18,15 +18,12 @@ import argparse
 import json
 import math
 import sys
-import threading
-import time
 
 from muse_qc import safety
 from muse_qc.cycle_timing import summarize_ms
+from muse_qc.waypoint_stream import WaypointStream
 from muse_qc.first_move_plan import (
     LOOP_RATE_HZ,
-    SETTLE_CYCLES,
-    SPEED_FRACTION,
     build_plan,
     read_current_deg,
     read_sdk_vlims,
@@ -36,110 +33,6 @@ from muse_qc.first_move_plan import (
 )
 
 CONFIRM_WORD = "yes"
-
-
-class WaypointStream:
-    """Control-loop callback: stream waypoints with a per-cycle check."""
-
-    def __init__(self, group, waypoints, target_tips, vlim, initial_rad,
-                 check_fn, tip_fn):
-        self.group = group
-        self.waypoints = waypoints
-        self.target_tips = target_tips
-        self.vlim = [float(v) for v in vlim]
-        self.last_commanded_rad = [float(v) for v in initial_rad]
-        self.check = safety.check_target if check_fn is None else check_fn
-        self.tip_of = real_tip_m if tip_fn is None else tip_fn
-        self.index = 0
-        self.refusal: dict | None = None
-        self.halt = False
-        self.settle = 0
-        self.done = threading.Event()
-        self.work_ms: list[float] = []
-        self.period_ms: list[float] = []
-        self._prev_start: float | None = None
-
-    def _send(self, joint_rad: list[float]) -> None:
-        try:
-            self.group.send_pos_vel([float(v) for v in joint_rad],
-                                    vlim=self.vlim)
-        except Exception:
-            pass
-
-    def _hold(self) -> None:
-        # Hold the last commanded position, never a live reading: the
-        # SDK reports 0.0 for missing feedback, which must never be sent.
-        if self.settle <= 0:
-            self.settle = SETTLE_CYCLES
-        self._send(self.last_commanded_rad)
-        self.settle -= 1
-        if self.settle <= 0:
-            self.done.set()
-
-    def _refuse(self, reason: str, value: object, limit: object) -> None:
-        self.refusal = {"ok": False, "reason": reason,
-                        "value": value, "limit": limit}
-        self._hold()
-
-    def __call__(self, _sdk: object, _dt: float) -> None:
-        start = time.perf_counter()
-        try:
-            if self._prev_start is not None:
-                self.period_ms.append((start - self._prev_start) * 1000.0)
-        except Exception:
-            pass
-        self._prev_start = start
-        try:
-            self._step()
-        finally:
-            try:
-                self.work_ms.append((time.perf_counter() - start) * 1000.0)
-            except Exception:
-                pass
-
-    def _step(self) -> None:
-        read_start = time.monotonic()
-        try:
-            current_rad = [float(v) for v in self.group.get_positions()]
-            if len(current_rad) != 6:
-                raise ValueError(f"got {len(current_rad)} positions")
-        except Exception as exc:
-            self._refuse("read-failed", str(exc), "six joint angles")
-            return
-        age_ms = (time.monotonic() - read_start) * 1000.0
-        current_deg = [math.degrees(v) for v in current_rad]
-        if self.refusal is not None or self.halt or self.index >= len(self.waypoints):
-            if self.refusal is None and self.halt and self.index < len(self.waypoints):
-                self._refuse("user-halt", self.index, len(self.waypoints))
-                return
-            self._hold()
-            return
-        waypoint = self.waypoints[self.index]
-        target_tip = self.target_tips[self.index]
-        try:
-            current_tip = self.tip_of(current_deg)
-        except Exception as exc:
-            self._refuse("read-failed", str(exc), "tool tip")
-            return
-        target = safety.Target(
-            x=target_tip[0], y=target_tip[1], z=target_tip[2],
-            joints_deg=tuple(waypoint), speed=SPEED_FRACTION,
-        )
-        current = safety.CurrentState(
-            x=current_tip[0], y=current_tip[1], z=current_tip[2],
-            joints_deg=tuple(current_deg), reading_age_ms=age_ms,
-        )
-        result = self.check(target, current)
-        if not result.get("ok"):
-            self.refusal = dict(result)
-            self._hold()
-            return
-        commanded = [math.radians(v) for v in waypoint]
-        self._send(commanded)
-        self.last_commanded_rad = commanded
-        self.index += 1
-        if self.index >= len(self.waypoints):
-            self.done.set()
 
 
 def _group(sdk: object) -> object:
@@ -242,8 +135,13 @@ def execute(
             group.send_pos_vel(first_rad, vlim=slow)
             group.enable()
             waypoints = [point for _, point in plan]
+            snapshot_index: int | None = None
+            for pos, (segment, _point) in enumerate(plan):
+                if segment == "hold":
+                    snapshot_index = pos
             stream = WaypointStream(group, waypoints, target_tips, slow,
-                                    first_rad, check_fn, tip_fn)
+                                    first_rad, check_fn, tip_fn,
+                                    snapshot_index=snapshot_index)
             sdk.start_control_loop(stream, rate=LOOP_RATE_HZ)
             timeout_s = len(waypoints) / LOOP_RATE_HZ + 120.0
             try:
@@ -268,6 +166,17 @@ def execute(
             if stream.refusal is not None:
                 out(f"REFUSED {json.dumps(stream.refusal)}")
                 return 1
+            if stream.snapshot_deg is not None and snapshot_index is not None:
+                commanded = waypoints[snapshot_index]
+                out("hold commanded deg: "
+                    + " ".join(f"{v:+.2f}" for v in commanded))
+                out("hold measured deg: "
+                    + " ".join(f"{v:+.2f}" for v in stream.snapshot_deg))
+                tip_of = real_tip_m if tip_fn is None else tip_fn
+                tip_m = tip_of(list(stream.snapshot_deg))
+                out(f"hold measured tip mm: x={tip_m[0] * 1000.0:+.1f} "
+                    f"y={tip_m[1] * 1000.0:+.1f} "
+                    f"z={tip_m[2] * 1000.0:+.1f}")
             out("motion finished, arm holds the settle pose")
             return 0
         finally:
