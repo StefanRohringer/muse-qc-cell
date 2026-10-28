@@ -84,7 +84,8 @@ class GripLoop:
                  gripper_vlim: list[float], start_deg: float, open_deg: float,
                  squeeze_deg: float, closed_deg: float, safe_min_deg: float,
                  safe_max_deg: float, jump_deg: float, sensor: object,
-                 to_width: object, out: object = print) -> None:
+                 to_width: object, out: object = print,
+                 step_deg: float = STEP_DEG) -> None:
         self.arm_group = arm_group
         self.gripper_group = gripper_group
         self.arm_start_rad = [float(v) for v in arm_start_rad]
@@ -101,6 +102,7 @@ class GripLoop:
         self._sensor = sensor
         self._to_width = to_width
         self._out = out
+        self.grip_step = float(step_deg)
         self.contacts: frozenset[str] = frozenset()
         self._noted: frozenset[str] = frozenset()
         self.phase = "open"
@@ -118,12 +120,12 @@ class GripLoop:
         self.arm_group.send_pos_vel(list(self.arm_start_rad), vlim=self.arm_vlim)
         self.commanded = grip_deg
     def _step(self, target: float) -> bool:
-        """Move one 5 deg/s step toward target; True when reached."""
+        """Move one gripper step toward target; True when reached."""
         diff = target - self.commanded
-        if abs(diff) <= STEP_DEG:
+        if abs(diff) <= self.grip_step:
             self._send(target)
             return True
-        self._send(self.commanded + math.copysign(STEP_DEG, diff))
+        self._send(self.commanded + math.copysign(self.grip_step, diff))
         return False
     def _poll(self) -> None:
         """Refresh contacts from the newest sensor reading, if any."""

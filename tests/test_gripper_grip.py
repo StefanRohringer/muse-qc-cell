@@ -29,7 +29,8 @@ TEST_LIMITS = {
 OPEN_DEG_40 = width_to_deg(40.0)  # about -126.23
 # Setup lines before the loop starts: firmware (1) + deviation probe (200) + drain (1).
 SETUP_LINES = 202
-OPEN_RAMP_40 = math.ceil(abs(OPEN_DEG_40 - REST_GRIP_DEG) / 0.05)
+DEFAULT_STEP_DEG = gripper_grip.SPEED_DEFAULT_DEG_S / LOOP_RATE_HZ  # 0.15
+OPEN_RAMP_40 = math.ceil(abs(OPEN_DEG_40 - REST_GRIP_DEG) / DEFAULT_STEP_DEG)
 CLOSE_START_N = SETUP_LINES + OPEN_RAMP_40 + 300
 
 
@@ -301,6 +302,28 @@ def test_squeeze_range_exits_2_without_connect(value):
     with pytest.raises(SystemExit) as info:
         gripper_grip.main(["--squeeze-deg", value], sdk_factory=factory)
     assert info.value.code == 2
+
+
+@pytest.mark.parametrize("value", ["1.9", "15.1", "0", "-5", "abc"])
+def test_speed_range_exits_2_without_connect(value):
+    def factory():
+        raise AssertionError("nothing may connect on a bad --speed-deg-s")
+
+    with pytest.raises(SystemExit) as info:
+        gripper_grip.main(["--speed-deg-s", value], sdk_factory=factory)
+    assert info.value.code == 2
+
+
+def test_default_close_ramp_step_is_0_15_deg_per_cycle():
+    assert DEFAULT_STEP_DEG == pytest.approx(0.15)
+    assert gripper_grip._ramp_steps(OPEN_DEG_40, REST_GRIP_DEG, DEFAULT_STEP_DEG) == OPEN_RAMP_40
+    sdk = FakeSdk()
+    serials = []
+    result, _ = _run_execute(sdk, lambda n: "-", serials)
+    assert result == 0
+    sends = _grip_sends_deg(sdk)
+    steps = [abs(b - a) for a, b in zip(sends, sends[1:]) if abs(b - a) > 1e-9]
+    assert steps and max(steps) == pytest.approx(0.15, abs=1e-6)
 
 
 def test_dry_run_never_enables_modes_loops_or_sends():

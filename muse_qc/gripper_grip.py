@@ -54,6 +54,8 @@ OPEN_MIN_MM = 20.0
 OPEN_MAX_MM = 50.0
 SQUEEZE_MIN_DEG = 0.0
 SQUEEZE_MAX_DEG = 5.0
+SPEED_MIN_DEG_S, SPEED_MAX_DEG_S = 2.0, 15.0
+SPEED_DEFAULT_DEG_S = 15.0
 OUT_OF_RANGE_MSG = (
     "gripper reading outside the safe range (wrapped or past closed): "
     "close the jaws by hand to about 30 mm with the power off and run again"
@@ -70,27 +72,27 @@ def deg_to_width(deg: float) -> float:
     return MM_PER_DEG * (CLOSED_DEG - float(deg))
 
 
-def _open_mm_type(text: str) -> float:
+def _ranged_float(text: str, name: str, low: float, high: float, unit: str) -> float:
     try:
         value = float(text)
     except ValueError:
-        raise argparse.ArgumentTypeError(f"--open-mm must be a number, got {text!r}.")
-    if not OPEN_MIN_MM <= value <= OPEN_MAX_MM:
+        raise argparse.ArgumentTypeError(f"{name} must be a number, got {text!r}.")
+    if not low <= value <= high:
         raise argparse.ArgumentTypeError(
-            f"--open-mm must be between {OPEN_MIN_MM:g} and {OPEN_MAX_MM:g} mm, got {text!r}.")
+            f"{name} must be between {low:g} and {high:g} {unit}, got {text!r}.")
     return value
+
+
+def _open_mm_type(text: str) -> float:
+    return _ranged_float(text, "--open-mm", OPEN_MIN_MM, OPEN_MAX_MM, "mm")
 
 
 def _squeeze_type(text: str) -> float:
-    try:
-        value = float(text)
-    except ValueError:
-        raise argparse.ArgumentTypeError(f"--squeeze-deg must be a number, got {text!r}.")
-    if not SQUEEZE_MIN_DEG <= value <= SQUEEZE_MAX_DEG:
-        raise argparse.ArgumentTypeError(
-            f"--squeeze-deg must be between {SQUEEZE_MIN_DEG:g} and"
-            f" {SQUEEZE_MAX_DEG:g} deg, got {text!r}.")
-    return value
+    return _ranged_float(text, "--squeeze-deg", SQUEEZE_MIN_DEG, SQUEEZE_MAX_DEG, "deg")
+
+
+def _speed_type(text: str) -> float:
+    return _ranged_float(text, "--speed-deg-s", SPEED_MIN_DEG_S, SPEED_MAX_DEG_S, "deg/s")
 
 
 def validate_targets(start_deg: float, open_deg: float) -> str | None:
@@ -108,9 +110,9 @@ def validate_targets(start_deg: float, open_deg: float) -> str | None:
     return None
 
 
-def _ramp_steps(from_deg: float, to_deg: float) -> int:
-    """Cycle count for a 5 deg/s ramp between two gripper angles."""
-    return max(1, math.ceil(abs(to_deg - from_deg) / STEP_DEG))
+def _ramp_steps(from_deg: float, to_deg: float, step_deg: float = STEP_DEG) -> int:
+    """Cycle count for a gripper ramp between two angles at step_deg."""
+    return max(1, math.ceil(abs(to_deg - from_deg) / step_deg))
 
 
 def _create_sdk() -> object:
@@ -129,18 +131,21 @@ def _read_start(sdk: object) -> tuple[object, list[float], float]:
     return reader, [joint.degrees for joint in joints], gripper.degrees
 
 
-def _plan_lines(open_mm: float, open_deg: float, squeeze_deg: float) -> list[str]:
+def _plan_lines(open_mm: float, open_deg: float, squeeze_deg: float,
+                 speed_deg_s: float) -> list[str]:
     """Human-readable plan lines shared by dry run and execute."""
     return [
         f"open width: {open_mm:.0f} mm -> gripper {open_deg:+.2f} deg",
         f"squeeze: {squeeze_deg:.1f} deg past first bilateral contact",
-        "phases at 100 Hz: open at 5 deg/s, wait 3 s (place the part), close at"
-        " 5 deg/s to bilateral contact, squeeze, hold 3 s, open back, hold 1 s",
+        f"phases at 100 Hz: open at {speed_deg_s:g} deg/s, wait 3 s (place the part),"
+        f" close at {speed_deg_s:g} deg/s to bilateral contact, squeeze, hold 3 s,"
+        " open back, hold 1 s",
     ]
 
 
 def dry_run(sdk: object, open_mm: float, squeeze_deg: float, out: object = print,
-            find_port: object = None, sensor_factory: object = None) -> int:
+            find_port: object = None, sensor_factory: object = None,
+            speed_deg_s: float = SPEED_DEFAULT_DEG_S) -> int:
     """Print the rest readings, the sensor state and the plan; move nothing."""
     reader, arm_start_deg, grip_start_deg = _read_start(sdk)
     try:
@@ -152,7 +157,7 @@ def dry_run(sdk: object, open_mm: float, squeeze_deg: float, out: object = print
         if refused is not None:
             out(refused)
             return 1
-        for line in _plan_lines(open_mm, open_deg, squeeze_deg):
+        for line in _plan_lines(open_mm, open_deg, squeeze_deg, speed_deg_s):
             out(line)
         sensor = open_touch_sensor(find_port, sensor_factory, out)
         if sensor is None:
@@ -170,7 +175,8 @@ def execute(sdk: object, open_mm: float, squeeze_deg: float,
             input_fn: object = input, check_fn: object = None,
             tip_fn: object = None, arm_vlims: object = None,
             joint_limits: object = None, find_port: object = None,
-            sensor_factory: object = None, out: object = print) -> int:
+            sensor_factory: object = None, out: object = print,
+            speed_deg_s: float = SPEED_DEFAULT_DEG_S) -> int:
     """Check the arm hold pose once, ask, then run the touch-feedback grip."""
     reader, arm_start_deg, grip_start_deg = _read_start(sdk)
     old_ref = safety.J6_REF
@@ -186,7 +192,7 @@ def execute(sdk: object, open_mm: float, squeeze_deg: float,
         if refused is not None:
             out(refused)
             return 1
-        for line in _plan_lines(open_mm, open_deg, squeeze_deg):
+        for line in _plan_lines(open_mm, open_deg, squeeze_deg, speed_deg_s):
             out(line)
         hold_deg = check_arm_hold(arm_start_deg, joint_limits, check_fn, tip_fn, out)
         if hold_deg is None:
@@ -211,13 +217,16 @@ def execute(sdk: object, open_mm: float, squeeze_deg: float,
         arm_group.send_pos_vel(arm_start_rad, vlim=slow)
         gripper_group.send_pos_vel([math.radians(grip_start_deg)], vlim=gripper_slow)
         sdk.enable_all()
+        step_deg = float(speed_deg_s) / LOOP_RATE_HZ
         stream = GripLoop(arm_group, gripper_group, arm_start_rad, slow,
                           gripper_slow, grip_start_deg, open_deg, squeeze_deg,
                           CLOSED_DEG, SAFE_MIN_DEG, SAFE_MAX_DEG,
-                          JUMP_DEG, sensor, deg_to_width, out)
+                          JUMP_DEG, sensor, deg_to_width, out, step_deg=step_deg)
         sdk.start_control_loop(stream, rate=LOOP_RATE_HZ)
-        worst = (_ramp_steps(grip_start_deg, open_deg) + _ramp_steps(open_deg, CLOSED_DEG)
-                 + _ramp_steps(CLOSED_DEG, open_deg) + int(squeeze_deg / STEP_DEG)
+        worst = (_ramp_steps(grip_start_deg, open_deg, step_deg)
+                 + _ramp_steps(open_deg, CLOSED_DEG, step_deg)
+                 + _ramp_steps(CLOSED_DEG, open_deg, step_deg)
+                 + int(squeeze_deg / step_deg)
                  + WAIT_CYCLES + HOLD_CYCLES + SETTLE_CYCLES + FAULT_CYCLES + 2)
         try:
             stream.done.wait(timeout=worst / LOOP_RATE_HZ + 120.0)
@@ -273,13 +282,18 @@ def main(argv: object = None, sdk_factory: object = None,
     parser.add_argument("--squeeze-deg", type=_squeeze_type, default=2.0,
                         help=f"extra close past first contact in deg, {SQUEEZE_MIN_DEG:g} to"
                              f" {SQUEEZE_MAX_DEG:g} (default 2)")
+    parser.add_argument("--speed-deg-s", type=_speed_type, default=SPEED_DEFAULT_DEG_S,
+                        help=f"gripper ramp speed in deg/s, {SPEED_MIN_DEG_S:g} to"
+                             f" {SPEED_MAX_DEG_S:g} (default {SPEED_DEFAULT_DEG_S:g})")
     parser.add_argument("--execute", action="store_true",
                         help="run the grip after confirmation")
     args = parser.parse_args(argv)
     sdk = sdk_factory() if sdk_factory is not None else _create_sdk()
     if args.execute:
-        return execute(sdk, args.open_mm, args.squeeze_deg, **kwargs)
-    return dry_run(sdk, args.open_mm, args.squeeze_deg, **kwargs)
+        return execute(sdk, args.open_mm, args.squeeze_deg, speed_deg_s=args.speed_deg_s,
+                       **kwargs)
+    return dry_run(sdk, args.open_mm, args.squeeze_deg, speed_deg_s=args.speed_deg_s,
+                   **kwargs)
 
 
 if __name__ == "__main__":

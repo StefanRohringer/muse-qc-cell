@@ -1000,9 +1000,12 @@ human runs it, never CI and never an agent. `muse_qc/gripper_grip.py`
 only; the loop lives in the shared `muse_qc/gripper_stream.py`, which
 also hosts the `GripperStream` moved over from
 `muse_qc/gripper_motor.py` so that module stays at or below 300
-lines) needs `--open-mm W` with W between 20 and 50 mm (default 40)
-plus `--squeeze-deg S` with S between 0 and 5 deg (default 2);
+lines) needs `--open-mm W` with W between 20 and 50 mm (default 40),
+`--squeeze-deg S` with S between 0 and 5 deg (default 2), and
+`--speed-deg-s V` with V between 2 and 15 deg/s (default 15);
 anything else is an argparse error (exit 2) before anything connects.
+The default 15 deg/s stays below the gripper vlim (10 % of 3.0 rad/s,
+about 17.2 deg/s), which is unchanged.
 No gripper-project code is used, only the serial line protocol and the
 SDK motor protocol.
 
@@ -1034,9 +1037,10 @@ uv run python -m muse_qc.gripper_grip --open-mm 40 --execute
 ```
 
 After the human types `yes`, the gripper ramps open to the open width
-at 5 deg/s, holds 3 s ("place the part between the jaws now"; contacts
-in these phases are only printed, the human's hand may touch the
-fingers), then ramps toward closed at 5 deg/s while the newest touch
+at the `--speed-deg-s` speed (default 15 deg/s), holds 3 s ("place the
+part between the jaws now"; contacts in these phases are only printed,
+the human's hand may touch the fingers), then ramps toward closed at
+the same speed while the newest touch
 reading is polled every cycle with a ~2 ms budget. The first reading
 with contact on the left AND the right finger (confirmed once with
 `safety.check_gripper("closed", ...)`) stops the close, adds the

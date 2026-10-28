@@ -547,3 +547,24 @@ motion finished, gripper back at the start reading
 stopping: the motors will be disabled now
 ```
 - Human measured the gripper scale (power supply off, jaws moved by hand, read with the dry run, tip gap with a ruler): +2.79 deg closed (0 mm), -4.97 deg 5 mm, -102.63 deg 32 mm, fully open 98 mm read +33.21 deg (the reading wraps at +-180 deg); with the earlier -167.13 deg at 53 mm this gives about 0.31 mm per motor degree, negative = open (the URDF-based guess was 0.32).
+- Human ran python -m muse_qc.gripper_grip --open-mm 40 (dry run) and --open-mm 40 --execute (2026-10-28, arm power supply on, hand on the power supply switch, jaws first set by hand to about 32 mm with the power off, the human held one connector part (about 17 mm wide) between the jaws): OK. The gripper opened to 40 mm, closed at 5 deg/s until the left and right fingers reported contact, squeezed 2 deg, held 3 s and opened again; the part was held firmly. Closing at 5 deg/s felt too slow, changed in the next change.
+```text
+rest joints deg: ['-2.74', '+1.10', '-1.45', '+2.72', '+2.42', '-1.96']
+gripper rest deg: -100.12 (width about 31.9 mm)
+open width: 40 mm -> gripper -126.23 deg
+squeeze: 2.0 deg past first bilateral contact
+arm hold deg: ['-2.74', '+0.00', '-1.45', '+2.72', '+2.42', '-1.96']
+arm hold: ok
+pico: /dev/ttyACM1
+firmware: 2
+do not touch the fingers
+output mode: deviation
+place the part between the jaws now
+contact: gripper commanded deg -46.18 measured deg -47.27 contacts L2 R2
+grip held at deg -44.18 width about 14.6 mm contacts L1 L2 R1 R2
+hold end: gripper commanded deg -44.18 measured deg -44.36
+gripper final deg: commanded -126.23 measured -126.32
+motion finished, gripper back at the open width
+stopping: the motors will be disabled now
+```
+The width at contact (about 15 mm by the scale) is below the part width because the soft Fin-Ray fingers wrap around the part.
