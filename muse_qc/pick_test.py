@@ -7,6 +7,9 @@ raise, return. --no-grip only lowers and holds for a ruler check.
 With --drop good|bad the plan is hover, lower, lift, to-box,
 release, return instead: the arm carries the part to the good
 (left) or bad (right) box and opens the gripper over it.
+With --inspect the arm holds the hover pose while the arm camera
+grabs one frame, the levers are counted and the verdict picks
+the box; a failed inspection aborts from hover with no grip.
 """
 from __future__ import annotations
 import argparse
@@ -26,8 +29,14 @@ from muse_qc.first_move_plan import clamp_to_limits, read_sdk_vlims, real_tip_m,
 from muse_qc.gripper_grip import deg_to_width, validate_targets, width_to_deg
 from muse_qc.gripper_motor import CONFIRM_PROMPT, GRIPPER_CONFIG_VLIM
 from muse_qc.gripper_stream import open_touch_sensor
+from muse_qc import inspect_step
 from muse_qc.pick_loop import PickLoop
-from muse_qc.pick_plan import build_pick_plan, check_pick_plan, plan_summary
+from muse_qc.pick_plan import (
+    build_inspect_plan,
+    build_pick_plan,
+    check_pick_plan,
+    plan_summary,
+)
 from muse_qc.target_pose import table_to_base_mm
 GRIP_Z_MM = (5.0, 60.0, 5.0)
 OPEN_MM = (25.0, 50.0, 28.0)
@@ -57,11 +66,12 @@ def _create_sdk():
 def _plan_and_check(arm_start_deg, grip_start_deg, table_xy, grip_z_mm, open_mm,
                     out, joint_limits, solve_fn, check_fn, tip_fn,
                     use_xy_correction=True, speed_deg_s=SPEED_DEG_S[2],
-                    drop=None, solve_drop_fn=None):
+                    drop=None, solve_drop_fn=None, inspect=False):
     open_deg = width_to_deg(open_mm)
     refused = validate_targets(grip_start_deg, open_deg)
+    boxes = ("good", "bad") if inspect else ([drop] if drop is not None else [])
     release_open_deg = None
-    if drop is not None:
+    if boxes:
         release_open_deg = width_to_deg(RELEASE_OPEN_MM)
         refused = refused or validate_targets(grip_start_deg, release_open_deg)
     if refused is not None:
@@ -76,42 +86,66 @@ def _plan_and_check(arm_start_deg, grip_start_deg, table_xy, grip_z_mm, open_mm,
     old_ref = safety.J6_REF
     safety.set_j6_ref(arm_start_deg[5])
     try:
-        drop_joints = None
         solved = None
-        if drop is not None:
+        if inspect:
             solver = solve_drop if solve_drop_fn is None else solve_drop_fn
-            solved = solver(BOXES_TABLE_MM[drop], arm_start_deg)
-            if not solved.get("ok"):
-                out(f"drop solve failed: {solved.get('reason')}")
-                return None, None
-            drop_joints = solved["joints_deg"]
-        built = build_pick_plan(arm_start_deg, table_xy, grip_z_mm,
-                                joint_limits, solve_fn=solve_fn,
-                                use_xy_correction=use_xy_correction,
-                                free_speed_deg_s=speed_deg_s,
-                                drop_joints=drop_joints, tip_fn=tip_of)
+            solved = {}
+            for box in boxes:
+                one = solver(BOXES_TABLE_MM[box], arm_start_deg)
+                if not one.get("ok"):
+                    out(f"drop solve failed: {one.get('reason')}")
+                    return None, None
+                solved[box] = one
+            built = build_inspect_plan(
+                arm_start_deg, table_xy, grip_z_mm, joint_limits,
+                solve_fn=solve_fn, use_xy_correction=use_xy_correction,
+                free_speed_deg_s=speed_deg_s,
+                drop_joints_by_box={box: one["joints_deg"]
+                                    for box, one in solved.items()},
+                tip_fn=tip_of)
+        else:
+            drop_joints = None
+            if drop is not None:
+                solver = solve_drop if solve_drop_fn is None else solve_drop_fn
+                solved = solver(BOXES_TABLE_MM[drop], arm_start_deg)
+                if not solved.get("ok"):
+                    out(f"drop solve failed: {solved.get('reason')}")
+                    return None, None
+                drop_joints = solved["joints_deg"]
+            built = build_pick_plan(arm_start_deg, table_xy, grip_z_mm,
+                                    joint_limits, solve_fn=solve_fn,
+                                    use_xy_correction=use_xy_correction,
+                                    free_speed_deg_s=speed_deg_s,
+                                    drop_joints=drop_joints, tip_fn=tip_of)
         if not built.get("ok"):
             out(f"plan failed: {built.get('reason')}")
             return None, None
         for line in plan_summary(built["plan"], built):
             out(line)
-        if drop is not None:
-            box_xy = BOXES_TABLE_MM[drop]
+        for box in boxes:
+            one = solved[box] if inspect else solved
+            box_xy = BOXES_TABLE_MM[box]
             base_x, base_y = table_to_base_mm(box_xy[0], box_xy[1])
             radius = math.hypot(base_x, base_y)
-            joints = solved["joints_deg"]
-            tip = solved["tip_base_mm"]
-            out(f"drop box: {drop} at table mm ({box_xy[0]:+.1f},"
+            joints = one["joints_deg"]
+            tip = one["tip_base_mm"]
+            out(f"drop box: {box} at table mm ({box_xy[0]:+.1f},"
                 f" {box_xy[1]:+.1f}), r={radius:.1f} mm")
             out("drop joints deg: " + " ".join(f"{v:+.2f}" for v in joints))
-            out(f"drop tilt: {solved['tilt_deg']:.1f} deg,"
+            out(f"drop tilt: {one['tilt_deg']:.1f} deg,"
                 f" fk tip base mm ({tip[0]:+.1f}, {tip[1]:+.1f}, {tip[2]:+.1f}),"
-                f" real tip z {solved['real_tip_z_mm']:.1f} mm")
-            low, high = built["ranges"]["to-box"]
+                f" real tip z {one['real_tip_z_mm']:.1f} mm")
+            branch = built.get("ranges_by_box", {}).get(box, built["ranges"])
+            low, high = branch["to-box"]
             lowest = min(tip_of(list(wp))[2]
                          for _, wp, _ in built["plan"][low:high]) * 1000.0
             out(f"to-box lowest tip z: {lowest:.1f} mm")
-        ok, bad, res = check_pick_plan(built["plan"], arm_start_deg, check, tip_of)
+        if inspect:
+            ok, bad, res = inspect_step.check_inspect_plan(
+                built, arm_start_deg, check, tip_of)
+        else:
+            ok, bad, res = check_pick_plan(
+                built["plan"], arm_start_deg, check, tip_of)
     finally:
         safety.set_j6_ref(old_ref)
     if not ok:
@@ -122,7 +156,11 @@ def _plan_and_check(arm_start_deg, grip_start_deg, table_xy, grip_z_mm, open_mm,
 def dry_run(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, out=print,
             find_port=None, sensor_factory=None, joint_limits=None, check_fn=None,
             tip_fn=None, solve_fn=None, use_xy_correction=True,
-            speed_deg_s=SPEED_DEG_S[2], drop=None, solve_drop_fn=None):
+            speed_deg_s=SPEED_DEG_S[2], drop=None, solve_drop_fn=None,
+            inspect=False, find_arm_node=None, read_key=None):
+    if inspect and inspect_step.check_prereqs(
+            out, find_arm_node, read_key) is None:
+        return 2
     reader, arm_start_deg, grip_start_deg = _read_start(sdk)
     try:
         out(f"rest joints deg: {[f'{v:+.2f}' for v in arm_start_deg]}")
@@ -137,7 +175,8 @@ def dry_run(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, out=print,
                                        solve_fn, check_fn, tip_fn,
                                        use_xy_correction,
                                        speed_deg_s=speed_deg_s,
-                                       drop=drop, solve_drop_fn=solve_drop_fn)
+                                       drop=drop, solve_drop_fn=solve_drop_fn,
+                                       inspect=inspect)
             if built is None:
                 return 1
             out("dry run: moves nothing, motors never enabled")
@@ -150,7 +189,9 @@ def execute(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, input_fn=input,
             out=print, find_port=None, sensor_factory=None, joint_limits=None,
             check_fn=None, tip_fn=None, arm_vlims=None, solve_fn=None,
             use_xy_correction=True, speed_deg_s=SPEED_DEG_S[2],
-            drop=None, solve_drop_fn=None):
+            drop=None, solve_drop_fn=None, inspect=False, find_arm_node=None,
+            read_key=None, open_arm_camera=None, make_client=None,
+            count_frame=None, inspect_recordings_dir="recordings"):
     reader, arm_start_deg, grip_start_deg = _read_start(sdk)
     stream, sensor = None, None
     old_ref = safety.J6_REF
@@ -159,12 +200,16 @@ def execute(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, input_fn=input,
         out(f"rest joints deg: {[f'{v:+.2f}' for v in arm_start_deg]}")
         out(f"gripper rest deg: {grip_start_deg:+.2f}"
             f" (width about {deg_to_width(grip_start_deg):.1f} mm)")
+        if inspect and inspect_step.check_prereqs(
+                out, find_arm_node, read_key) is None:
+            return 2
         open_deg, built = _plan_and_check(arm_start_deg, grip_start_deg, table_xy,
                                           grip_z_mm, open_mm, out, joint_limits,
                                           solve_fn, check_fn, tip_fn,
                                           use_xy_correction,
                                           speed_deg_s=speed_deg_s,
-                                          drop=drop, solve_drop_fn=solve_drop_fn)
+                                          drop=drop, solve_drop_fn=solve_drop_fn,
+                                          inspect=inspect)
         if built is None:
             return 1
         limits = safety.JOINT_LIMITS_DEG if joint_limits is None else joint_limits
@@ -196,16 +241,28 @@ def execute(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, input_fn=input,
         plan, ranges = built["plan"], built["ranges"]
         tips = [tip_of(list(wp)) for _, wp, _ in plan]
         release_open_deg = (width_to_deg(RELEASE_OPEN_MM)
-                              if drop is not None else None)
+                              if (drop is not None or inspect) else None)
         stream = PickLoop(arm_group, gripper_group, slow, gripper_slow, arm_start_rad,
                           plan, tips, ranges, tips[ranges["hover"][1] - 1][2], open_deg,
                           grip_start_deg, round(hold_s * LOOP_RATE_HZ), no_grip, sensor,
-                          out, check, tip_of, drop, release_open_deg)
+                          out, check, tip_of, drop, release_open_deg,
+                          inspect=inspect,
+                          ranges_by_box=built.get("ranges_by_box"),
+                          shared_ranges=built.get("shared_ranges"))
         total = len(plan) + 2 * round(hold_s * LOOP_RATE_HZ) + 500
         live = False
         try:
             sdk.start_control_loop(stream, rate=LOOP_RATE_HZ)
             live = True
+            if inspect:
+                box = inspect_step.wait_and_inspect(
+                    stream, out,
+                    ready_timeout_s=total / LOOP_RATE_HZ + 120.0,
+                    find_node=find_arm_node, open_camera=open_arm_camera,
+                    read_key=read_key, make_client=make_client,
+                    count_frame_fn=count_frame,
+                    recordings_dir=inspect_recordings_dir)
+                stream.set_verdict(box)
             stream.done.wait(timeout=total / LOOP_RATE_HZ + 120.0)
         except (KeyboardInterrupt, Exception) as exc:
             out("interrupted by human, holding position" if isinstance(exc, KeyboardInterrupt)
@@ -264,9 +321,13 @@ def main(argv=None, sdk_factory=None, **kwargs):
     parser.add_argument("--execute", action="store_true", help="fly the pick after confirmation")
     parser.add_argument("--no-xy-correction", action="store_true",
                         help="fly the uncorrected target (for A/B tests)")
-    parser.add_argument("--drop", choices=("good", "bad"), default=None,
-                        help="carry the part to the good (left) or bad (right)"
-                        " box and release it over the box (default: put down)")
+    exclusive = parser.add_mutually_exclusive_group()
+    exclusive.add_argument("--drop", choices=("good", "bad"), default=None,
+                           help="carry the part to the good (left) or bad (right)"
+                           " box and release it over the box (default: put down)")
+    exclusive.add_argument("--inspect", action="store_true",
+                           help="inspect at hover with the arm camera and sort"
+                           " into the box the lever count decides")
     args = parser.parse_args(argv)
     out = kwargs.get("out", print)
     for line in describe(args.gains):
@@ -274,6 +335,7 @@ def main(argv=None, sdk_factory=None, **kwargs):
     sdk = make_arm(args.gains, factory=sdk_factory)
     run = execute if args.execute else dry_run
     kwargs.setdefault("drop", args.drop)
+    kwargs.setdefault("inspect", args.inspect)
     return run(sdk, (args.table_mm[0], args.table_mm[1]), args.grip_z_mm,
                args.open_mm, args.no_grip, args.hold_s,
                use_xy_correction=not args.no_xy_correction,

@@ -171,6 +171,107 @@ def crop_and_enlarge(frame: numpy.ndarray, box: dict) -> numpy.ndarray:
     )
 
 
+def _fail(reason: str, stage: str) -> dict:
+    """Return the count_frame result dict for a failed inspection."""
+    return {
+        "ok": False,
+        "reason": reason,
+        "stage": stage,
+        "levers": None,
+        "verdict": None,
+        "full_image": "",
+        "crop_image": "",
+        "record": "",
+        "part": None,
+        "kept": [],
+        "dropped": [],
+    }
+
+
+def count_frame(
+    client: object,
+    frame: numpy.ndarray,
+    prompt: str,
+    recordings_dir: str | Path = "recordings",
+    source_image: str | Path = "",
+) -> dict:
+    """Find the part on one frame and count its levers; return a dict.
+
+    Runs the same two SAM calls as run_count (part, then levers on
+    the enlarged crop) and saves the two annotated images plus the
+    JSON record exactly as run_count does. Returns {"ok", "reason",
+    "levers", "verdict", "full_image", "crop_image", "record"} plus
+    "stage" (which step failed), "part", "kept" and "dropped" for
+    printing. Prints nothing and never includes any key.
+    """
+    try:
+        part_text = fetch_output_text(
+            client, PART_PROMPT, image_to_data_url(frame)
+        )
+    except Exception as exc:  # noqa: BLE001 - mapped to a short message
+        return _fail(f"request failed: {exc}", "part-request")
+    part = find_part(parse_output_text(part_text))
+    if part is None:
+        return _fail("part: not found", "no-part")
+    try:
+        crop = crop_and_enlarge(frame, part)
+    except Exception as exc:  # noqa: BLE001 - mapped to a short message
+        return _fail(f"request failed: {exc}", "crop")
+    try:
+        lever_text = fetch_output_text(
+            client, prompt, image_to_data_url(crop)
+        )
+    except Exception as exc:  # noqa: BLE001 - mapped to a short message
+        return _fail(f"request failed: {exc}", "lever-request")
+    kept, dropped = drop_short_bars(
+        count_levers(parse_output_text(lever_text)),
+        int(part["y2"]) - int(part["y1"]),
+    )
+    try:
+        full_path, crop_path = save_pair(
+            draw_part(frame, part, len(kept)),
+            draw_levers(crop, kept, len(kept)),
+            recordings_dir,
+        )
+    except (OSError, RuntimeError) as exc:
+        failed = _fail(f"request failed: {exc}", "images")
+        failed.update({"levers": len(kept), "verdict": verdict(len(kept)),
+                       "part": part, "kept": kept, "dropped": dropped})
+        return failed
+    try:
+        record_path = write_record(
+            build_record(
+                source_image=str(source_image),
+                full_image=str(full_path),
+                crop_image=str(crop_path),
+                part=part,
+                lever_prompt=prompt,
+                kept=kept,
+                dropped=dropped,
+                expected_levers=EXPECTED_LEVERS,
+            ),
+            recordings_dir,
+        )
+    except (OSError, RuntimeError) as exc:
+        failed = _fail(f"request failed: {exc}", "record")
+        failed.update({"levers": len(kept), "verdict": verdict(len(kept)),
+                       "part": part, "kept": kept, "dropped": dropped})
+        return failed
+    return {
+        "ok": True,
+        "reason": "",
+        "stage": "done",
+        "levers": len(kept),
+        "verdict": verdict(len(kept)),
+        "full_image": str(full_path),
+        "crop_image": str(crop_path),
+        "record": str(record_path),
+        "part": part,
+        "kept": kept,
+        "dropped": dropped,
+    }
+
+
 def run_count(
     api_key: str | None,
     frame: numpy.ndarray,
@@ -195,82 +296,43 @@ def run_count(
         return 2
     try:
         client = make_client(api_key)
-        part_text = fetch_output_text(
-            client, PART_PROMPT, image_to_data_url(frame)
-        )
     except Exception as exc:  # noqa: BLE001 - mapped to a short message
         print(f"request failed: {exc}")
         return 2
-    part = find_part(parse_output_text(part_text))
-    if part is None:
-        print("part: not found")
-        return 3
-    print(
-        f"part: box=({part['x1']}, {part['y1']},"
-        f" {part['x2']}, {part['y2']})"
-        f" confidence={part['confidence']:.2f}"
-    )
-    try:
-        crop = crop_and_enlarge(frame, part)
-    except Exception as exc:  # noqa: BLE001 - mapped to a short message
-        print(f"request failed: {exc}")
-        return 1
-    try:
-        lever_text = fetch_output_text(
-            client, prompt, image_to_data_url(crop)
-        )
-    except Exception as exc:  # noqa: BLE001 - mapped to a short message
-        print(f"request failed: {exc}")
-        return 2
-    kept, dropped = drop_short_bars(
-        count_levers(parse_output_text(lever_text)),
-        int(part["y2"]) - int(part["y1"]),
-    )
-    for box in dropped:
+    result = count_frame(client, frame, prompt, recordings_dir, source_image)
+    if result["part"] is not None:
+        part, kept, dropped = result["part"], result["kept"], result["dropped"]
         print(
-            f"dropped (too short): id {box['id']}"
-            f" box=({box['x1']}, {box['y1']}, {box['x2']}, {box['y2']})"
-            f" confidence={box['confidence']:.2f}"
+            f"part: box=({part['x1']}, {part['y1']},"
+            f" {part['x2']}, {part['y2']})"
+            f" confidence={part['confidence']:.2f}"
         )
-    for box in kept:
-        center_x, center_y = box["center"]
-        print(
-            f"id {box['id']}"
-            f" box=({box['x1']}, {box['y1']}, {box['x2']}, {box['y2']})"
-            f" center=({center_x:.1f}, {center_y:.1f})"
-            f" confidence={box['confidence']:.2f}"
-        )
-    print(f"levers: {len(kept)}")
-    print(f"verdict: {verdict(len(kept))}")
-    try:
-        full_path, crop_path = save_pair(
-            draw_part(frame, part, len(kept)),
-            draw_levers(crop, kept, len(kept)),
-            recordings_dir,
-        )
-    except (OSError, RuntimeError) as exc:
-        print(f"request failed: {exc}")
+        for box in dropped:
+            print(
+                f"dropped (too short): id {box['id']}"
+                f" box=({box['x1']}, {box['y1']}, {box['x2']}, {box['y2']})"
+                f" confidence={box['confidence']:.2f}"
+            )
+        for box in kept:
+            center_x, center_y = box["center"]
+            print(
+                f"id {box['id']}"
+                f" box=({box['x1']}, {box['y1']}, {box['x2']}, {box['y2']})"
+                f" center=({center_x:.1f}, {center_y:.1f})"
+                f" confidence={box['confidence']:.2f}"
+            )
+        print(f"levers: {result['levers']}")
+        print(f"verdict: {result['verdict']}")
+    if not result["ok"]:
+        print(result["reason"])
+        if result["stage"] == "no-part":
+            return 3
+        if result["stage"] in ("part-request", "lever-request"):
+            return 2
         return 1
-    print(full_path)
-    print(crop_path)
-    try:
-        record_path = write_record(
-            build_record(
-                source_image=str(source_image),
-                full_image=str(full_path),
-                crop_image=str(crop_path),
-                part=part,
-                lever_prompt=prompt,
-                kept=kept,
-                dropped=dropped,
-                expected_levers=EXPECTED_LEVERS,
-            ),
-            recordings_dir,
-        )
-    except (OSError, RuntimeError) as exc:
-        print(f"request failed: {exc}")
-        return 1
-    print(record_path)
+    print(result["full_image"])
+    print(result["crop_image"])
+    print(result["record"])
     return 0
 
 

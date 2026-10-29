@@ -26,13 +26,16 @@ SQUEEZE_DEG = 2.0
 FAULT_HOLD_CYCLES = int(0.5 * LOOP_RATE_HZ)
 DROP_WALKS = ("to-box",)
 _WALKS = ("hover", "lower", "lift", "put-down", "raise", "return") + DROP_WALKS
+INSPECT_SETTLE_S = 1.0
+INSPECT_TIMEOUT_S = 30.0
 class PickLoop:
     """100 Hz pick callback: walk the plan with touch-aware phases."""
     def __init__(self, arm_group, gripper_group, arm_vlim, gripper_vlim,
                  arm_start_rad, plan, tips, ranges, hover_z, open_deg,
                  start_grip_deg, hold_cycles, no_grip, sensor, out=print,
                  check_fn=None, tip_fn=None, drop_box=None,
-                 release_open_deg=None):
+                 release_open_deg=None, inspect=False,
+                 ranges_by_box=None, shared_ranges=None):
         self.arm_group = arm_group
         self.gripper_group = gripper_group
         self.arm_vlim = [float(v) for v in arm_vlim]
@@ -57,9 +60,19 @@ class PickLoop:
         self.confirmed = self.lost = self.abort_requested = False
         self.exit_code = 0
         self.done = threading.Event()
+        self.inspect = bool(inspect)
+        self.ranges_by_box, self.shared_ranges = ranges_by_box, shared_ranges
+        self.inspect_ready = threading.Event()
+        self._verdict, self._inspected = "pending", False
+        self._settle_left = int(INSPECT_SETTLE_S * LOOP_RATE_HZ)
     def abort(self):
         if not self.done.is_set():
             self.abort_requested = True
+    def set_verdict(self, box):
+        """Take the main-thread inspection verdict ("good", "bad", None)."""
+        if box not in ("good", "bad", None):
+            raise ValueError(f"bad verdict {box!r}")
+        self._verdict = box
     def _send(self, arm_rad, grip_deg):
         self.arm_group.send_pos_vel([float(v) for v in arm_rad], vlim=self.arm_vlim)
         self.gripper_group.send_pos_vel([math.radians(grip_deg)], vlim=self.gripper_vlim)
@@ -165,8 +178,6 @@ class PickLoop:
         elif self.phase in ("release", "release_hold"):
             return True
         return self.pos is not None and self.plan[self.pos][0] == segment
-        self.abort_requested = False
-        self.phase = "abort"
     def _contact_stop(self):
         assert self.pos is not None
         shown = " ".join(sorted(self.contacts)) or "-"
@@ -211,8 +222,10 @@ class PickLoop:
         elif self.phase == "squeeze":
             assert self.squeeze_target is not None
             self._ramp(self.squeeze_target, self._to_squeeze_hold)
+        elif self.phase == "inspect_hold":
+            self._do_inspect_hold()
         elif self.phase in ("open", "miss_open", "reopen", "drop_open"):
-            self._ramp(self.open_deg, {"open": self._to_lower,
+            self._ramp(self.open_deg, {"open": self._to_after_hover,
                                        "miss_open": self._start_abort,
                                        "reopen": self._to_raise,
                                        "drop_open": self._to_return}[self.phase])
@@ -233,6 +246,37 @@ class PickLoop:
     def _walk_seg(self, segment):
         self.k, self.end = self.ranges[segment]
         self.phase = segment
+    def _to_after_hover(self):
+        if self.inspect and not self._inspected and self.ranges_by_box:
+            self.phase = "inspect_hold"
+        else:
+            self._to_lower()
+    def _do_inspect_hold(self):
+        if not self._hold():
+            return
+        if self._settle_left > 0:
+            self._settle_left -= 1
+            if self._settle_left > 0:
+                return
+            self.inspect_ready.set()
+            self.left = int(INSPECT_TIMEOUT_S * LOOP_RATE_HZ)
+            return
+        if self._verdict == "pending":
+            self.left -= 1
+            if self.left <= 0:
+                self._out("inspect timeout")
+                self.exit_code = 1
+                self._start_abort()
+            return
+        box = self._verdict
+        self._inspected = True
+        if box is None:
+            self.exit_code = 1
+            self._start_abort()
+            return
+        self.drop_box = box
+        self.ranges = {**self.shared_ranges, **self.ranges_by_box[box]}
+        self._to_lower()
     def _to_lower(self): self._walk_seg("lower")
     def _to_lift(self): self._walk_seg("lift")
     def _to_raise(self): self._walk_seg("raise")
@@ -308,7 +352,7 @@ class PickLoop:
             return
         if self.phase == "hover":
             if self._grip_at_open():
-                self._to_lower()
+                self._to_after_hover()
             else:
                 self.phase = "open"  # hold hover until fully open
         elif self.phase == "lower":

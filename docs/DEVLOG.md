@@ -803,3 +803,29 @@ levers: 3
 verdict: good
 ```
 Human work on sorting (2026-10-29): the human placed and measured the two sorting boxes (100 x 100 x 70 mm, good left, bad right) after the first placement left too little room, decided on the vel2 gains after comparing default, soft, stiff and vel2 hold runs with a gentle hand push, reviewed every diff (review file before the commit, push review before every push), asked for the skip zones after seeing candidates in the boxes and on the gripper, retook the empty-table reference, ran all sorting runs with a hand on the power supply switch, and found the lever-count failure by running the camera, counting and picking steps one after another.
+- Human ran python -m muse_qc.hover_move --table-mm 513.3 340.7 --hold-s 30 --execute and python -m muse_qc.camera_arm in a second terminal during the hold, then python -m muse_qc.count_clips on that image (2026-10-29 evening, lamp light only, arm power supply on): OK. The arm camera is mounted tilted forward, so at the hover pose it sees the part free in front of the finger tips (not straight down); the hover pose works as the inspection pose. Joint 4 swayed again during hover_move (it runs with the default gains, vel2 is only in pick_test). Correction to the earlier "full chain by hand" entry: recordings/armcam_20261029_133942.png was taken at the hover pose too, not in the home pose (same view, same part position in the image).
+```text
+part: box=(327, 192, 356, 223) confidence=0.83
+id 2 box=(239, 249, 274, 372) center=(256.5, 310.5) confidence=0.76
+id 1 box=(189, 251, 224, 373) center=(206.5, 312.0) confidence=0.74
+id 0 box=(298, 245, 327, 369) center=(312.5, 307.0) confidence=0.72
+levers: 3
+verdict: good
+```
+- Human ran python -m muse_qc.hold_test --table-mm 495.9 330 --gains vel3 --execute twice (2026-10-29 evening, arm power supply on, 20 s hold at 100 mm), first without touching, then with the gentle hand push on the finger tips: NOT ADOPTED. Without push joint 4 was a little calmer than vel2 (p2p 0.44 vs 0.55 deg), but the human heard the motors hum. With the push joint 4 rang at 1.7 Hz (p2p 2.71 deg) instead of coming back cleanly as with vel2. vel2 stays the pick default, vel3 is not used.
+```text
+=== without push
+joint 1: mean err -0.02 deg, p2p 0.04 deg, rms 0.02 deg
+joint 2: mean err +0.00 deg, p2p 1.36 deg, rms 0.11 deg
+joint 3: mean err +0.00 deg, p2p 1.22 deg, rms 0.10 deg
+joint 4: mean err -0.01 deg, p2p 0.44 deg, rms 0.04 deg, swing 0.2 Hz
+joint 5: mean err -0.01 deg, p2p 0.02 deg, rms 0.01 deg, swing n/a
+joint 6: mean err -0.01 deg, p2p 0.07 deg, rms 0.02 deg
+=== with push
+joint 1: mean err -0.01 deg, p2p 0.17 deg, rms 0.03 deg
+joint 2: mean err +0.01 deg, p2p 1.46 deg, rms 0.12 deg
+joint 3: mean err +0.00 deg, p2p 1.27 deg, rms 0.10 deg
+joint 4: mean err -0.01 deg, p2p 2.71 deg, rms 0.35 deg, swing 1.7 Hz
+joint 5: mean err -0.01 deg, p2p 1.07 deg, rms 0.15 deg, swing 0.6 Hz
+joint 6: mean err -0.01 deg, p2p 0.24 deg, rms 0.06 deg
+```

@@ -1336,7 +1336,10 @@ is now the default of `muse_qc/pick_test.py`; `hold_test` keeps
 first, then compare joint 4/5 peak-to-peak and RMS with the
 default run without push; the same safety rule as for stiff
 applies (buzz, hum or oscillation on its own means power supply
-off at once).
+off at once). Vel3 was tested on 2026-10-29 and not adopted:
+without push the motors hummed, and with the push joint 4 rang
+at 1.7 Hz instead of coming back cleanly as with vel2 (see
+docs/DEVLOG.md); vel2 stays the pick default.
 
 The soft gains live only in a runtime copy:
 `write_runtime_yaml` copies the SDK hardware yaml into a
@@ -1398,6 +1401,42 @@ Save the empty-table reference again with the boxes in place first:
 at rest, otherwise the boxes themselves become candidates. Parts
 must lie between the arm and the boxes within about 345 mm of the
 joint 1 axis, the outer range of the x/y correction.
+
+## 32. Inspect while hovering and sort (by hand only)
+
+With `--inspect` the pick sorts the part into the box the lever
+count decides instead of a fixed `--drop` box (`--inspect` and
+`--drop` exclude each other on the command line). The plan is
+built once with both drop branches: hover, lower and lift as
+today, then the to-box/release/return waypoints for the good and
+for the bad box. The dry run solves and checks every waypoint of
+both branches before anything moves, and first checks that the
+arm colour node exists and that the API key is present (the key is
+never printed).
+
+Order, with the hand on the power supply switch:
+
+```bash
+uv run python -m muse_qc.pick_test --table-mm 513.3 340.7 --inspect
+uv run python -m muse_qc.pick_test --table-mm 513.3 340.7 --inspect --execute
+```
+
+With `--execute` the loop walks the hover segment and opens the
+gripper, then holds the last commanded hover pose: first 1 s to
+let the arm settle, then the main thread grabs one frame with the
+arm camera, saves it as recordings/armcam_<timestamp>.png, counts
+the levers with count_clips.count_frame and hands the verdict to
+the loop, which takes the ranges of that box and continues with
+lower as today. The control loop thread never opens the camera
+and never calls the API; without `--inspect` everything behaves
+exactly as today.
+
+Failure behaviour: no frame, no part found or an API error prints
+"inspect failed: ..." and aborts the run from hover with exit
+code 1 -- the gripper stays open, no grip happens and the arm
+walks back to rest. The same abort (with "inspect timeout") fires
+when no verdict arrives within 30 s. Only the human runs it,
+never CI and never an agent.
 
 ## Safety notes
 

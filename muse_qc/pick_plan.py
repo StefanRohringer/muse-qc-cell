@@ -260,6 +260,54 @@ def build_pick_plan(start_deg: object, table_xy: object, grip_z_mm: float,
     }
 
 
+def build_inspect_plan(start_deg: object, table_xy: object, grip_z_mm: float,
+                       joint_limits: object = None, solve_fn: object = None,
+                       hover_mm: float = HOVER_MM,
+                       use_xy_correction: bool = True,
+                       free_speed_deg_s: float = FREE_SPEED_DEG_S,
+                       accel_deg_s2: float = ACCEL_DEG_S2,
+                       drop_joints_by_box: object = None,
+                       tip_fn: object = None) -> dict:
+    """Build one plan with both drop branches. Pure, moves nothing.
+
+    Shared hover, lower and lift exactly as build_pick_plan, then
+    the to-box/release/return waypoints of the good branch followed
+    by the bad branch. Returns the build_pick_plan dict (ranges
+    holds the good branch, the default) plus ranges_by_box, the
+    shared hover/lower/lift ranges and drop_joints_by_box.
+    check_pick_plan over the whole plan checks every waypoint of
+    both branches before anything moves.
+    """
+    try:
+        by_box = {box: tuple(float(v) for v in drop_joints_by_box[box])
+                  for box in ("good", "bad")}
+    except (TypeError, ValueError, KeyError, IndexError):
+        return {"ok": False, "reason": "bad drop joints"}
+    first = build_pick_plan(start_deg, table_xy, grip_z_mm, joint_limits,
+                            solve_fn, hover_mm, use_xy_correction,
+                            free_speed_deg_s, accel_deg_s2,
+                            by_box["good"], tip_fn)
+    if not first.get("ok"):
+        return first
+    second = build_drop_segments(first["hover_joints"], by_box["bad"],
+                                 first["rest_joints"], free_speed_deg_s,
+                                 accel_deg_s2, tip_fn)
+    if not second.get("ok"):
+        return {"ok": False, "reason": str(second.get("reason"))}
+    offset = len(first["plan"])
+    first["plan"] = list(first["plan"]) + list(second["plan"])
+    first["ranges_by_box"] = {
+        "good": {seg: first["ranges"][seg]
+                 for seg in (SEG_TOBOX, SEG_RELEASE, SEG_RETURN)},
+        "bad": {seg: (low + offset, high + offset)
+                for seg, (low, high) in second["ranges"].items()},
+    }
+    first["shared_ranges"] = {seg: first["ranges"][seg]
+                              for seg in (SEG_HOVER, SEG_LOWER, SEG_LIFT)}
+    first["drop_joints_by_box"] = by_box
+    return first
+
+
 def abort_detour(plan: list[tuple[str, tuple[float, ...], bool]],
                    tips: list[tuple[float, float, float]],
                    ranges: dict[str, tuple[int, int]], hover_z: float,
