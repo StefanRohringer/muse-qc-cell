@@ -1421,6 +1421,18 @@ uv run python -m muse_qc.pick_test --table-mm 513.3 340.7 --inspect
 uv run python -m muse_qc.pick_test --table-mm 513.3 340.7 --inspect --execute
 ```
 
+Recorded output (2026-10-29, good part):
+
+```text
+inspect: levers 3 verdict good
+contact: gripper commanded deg -45.82 measured deg -49.36 contacts L2 R2
+contacts L1 L2 R1 R2 (lifting)
+part lifted, holding
+dropped into the good box
+```
+
+The bad part run gave "inspect: levers 2 verdict bad" and "dropped into the bad box".
+
 With `--execute` the loop walks the hover segment and opens the
 gripper, then holds the last commanded hover pose: first 1 s to
 let the arm settle, then the main thread grabs one frame with the

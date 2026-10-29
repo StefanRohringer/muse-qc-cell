@@ -829,3 +829,33 @@ joint 4: mean err -0.01 deg, p2p 2.71 deg, rms 0.35 deg, swing 1.7 Hz
 joint 5: mean err -0.01 deg, p2p 1.07 deg, rms 0.15 deg, swing 0.6 Hz
 joint 6: mean err -0.01 deg, p2p 0.24 deg, rms 0.06 deg
 ```
+- Human ran python -m muse_qc.find_parts and python -m muse_qc.pick_test --table-mm 513.3 341.1 --inspect (dry run, then --execute) with a good part (3 levers) (2026-10-29 evening, lamp light only, arm power supply on, hand on the power supply switch): OK, FIRST SELF-DECIDED SORTING RUN. The arm hovered over the part, took the arm camera image, counted 3 levers, decided "good" on its own and dropped the part into the good box. find_parts also showed two candidates on the cable next to the base (table mm (350.1, 4.9) and (358.7, 56.9)), both rejected by SAM ("no box").
+```text
+part 9 center=(1016, 390) area_mm2=285 table_mm=(513.3, 341.1) sam=confirmed 0.72
+parts: 1 confirmed of 11 candidates (8 skipped)
+inspect: camera /dev/video6
+inspect: api key present
+all waypoints ok
+attempt 1 ok: True
+inspect: levers 3 verdict good
+contact: gripper commanded deg -45.82 measured deg -49.36 contacts L2 R2
+contacts L1 L2 R1 R2 (lifting)
+part lifted, holding
+dropped into the good box
+end readings: arm [-2.79 +0.14 -2.96 +5.56 +2.57 -0.45] gripper -126.28 deg
+```
+- Human ran python -m muse_qc.find_parts and python -m muse_qc.pick_test --table-mm 510.1 318.0 --inspect (dry run, then --execute) with a bad part (one lever torn out, 2 levers) (2026-10-29 evening, same conditions): OK. The arm counted 2 levers, decided "bad" on its own and dropped the part into the bad box. The part lay closer to the arm than the fitted range of the x/y correction (corrected base x 275.9 mm, fit range about 313 to 345 mm); the grip still worked.
+```text
+part 9 center=(1011, 428) area_mm2=287 table_mm=(510.1, 318.0) sam=confirmed 0.63
+parts: 1 confirmed of 11 candidates (8 skipped)
+corrected base target: x=+275.93 y=-22.64 mm
+all waypoints ok
+attempt 1 ok: True
+inspect: levers 2 verdict bad
+contact: gripper commanded deg -46.72 measured deg -49.91 contacts L2 R2
+contacts L2 R2 (lifting)
+part lifted, holding
+dropped into the bad box
+end readings: arm [-2.79 +0.32 -3.07 +5.72 +2.57 -0.45] gripper -126.30 deg
+```
+Human work on the inspection (2026-10-29 evening): the human found by watching the arm that the arm camera looks forward and not straight down at the hover pose, which made the hover pose usable as the inspection pose; had the --inspect change reviewed before the commit (the review found that the plan check chained the bad branch after the good return and would have refused every real plan), and ran both self-decided runs with a hand on the power supply switch.
