@@ -1393,7 +1393,37 @@ uv run python -m muse_qc.hold_test --table-mm 506.4 338.1 --hold-s 20 --gains ve
 uv run python -m muse_qc.hold_test --table-mm 506.4 338.1 --hold-s 20 --gains vel2 --hold-mode posvel --execute
 ```
 
-Both runs are not yet run (no output recorded here).
+Recorded runs (2026-10-30, same point 506.4 338.1, `--gains vel2`, 20 s hold each; recorded output, never edited):
+
+```text
+mit-ff:
+hold commanded deg: -3.84 -102.77 -95.99 +83.23 -0.00 +0.01
+hold measured deg: -3.44 -102.85 -94.89 +82.67 +0.34 -0.32
+hold measured tip mm: x=+293.6 y=-19.0 z=+95.1
+motion finished, arm holds the settle pose
+joint 1: mean err +0.40 deg, p2p 0.00 deg, rms 0.40 deg
+joint 2: mean err -0.08 deg, p2p 0.26 deg, rms 0.08 deg
+joint 3: mean err +1.10 deg, p2p 0.17 deg, rms 1.10 deg
+joint 4: mean err -0.56 deg, p2p 0.39 deg, rms 0.56 deg, swing n/a
+joint 5: mean err +0.34 deg, p2p 0.00 deg, rms 0.34 deg, swing n/a
+joint 6: mean err -0.32 deg, p2p 0.00 deg, rms 0.32 deg
+```
+
+```text
+posvel:
+hold commanded deg: -3.84 -102.77 -95.99 +83.23 -0.00 +0.01
+hold measured deg: -3.86 -102.78 -96.01 +82.89 -0.01 -0.01
+hold measured tip mm: x=+297.9 y=-20.1 z=+99.6
+motion finished, arm holds the settle pose
+joint 1: mean err -0.01 deg, p2p 0.04 deg, rms 0.02 deg
+joint 2: mean err +0.00 deg, p2p 1.31 deg, rms 0.11 deg
+joint 3: mean err +0.00 deg, p2p 1.20 deg, rms 0.10 deg
+joint 4: mean err -0.01 deg, p2p 1.11 deg, rms 0.20 deg, swing 0.8 Hz
+joint 5: mean err -0.01 deg, p2p 0.00 deg, rms 0.01 deg, swing n/a
+joint 6: mean err -0.02 deg, p2p 0.15 deg, rms 0.03 deg
+```
+
+Result in one paragraph: with MIT plus gravity feed-forward joint 4 did not swing (p2p 0.39 deg, standard deviation 0.023 deg from the CSV, no swing frequency found) while the position-velocity hold swung at 0.8 Hz with p2p 1.11 deg; joints 2 and 3 were also much calmer (p2p 0.26/0.17 vs 1.31/1.20 deg). The human watched both runs: MIT hold looked steady, posvel swung again. Cost: MIT has a steady offset because the gripper is heavier than the SDK model (no integral term): joint 3 +1.10 deg, the tip about 5 mm lower (z 95.1 vs 99.6 mm). Next step: per-joint torque scale to remove the offset before MIT is used for picking. CSV files: recordings/hold_mit-ff_20261030_001308.csv and recordings/hold_posvel_20261030_001520.csv (not in the repo).
 
 ## 31. Sorting into the good and bad box
 

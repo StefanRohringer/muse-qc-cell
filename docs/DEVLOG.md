@@ -863,3 +863,34 @@ Human work on the inspection (2026-10-29 evening): the human found by watching t
 - Human ran `uv run python -m muse_qc.agent --execute` (2026-10-29 ~22:23, power supply on, hand on the switch): FIRST AGENT RUN WITH THE ARM. Fresh empty reference taken before (`find_parts --no-sam` gave candidates: 0). Three parts on the table; scan_table returned 2 parts (the third was a candidate that SAM did not confirm, shown yellow in the image, so it was not offered to the agent). Sort 1 at (478.7, 344.7): "inspect: levers 3 verdict good", contact L2 R2 -45.82/-49.34, "dropped into the good box". Sort 2 and its retry at (703.4, 259.6) failed with "request failed: new_dm_serial failed: open serial port /dev/ttyACM0 failed: Device or resource busy". Agent: "2 consecutive failures, stopping", exit 1. Cause: pick_test ran inside the agent process and the serial port stayed held; fixed by running each sort as a child process.
 - Human ran `uv run python -m muse_qc.agent --execute` (2026-10-29 ~22:41 to 22:44, power supply on, hand on the switch): child-process fix confirmed, three sorts in a row without a busy port, write_report, finish "Sorted 3 parts: 0 good, 3 bad, 0 failures. Table empty, report written.", exit 0. All three parts were good parts but were counted "levers 0 verdict bad" and dropped into the bad box. One part stayed on the table: the last scan listed it as an unconfirmed candidate at (713, 238) (SAM did not confirm it, it lay tilted), so the agent saw "no parts found". Contacts per sort: L2 R2 at -46.12/-49.56, -49.27/-52.64, -45.97/-49.43, all "dropped into the bad box".
 - The human had the saved images reviewed (AI-assisted review): two wrong-part picks (highest confidence instead of the target) and one prompt miss under the evening lamp. count_20261029_224139 and count_20261029_224236: find_part picked the highest-confidence box, another part further right (lying on its side); the gripped target sat top centre in front of the fingers. count_20261029_224330: the right part (box (325,186,355,217)), three levers visible in the crop, but SAM returned 0 boxes for "orange bar" (the levers look brown). Human prompt test on recordings/armcam_20261029_224328.png: "orange bar" 0, "orange lever" 0, "orange stripe" 0, "lever" 0, "brown bar" 3. Human re-count of every inspection image of the day with "brown bar" (orange -> brown): 134008 0->3, 134656 3->3, 204601 3->3, 211720 3->3, 212016 2->2 (the bad part), 222330 3->3, 224139 0->0 and 224236 0->0 (wrong part picked), 224330 0->3, 225250/225253/225255/225257 0->3 (the prompt test runs), 225300 3->3. "brown bar" was never lower than "orange bar" and kept the bad part at 2.
+- Human ran the arm-camera height test (2026-10-29 ~23:21 to 23:28, power supply on, hand on the switch): one good part flat at table (506.4, 338.1) (find_parts: confirmed 0.71). `hover_move --table-mm 506.4 338.1 --hover 100 --hold-s 30 --execute` with `camera_arm` during the hold, then the same with `--hover 80`, then `--table-mm 506.4 298.1 --hover 80` (40 mm towards the base). `count_clips` on the three images: part boxes (327,181,355,212) conf 0.80, (326,197,357,231) conf 0.81, (322,125,358,165) conf 0.82, all "levers: 3". Lowering the hover from 100 to 80 mm made the part only about 1 px larger, because the arm camera looks forward; the inspection height stays at 100 mm. The human saw joint 4 swing during hover_move (default gains).
+- Human ran `uv run python -m muse_qc.hold_test --table-mm 506.4 338.1 --hold-s 20 --gains vel2 --hold-mode mit-ff` (dry run, 2026-10-30 ~00:11): all waypoints pass, mit kp 120 120 120 18 18 18, kd 8 8 8 2 2 2, tau scale 1.0, gravity torque at hover J1 -0.000, J2 +7.474, J3 -5.564, J4 -0.236, J5 -0.000, J6 -0.000 N*m.
+- Human ran the same with `--execute` (2026-10-30 ~00:13, power supply on, hand on the switch), then `--hold-mode posvel --execute` at the same point (~00:15). Recorded output:
+```text
+mit-ff:
+hold commanded deg: -3.84 -102.77 -95.99 +83.23 -0.00 +0.01
+hold measured deg: -3.44 -102.85 -94.89 +82.67 +0.34 -0.32
+hold measured tip mm: x=+293.6 y=-19.0 z=+95.1
+motion finished, arm holds the settle pose
+joint 1: mean err +0.40 deg, p2p 0.00 deg, rms 0.40 deg
+joint 2: mean err -0.08 deg, p2p 0.26 deg, rms 0.08 deg
+joint 3: mean err +1.10 deg, p2p 0.17 deg, rms 1.10 deg
+joint 4: mean err -0.56 deg, p2p 0.39 deg, rms 0.56 deg, swing n/a
+joint 5: mean err +0.34 deg, p2p 0.00 deg, rms 0.34 deg, swing n/a
+joint 6: mean err -0.32 deg, p2p 0.00 deg, rms 0.32 deg
+```
+```text
+posvel:
+hold commanded deg: -3.84 -102.77 -95.99 +83.23 -0.00 +0.01
+hold measured deg: -3.86 -102.78 -96.01 +82.89 -0.01 -0.01
+hold measured tip mm: x=+297.9 y=-20.1 z=+99.6
+motion finished, arm holds the settle pose
+joint 1: mean err -0.01 deg, p2p 0.04 deg, rms 0.02 deg
+joint 2: mean err +0.00 deg, p2p 1.31 deg, rms 0.11 deg
+joint 3: mean err +0.00 deg, p2p 1.20 deg, rms 0.10 deg
+joint 4: mean err -0.01 deg, p2p 1.11 deg, rms 0.20 deg, swing 0.8 Hz
+joint 5: mean err -0.01 deg, p2p 0.00 deg, rms 0.01 deg, swing n/a
+joint 6: mean err -0.02 deg, p2p 0.15 deg, rms 0.03 deg
+```
+Result in one paragraph: with MIT plus gravity feed-forward joint 4 did not swing (p2p 0.39 deg, standard deviation 0.023 deg from the CSV, no swing frequency found) while the position-velocity hold swung at 0.8 Hz with p2p 1.11 deg; joints 2 and 3 were also much calmer (p2p 0.26/0.17 vs 1.31/1.20 deg). The human watched both runs: MIT hold looked steady, posvel swung again. Cost: MIT has a steady offset because the gripper is heavier than the SDK model (no integral term): joint 3 +1.10 deg, the tip about 5 mm lower (z 95.1 vs 99.6 mm). Next step: per-joint torque scale to remove the offset before MIT is used for picking. CSV files: recordings/hold_mit-ff_20261030_001308.csv and recordings/hold_posvel_20261030_001520.csv (not in the repo).
+- Human work on the hold: the human asked for a fix of the joint 4 swing, chose to test the SDK gravity compensation, had the research answer and the code change reviewed before the commit (the review checked that the mode switch happens only before enable and that the gravity model is the DM URDF of the SDK config), ran the dry run first so the gravity torques were checked before anything moved, and ran both hardware runs with a hand on the power supply switch.
