@@ -1169,6 +1169,62 @@ stopping: the motors will be disabled now
 end readings: arm [-2.79 +0.12 -2.04 +2.94 +2.55 -0.36] gripper -126.28 deg
 ```
 
+## 29. Find parts on the table (empty reference + SAM confirm)
+
+SAM 3.1 on the full 1920x1080 frame finds the white 25 mm cube
+reliably, but not the grey/orange connector parts (about 25 px wide,
+low contrast on light wood): on 2026-10-29 the phrases "small part",
+"grey block", "orange and grey object" and "small grey box" all
+returned 0 boxes. `muse_qc/find_parts.py` therefore works in two
+steps: it compares the frame with a reference photo of the empty
+table (arm in its rest pose) and takes every new blob as a candidate,
+then sends a zoomed crop around each candidate to SAM 3.1 to confirm
+it and refine the centre. Only the human runs it, never CI and never
+an agent (it opens the real table camera and contacts the Meta Model
+API over the network).
+
+Order, from the project root:
+
+```bash
+uv run python -m muse_qc.find_parts --save-empty
+uv run python -m muse_qc.find_parts --image recordings/frame.png --no-sam
+uv run python -m muse_qc.find_parts --image recordings/frame.png
+```
+
+First store the reference with the table empty and the arm in its
+rest pose: `--save-empty` takes one frame with
+`camera_top.open_table_camera` and saves it as
+`recordings/empty_table.png`, then prints the path and exits 0.
+Then place the parts and run with `--no-sam` first (change
+detection only, one line per candidate with blob centre, area and
+table mm, ending in `candidates: M`), then with SAM (default phrase
+`small part`, overridable with `--phrase`; one SAM call per
+candidate on a square crop of side max(3x blob side, 160 px),
+upscaled to 640 px). Each line reports the centre used (SAM box
+centre when confirmed, blob centre otherwise), the area, the table
+position and the SAM verdict (`confirmed` with confidence, `no box`
+or `skipped`), sorted by table x; the last lines give the
+`parts: N confirmed of M candidates` count and the path of the
+annotated copy at `recordings/parts_<YYYYmmdd_HHMMSS>.png` (blob
+rectangles, green when confirmed, yellow otherwise, with id and
+table mm). A missing reference or a size mismatch prints a short
+message with exit 2; more than 12 blobs prints `too many changes`
+with exit 1.
+
+Blobs are found by Gaussian blur, absolute difference in LAB space
+(max over the channels, threshold 30), morphological open then
+close, and external contours; a blob counts only when its area
+(through the marker scale) is between 150 and 3000 mm2 and its
+centre maps inside the table rectangle (0 to 990 mm in x, 0 to
+540 mm in y). The table position uses the same calibration and
+marker homography as `muse_qc/vision_sam.py`, and the key handling
+and error messages match it (the key is never printed).
+
+Take a new reference with `--save-empty` whenever the light or the
+camera changes (position, settings, white balance): the diff sees
+any illumination shift as new blobs. The reference image stays
+local: `recordings/` is git-ignored and never committed.
+
 ## Safety notes
 
 Read-only review of the SDK file
