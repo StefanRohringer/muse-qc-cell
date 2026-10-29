@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import math
+from pathlib import Path
 
 import pytest
 
@@ -184,6 +185,31 @@ def test_execute_reports_hold_stats_and_saves_csv(monkeypatch, tmp_path):
     assert rows[0] == ["t_s"] + [f"joint{joint}_deg" for joint in range(1, 7)]
     assert len(rows) == 1 + 5 * int(LOOP_RATE_HZ)
     assert all(len(row) == 7 for row in rows[1:])
+
+
+def test_gains_stiff_passes_hw_yaml_to_factory(monkeypatch):
+    monkeypatch.setattr(hover_move, "solve_hover", _fake_solve_ok)
+    arm = FakeArm(REST_DEG)
+    seen = []
+
+    def factory(**kwargs):
+        seen.append(kwargs)
+        return arm
+
+    lines = []
+    code = hold_test.main(
+        ["--table-mm", "495.9", "322.7", "--gains", "stiff"],
+        sdk_factory=factory,
+        check_fn=_always_ok, tip_fn=_fake_tip,
+        joint_limits=TEST_LIMITS, out=lines.append,
+    )
+    assert code == 0
+    (kwargs,) = seen
+    runtime = Path(kwargs["hw_yaml"])
+    assert runtime.is_file()
+    text = "\n".join(str(line) for line in lines)
+    assert "joint 4: pos_kp" in text
+    assert "vel_kp" in text
 
 
 def test_hold_stream_keeps_only_hold_samples():

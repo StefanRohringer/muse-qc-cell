@@ -11,7 +11,7 @@ import math
 import sys
 from muse_qc import safety
 from muse_qc.arm import Arm
-from muse_qc.arm_gains import describe, make_arm
+from muse_qc.arm_gains import GAIN_PROFILES, describe, make_arm
 from muse_qc.first_move import CONFIRM_WORD
 from muse_qc.first_move_plan import LOOP_RATE_HZ, VLIM_FRACTION
 from muse_qc.first_move_plan import clamp_to_limits, read_sdk_vlims, real_tip_m, scale_vlim
@@ -210,8 +210,9 @@ def main(argv=None, sdk_factory=None, **kwargs):
                         help="hold time in s, 0.5 to 30 (default 1)")
     parser.add_argument("--speed-deg-s", type=_speed_type, default=SPEED_DEG_S[2],
                         help="free ramp speed in deg/s, 2 to 15 (default 15)")
-    parser.add_argument("--gains", choices=("default", "soft"), default="default",
-                        help="motor gain profile (default or soft joints 4/5)")
+    parser.add_argument("--gains", choices=tuple(GAIN_PROFILES),
+                        default="default",
+                        help="motor gain profile for joints 4/5")
     parser.add_argument("--execute", action="store_true", help="fly the pick after confirmation")
     parser.add_argument("--no-xy-correction", action="store_true",
                         help="fly the uncorrected target (for A/B tests)")

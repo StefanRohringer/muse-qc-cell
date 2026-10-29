@@ -1277,14 +1277,32 @@ argparse error (exit 2) before anything connects. The dry run
 nothing. With `--execute` the human confirms with `yes`, then the
 arm holds the hover pose for the given time.
 
-`--gains soft` is the A/B candidate: `muse_qc/arm_gains.py` keeps
-the position integral off (pos_ki 0.0) and lowers pos_kp by 30 %
-for joints 4 and 5 only (70 to 49, 60 to 42; velocity loop
-unchanged). The profile is printed joint by joint before the
-`yes` prompt. A/B order: same point, first `--gains default`,
-then `--gains soft`, and compare peak-to-peak and swing of joints
-4 and 5; watch the mean error for sagging (without the integral
-term the joint may rest slightly off target under load).
+`--gains soft` was the first A/B candidate: `muse_qc/arm_gains.py`
+keeps the position integral off (pos_ki 0.0) and lowers pos_kp by
+30 % for joints 4 and 5 only (70 to 49, 60 to 42; velocity loop
+unchanged). The 2026-10-29 A/B (same point, first `--gains
+default`, then `--gains soft`, 20 s hold each) showed no visible
+difference and soft slightly worse (joint 4 p2p 1.07 deg default
+vs 1.25 deg soft, joint 5 p2p 0.15 deg vs 0.35 deg), so default
+stays and soft is kept only for reference.
+
+`--gains stiff` is the new A/B candidate after the hand push test
+of 2026-10-29 (see docs/DEVLOG.md): pushing the finger tips about
+5 mm sideways by hand during the hold moved the wrist along with
+the push while the encoders saw it, so the swing is mostly servo
+compliance of joints 4/5, not play behind the encoder. Stiff
+raises pos_kp by 30 % (x1.3) and vel_kp by 50 % (x1.5) for joints
+4 and 5 only; pos_ki and vel_ki are unchanged. The profile is
+printed joint by joint before the `yes` prompt, for example
+`joint 4: pos_kp 70 -> 91, vel_kp 0.0008 -> 0.0012`. A/B order:
+same point, first `--gains default`, then `--gains stiff`, and
+during each hold push the finger tips gently about 5 mm sideways
+by hand the same way both times; compare peak-to-peak and RMS of
+joints 4 and 5 with and without the push.
+
+Safety rule: if the arm buzzes, hums or oscillates on its own
+with stiff, switch the power supply off at once and stay on
+default.
 
 The soft gains live only in a runtime copy:
 `write_runtime_yaml` copies the SDK hardware yaml into a

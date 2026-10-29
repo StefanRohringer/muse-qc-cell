@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 
 from muse_qc import hover_move
-from muse_qc.arm_gains import describe, make_arm
+from muse_qc.arm_gains import GAIN_PROFILES, describe, make_arm
 from muse_qc.first_move import dry_run as first_dry_run
 from muse_qc.first_move import execute as first_execute
 from muse_qc.first_move_plan import LOOP_RATE_HZ
@@ -138,8 +138,9 @@ def main(argv=None, sdk_factory=None, **kwargs) -> int:
                         metavar=("X", "Y"), help="part position in table mm")
     parser.add_argument("--hold-s", type=float, default=HOLD_S[2],
                         help="hover hold time in seconds (5.0 to 60.0)")
-    parser.add_argument("--gains", choices=("default", "soft"), default="default",
-                        help="motor gain profile (default or soft joints 4/5)")
+    parser.add_argument("--gains", choices=tuple(GAIN_PROFILES),
+                        default="default",
+                        help="motor gain profile for joints 4/5")
     parser.add_argument("--execute", action="store_true",
                         help="move the arm after confirmation")
     args = parser.parse_args(argv)

@@ -649,3 +649,17 @@ default: joint 4: mean err -0.01 deg, p2p 1.07 deg, rms 0.05 deg, swing 0.1 Hz /
 soft:    joint 4: mean err -0.02 deg, p2p 1.25 deg, rms 0.09 deg, swing 1.0 Hz / joint 5: mean err -0.03 deg, p2p 0.35 deg, rms 0.05 deg, swing n/a
 ```
   The CSVs show that the peak-to-peak comes only from the first 0.7 s (joints 2/3/4 lag 1.0 to 1.4 deg behind the end of the ramp and then settle); for the remaining 19 s all joints read within +-0.02 deg. The human still sees about 5 mm of swing at the finger tips while moving and standing, so it happens behind the motor encoders (gear play in joints 4/5 or the soft fingers), which no position gain can see. Hence the smoother trapezoid ramps and the 0.5 s settle in the next change.
+- Human ran python -m muse_qc.pick_test --table-mm 507.6 327.0 --execute after the speed-up (2026-10-29, arm power supply on, hand on the power supply switch; two earlier attempts stopped with JointStateUnavailable on joint 1 because the arm power supply was still off): OK, plan 2818 cycles at 100 Hz (about 28 s instead of about 79 s), contact L2 R2 at gripper commanded -45.22 deg / measured -48.62 deg, all four sensors held while lifting. Human: "still a bit wobbly, but better".
+- Human ran python -m muse_qc.hold_test --table-mm 495.9 330 --execute with --gains default (2026-10-29, arm power supply on) and pushed the finger tips gently about 5 mm sideways by hand during the hold: the wrist visibly moved with the push ("the arm moves along slightly"), and the encoders saw it, so the swing is mostly servo compliance of joints 4/5, not only play behind the encoder.
+```text
+hold commanded deg: -1.94 -100.76 -93.42 +82.66 -0.00 +0.01
+hold measured deg: -1.93 -100.77 -93.43 +82.61 -0.21 -0.01
+hold measured tip mm: x=+288.7 y=-9.0 z=+99.7
+joint 1: mean err -0.01 deg, p2p 0.07 deg, rms 0.02 deg
+joint 2: mean err +0.00 deg, p2p 1.36 deg, rms 0.11 deg
+joint 3: mean err +0.00 deg, p2p 1.22 deg, rms 0.10 deg
+joint 4: mean err -0.01 deg, p2p 1.09 deg, rms 0.06 deg, swing 0.8 Hz
+joint 5: mean err -0.01 deg, p2p 1.77 deg, rms 0.27 deg, swing 0.5 Hz
+joint 6: mean err -0.01 deg, p2p 0.07 deg, rms 0.02 deg
+```
+  Without the push (earlier run, same point) joint 5 had p2p 0.15 deg and rms 0.03 deg. Next: A/B with a stiffer joint 4/5 profile.

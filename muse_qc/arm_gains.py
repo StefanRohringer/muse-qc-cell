@@ -1,11 +1,18 @@
-"""Softer position-loop gains for joints 4 and 5 (runtime yaml copy).
+"""Gain profiles for joints 4 and 5 (runtime yaml copy).
 
-While the arm holds a pose, joints 4 and 5 visibly swing a little:
-a limit cycle of the motor position loop (integral term plus
-friction/backlash on the small 4310 motors), not a planning error.
-The "soft" profile kills the position integral (pos_ki 0.0) and
-lowers pos_kp by 30 % for joints 4 and 5 only; the velocity loop
-is unchanged. Overrides are written into a copy of the SDK hardware
+While the arm holds a pose, joints 4 and 5 visibly swing a little.
+The "soft" profile (pos_ki 0.0, pos_kp 30 % lower for joints 4
+and 5 only) was tried in an A/B on 2026-10-29 and was slightly
+worse than default, so default stays. A hand push test the same
+day (about 5 mm sideways on the finger tips during the hold)
+showed the wrist moving along with the push while the encoders
+saw it (joint 5 p2p 0.15 deg without push, 1.77 deg with push),
+so the swing is mostly servo compliance of joints 4/5 (too soft
+position/velocity loop: vel_kp 0.0008 on joints 4/5 versus
+0.0125 on joints 1 to 3), not only play behind the encoder.
+The "stiff" profile raises pos_kp by 30 % and vel_kp by 50 %
+for joints 4 and 5 only; the integral terms are unchanged.
+Overrides are written into a copy of the SDK hardware
 yaml in a temporary directory (never into the repo or the SDK
 package) and passed to RebotArm(hw_yaml=...). The SDK file itself
 stays untouched, and a normal run restores the default gains
@@ -25,11 +32,19 @@ from muse_qc.sdk_config import _default_config_dir, _scalar
 GLOBAL_CONFIG_NAME = "rebotarm.yaml"
 HARDWARE_KEY = "hardware_yaml"
 SOFT_POS_KP_FACTOR = 0.7
+STIFF_POS_KP_FACTOR = 1.3
+STIFF_VEL_KP_FACTOR = 1.5
 GAIN_PROFILES = {
     "default": {},
     "soft": {
         4: {"pos_kp_factor": SOFT_POS_KP_FACTOR, "pos_ki": 0.0},
         5: {"pos_kp_factor": SOFT_POS_KP_FACTOR, "pos_ki": 0.0},
+    },
+    "stiff": {
+        4: {"pos_kp_factor": STIFF_POS_KP_FACTOR,
+            "vel_kp_factor": STIFF_VEL_KP_FACTOR},
+        5: {"pos_kp_factor": STIFF_POS_KP_FACTOR,
+            "vel_kp_factor": STIFF_VEL_KP_FACTOR},
     },
 }
 
@@ -76,13 +91,28 @@ def _apply_profile(data: dict, profile: str):
         if entry is None:
             raise RuntimeError(f"joint{joint} missing in hardware config")
         loop = entry.setdefault("POS_VEL", {})
-        old_kp = float(loop.get("pos_kp", 0.0))
-        old_ki = float(loop.get("pos_ki", 0.0))
-        new_kp = round(old_kp * change["pos_kp_factor"], 6)
-        new_ki = float(change["pos_ki"])
-        loop["pos_kp"], loop["pos_ki"] = new_kp, new_ki
-        lines.append(f"joint {joint}: pos_kp {old_kp:g} -> {new_kp:g},"
-                     f" pos_ki {old_ki:.1f} -> {new_ki:.1f}")
+        parts = []
+        if "pos_kp_factor" in change:
+            old_kp = float(loop.get("pos_kp", 0.0))
+            new_kp = round(old_kp * change["pos_kp_factor"], 6)
+            loop["pos_kp"] = new_kp
+            parts.append(f"pos_kp {old_kp:g} -> {new_kp:g}")
+        if "vel_kp_factor" in change:
+            old_vkp = float(loop.get("vel_kp", 0.0))
+            new_vkp = round(old_vkp * change["vel_kp_factor"], 6)
+            loop["vel_kp"] = new_vkp
+            parts.append(f"vel_kp {old_vkp:g} -> {new_vkp:g}")
+        if "pos_ki" in change:
+            old_ki = float(loop.get("pos_ki", 0.0))
+            new_ki = float(change["pos_ki"])
+            loop["pos_ki"] = new_ki
+            parts.append(f"pos_ki {old_ki:.1f} -> {new_ki:.1f}")
+        if "vel_ki" in change:
+            old_vki = float(loop.get("vel_ki", 0.0))
+            new_vki = float(change["vel_ki"])
+            loop["vel_ki"] = new_vki
+            parts.append(f"vel_ki {old_vki:.1f} -> {new_vki:.1f}")
+        lines.append(f"joint {joint}: " + ", ".join(parts))
     return patched, lines
 
 
@@ -120,7 +150,7 @@ def _real_arm_factory():
 
 
 def describe(profile: str) -> list[str]:
-    """Return one "joint N: pos_kp a -> b, pos_ki c -> d" line per change."""
+    """Return one "joint N: ..." line per changed joint."""
     if profile == "default":
         return []
     _, data = _read_hardware_yaml()
