@@ -45,14 +45,66 @@ _PACKAGE_NAME = "reBotArm_control_py"
 _GLOBAL_CONFIG_NAME = "rebotarm.yaml"
 
 
-def ramp_waypoints(
-    start_deg: object, end_deg: object
-) -> list[tuple[float, ...]]:
-    """Linear joint-space ramp, excluding start, including end.
+def _ramp_profile(peak_deg: float, speed_deg_s: float,
+                  accel_deg_s2: float) -> tuple[int, object]:
+    """Trapezoid distance profile for the leading joint move.
 
-    Step count follows the largest joint move so no joint travels
-    more than STEP_DEG per step.
+    Returns (cycles, distance_at) where distance_at(cycle) gives the
+    travelled distance after that 1/LOOP_RATE_HZ cycle. Accelerate,
+    cruise, decelerate; triangle when the move is short. Total time
+    is about D/v + v/a.
     """
+    cruise_v = float(speed_deg_s)
+    accel = float(accel_deg_s2)
+    dist = float(peak_deg)
+    if dist <= 0.0:
+        return (1, lambda cycle: dist)
+    ramp_dist = cruise_v * cruise_v / accel  # accel plus decel distance
+    if dist >= ramp_dist:
+        up_s = cruise_v / accel
+        cruise_s = dist / cruise_v - up_s
+        total_s = dist / cruise_v + up_s
+    else:
+        cruise_v = math.sqrt(dist * accel)
+        up_s = cruise_v / accel
+        cruise_s = 0.0
+        total_s = 2.0 * up_s
+
+    def distance_at(cycle: int) -> float:
+        moment = min(float(cycle) / LOOP_RATE_HZ, total_s)
+        if moment < up_s:
+            return 0.5 * accel * moment * moment
+        cruise_end = up_s + cruise_s
+        if moment < cruise_end:
+            return (0.5 * accel * up_s * up_s
+                    + cruise_v * (moment - up_s))
+        rest = total_s - moment
+        return dist - 0.5 * accel * rest * rest
+
+    return (max(1, int(math.ceil(total_s * LOOP_RATE_HZ))), distance_at)
+
+
+def ramp_waypoints(
+    start_deg: object, end_deg: object, speed_deg_s: float = JOINT_SPEED_DEG_S,
+    accel_deg_s2: float | None = None,
+) -> list[tuple[float, ...]]:
+    """Joint-space ramp along a straight line, excluding start, including end.
+
+    Without accel_deg_s2 the ramp is linear with the largest joint
+    move setting the step count, so no joint travels more than
+    speed_deg_s / LOOP_RATE_HZ per step. With accel_deg_s2 the same
+    line is flown with a trapezoidal speed profile in time sampled
+    at LOOP_RATE_HZ (triangle when the move is short): the leading
+    joint never exceeds speed_deg_s, start and stop are smooth, and
+    the last waypoint is exactly the end pose.
+    """
+    speed = float(speed_deg_s)
+    if not math.isfinite(speed) or speed <= 0.0:
+        raise ValueError("speed_deg_s must be a positive number.")
+    if accel_deg_s2 is not None:
+        accel = float(accel_deg_s2)
+        if not math.isfinite(accel) or accel <= 0.0:
+            raise ValueError("accel_deg_s2 must be a positive number.")
     start = [float(value) for value in start_deg]
     end = [float(value) for value in end_deg]
     if len(start) != 6 or len(end) != 6:
@@ -60,11 +112,23 @@ def ramp_waypoints(
     if not all(math.isfinite(v) for v in start + end):
         raise ValueError("Joint angles must be finite numbers.")
     peak = max(abs(e - s) for s, e in zip(start, end))
-    steps = max(1, int(math.ceil(peak / STEP_DEG)))
-    return [
-        tuple(s + (e - s) * i / steps for s, e in zip(start, end))
-        for i in range(1, steps + 1)
-    ]
+    if accel_deg_s2 is None:
+        step_deg = speed / LOOP_RATE_HZ
+        steps = max(1, int(math.ceil(peak / step_deg)))
+        return [
+            tuple(s + (e - s) * i / steps for s, e in zip(start, end))
+            for i in range(1, steps + 1)
+        ]
+    if peak <= 0.0:
+        return [tuple(end)]
+    cycles, distance_at = _ramp_profile(peak, speed, float(accel_deg_s2))
+    points = []
+    for cycle in range(1, cycles + 1):
+        fraction = min(distance_at(cycle) / peak, 1.0)
+        points.append(tuple(s + (e - s) * fraction
+                            for s, e in zip(start, end)))
+    points[-1] = tuple(end)
+    return points
 
 
 def clamp_to_limits(

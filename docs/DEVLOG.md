@@ -623,3 +623,29 @@ part lifted, holding
 stopping: the motors will be disabled now
 end readings: arm [-2.79 +0.12 -2.04 +2.94 +2.55 -0.36] gripper -126.28 deg
 ```
+- Human ran python -m muse_qc.find_parts --save-empty (table empty, arm at rest), then --no-sam and the SAM run with one connector part and the white cube on the table (2026-10-29): the diff found the part (area about 430 mm2), the cube was not a candidate (probably merged with its long shadow above 3000 mm2), and SAM on the 640 px crop gave "no box" for "small part", "connector", "terminal block", "electrical connector" and "object", but confirmed it with "grey object":
+```text
+part 0 center=(1148, 344) area_mm2=431 table_mm=(594.8, 369.4) sam=skipped
+candidates: 1
+part 0 center=(1146, 340) area_mm2=416 table_mm=(593.8, 371.7) sam=confirmed 0.82
+parts: 1 confirmed of 1 candidates
+```
+  (594, 372) is about 362 mm from the joint 1 axis, beyond the reach, so the part was moved closer.
+- Human ran python -m muse_qc.find_parts --phrase "grey object" and then python -m muse_qc.pick_test --table-mm 622.1 311.3 --execute with the camera result (2026-10-29, arm power supply on, hand on the power supply switch): OK, FIRST FULLY AUTOMATIC PICK (camera finds the part, SAM confirms it, the arm picks it). Only one lamella per side touched (the arm was turned about 23 deg, the part lay diagonally between the jaws); human: "a bit imprecise but OK".
+```text
+part 0 center=(1192, 438) area_mm2=419 table_mm=(622.1, 311.3) sam=confirmed 0.61
+parts: 1 confirmed of 1 candidates
+segments at 100 Hz: hover 2053 lower 950 lift 950 put-down 930 raise 930 return 2153 (total 7966)
+corrected base target: x=+267.22 y=-127.78 mm
+all waypoints ok
+contact: gripper commanded deg -58.28 measured deg -61.63 contacts L2 R2
+contacts L2 R2 (lifting)
+part lifted, holding
+end readings: arm [-2.79 +0.25 -2.09 +2.98 +2.57 -0.36] gripper -126.28 deg
+```
+- Human ran python -m muse_qc.hold_test --table-mm 495.9 330 --execute with --gains default and with --gains soft (2026-10-29, arm power supply on, 20 s hold at 100 mm): no visible difference; soft was slightly worse, default stays.
+```text
+default: joint 4: mean err -0.01 deg, p2p 1.07 deg, rms 0.05 deg, swing 0.1 Hz / joint 5: mean err -0.02 deg, p2p 0.15 deg, rms 0.03 deg, swing n/a
+soft:    joint 4: mean err -0.02 deg, p2p 1.25 deg, rms 0.09 deg, swing 1.0 Hz / joint 5: mean err -0.03 deg, p2p 0.35 deg, rms 0.05 deg, swing n/a
+```
+  The CSVs show that the peak-to-peak comes only from the first 0.7 s (joints 2/3/4 lag 1.0 to 1.4 deg behind the end of the ramp and then settle); for the remaining 19 s all joints read within +-0.02 deg. The human still sees about 5 mm of swing at the finger tips while moving and standing, so it happens behind the motor encoders (gear play in joints 4/5 or the soft fingers), which no position gain can see. Hence the smoother trapezoid ramps and the 0.5 s settle in the next change.

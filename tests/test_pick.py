@@ -234,12 +234,13 @@ def _built(grip_z=8.0):
     return built
 
 
-def _cycle_counts(built):
+def _cycle_counts(built, open_deg=OPEN_DEG):
     ranges = built["ranges"]
     counts = {seg: ranges[seg][1] - ranges[seg][0] for seg in ranges}
     hover = counts["hover"]
-    ramp = math.ceil(abs(OPEN_DEG - REST_GRIP) / GRIP_STEP)
-    return hover, ramp, counts
+    ramp = math.ceil(abs(open_deg - REST_GRIP) / GRIP_STEP)
+    catchup = max(0, ramp - hover)  # gripper opens during hover first
+    return hover, catchup, counts
 
 
 def _run(sdk, script, **kwargs):
@@ -327,10 +328,13 @@ def test_pick_plan_segments_counts_and_flags():
     assert [seg for seg in ranges] == ["hover", "lower", "lift", "put-down",
                                        "raise", "return"]
     counts = {seg: ranges[seg][1] - ranges[seg][0] for seg in ranges}
-    assert counts["lower"] == 92 * 10
-    assert counts["lift"] == counts["lower"]
-    assert counts["put-down"] == 90 * 10
-    assert counts["raise"] == counts["put-down"]
+    assert counts["hover"] == 37 + 50  # trapezoid ramp plus 0.5 s settle
+    assert counts["lower"] == 67 * 2 + 25 * 10  # fast above grip + 25, slow below
+    assert counts["lift"] == 82 * 2 + 10 * 10  # 10 mm slow watch, fast above
+    assert counts["put-down"] == 65 * 2 + 25 * 10
+    assert counts["raise"] == 90 * 2  # empty gripper, fast all the way
+    assert counts["return"] == 37 + 100  # trapezoid ramp plus 1 s settle
+    assert sum(counts.values()) == len(plan) == 1432
     index = 0
     for seg in ["hover", "lower", "lift", "put-down", "raise", "return"]:
         low, high = ranges[seg]
@@ -353,8 +357,11 @@ def test_pick_plan_lift_mirrors_lower_and_return_settles():
     lift = [wp for seg, wp, _ in plan[ranges["lift"][0]:ranges["lift"][1]]]
     assert lower[-1] == built["grip_joints"]  # exact rung end
     assert lift[-1] == built["hover_joints"]  # exact rung end
-    for got, want in zip(lift, lower[::-1]):
-        assert got == pytest.approx(want, abs=0.02)  # same ladder, one step offset
+    lower_z = [_fake_tip(list(wp))[2] for wp in lower]
+    lift_z = [_fake_tip(list(wp))[2] for wp in lift]
+    assert all(b <= a + 1e-9 for a, b in zip(lower_z, lower_z[1:]))  # descends
+    assert all(b >= a - 1e-9 for a, b in zip(lift_z, lift_z[1:]))  # climbs back
+    assert lift_z[0] >= lower_z[-1] - 1e-9  # same ladder bottom
     rest = clamp_to_limits(REST, TEST_LIMITS)
     assert plan[-1] == ("return", rest, False)
     assert sum(1 for seg, wp, _ in plan[ranges["return"][0]:]
@@ -403,7 +410,8 @@ def test_plan_summary_lines():
     built = _built()
     lines = pick_plan.plan_summary(built["plan"], built)
     text = "\n".join(lines)
-    assert "lower 920" in text and "lift 920" in text
+    assert "lower 384" in text and "lift 264" in text
+    assert "free 15 deg/s, accel 30 deg/s2, vertical 40/10 mm/s" in text
     assert "hover tip z: 100.0 mm" in text and "grip tip z: 8.0 mm" in text
     assert "corrected base target:" in text
     assert "xy correction: on" in text
@@ -448,7 +456,9 @@ def test_cli_no_xy_correction_dry_run():
 @pytest.mark.parametrize("flag,value", [("--grip-z-mm", "4.9"), ("--grip-z-mm", "60.1"),
                                         ("--grip-z-mm", "abc"),
                                         ("--open-mm", "24.9"), ("--open-mm", "50.1"),
-                                        ("--hold-s", "0.49"), ("--hold-s", "30.1")])
+                                        ("--hold-s", "0.49"), ("--hold-s", "30.1"),
+                                        ("--speed-deg-s", "1.9"),
+                                        ("--speed-deg-s", "15.1")])
 def test_arg_ranges_exit_2_before_connect(flag, value):
     def factory():
         raise AssertionError("nothing may connect on a bad argument")
@@ -561,8 +571,8 @@ def test_no_grip_holds_at_bottom_and_returns():
 
 def test_contact_during_lower_stops_within_one_cycle():
     built = _built()
-    hover, ramp, _ = _cycle_counts(built)
-    stop_at = hover + ramp + 5
+    hover, catchup, _ = _cycle_counts(built)
+    stop_at = hover + catchup + 5
     sdk = FakeSdk()
     code, text, _ = _run(sdk, lambda n: ("L1 R1" if n >= stop_at else "-"))
     assert code == 1
@@ -588,8 +598,8 @@ def test_contact_during_lower_stops_within_one_cycle():
 
 def test_bilateral_contact_closes_squeezes_lifts():
     built = _built()
-    hover, ramp, _ = _cycle_counts(built)
-    close_start = hover + ramp + (ranges_len(built, "lower")) + 1
+    hover, catchup, _ = _cycle_counts(built)
+    close_start = hover + catchup + (ranges_len(built, "lower")) + 1
     touch_at = close_start + 14
     sdk = FakeSdk()
     code, text, _ = _run(sdk, lambda n: ("L1 R1" if n >= touch_at else "-"))
@@ -612,8 +622,8 @@ def ranges_len(built, seg):
 
 def test_one_sided_contact_missed_grip_opens_before_going_up():
     built = _built()
-    hover, ramp, _ = _cycle_counts(built)
-    close_start = hover + ramp + ranges_len(built, "lower") + 1
+    hover, catchup, _ = _cycle_counts(built)
+    close_start = hover + catchup + ranges_len(built, "lower") + 1
     sdk = FakeSdk()
     code, text, _ = _run(sdk, lambda n: ("L1" if n >= close_start + 14 else "-"))
     assert code == 0
@@ -642,9 +652,9 @@ def test_no_contact_missed_grip():
 
 def test_part_lost_printed_and_no_open_above_putdown():
     built = _built()
-    hover, ramp, _ = _cycle_counts(built)
+    hover, catchup, _ = _cycle_counts(built)
     lower_len = ranges_len(built, "lower")
-    close_start = hover + ramp + lower_len + 1
+    close_start = hover + catchup + lower_len + 1
     touch_at = close_start + 14
     drop_at = touch_at + 300
 
@@ -675,8 +685,8 @@ def test_part_lost_printed_and_no_open_above_putdown():
 
 def test_gripper_jump_fault_goes_up_then_returns():
     built = _built()
-    hover, ramp, _ = _cycle_counts(built)
-    jump_at = hover + ramp + ranges_len(built, "lower") + 30
+    hover, catchup, _ = _cycle_counts(built)
+    jump_at = hover + catchup + ranges_len(built, "lower") + 30
     group = JumpGripperGroup(REST_GRIP, jump_at=jump_at)
     sdk = FakeSdk(grip_group=group)
     code, text, _ = _run(sdk, lambda n: "-")
@@ -689,8 +699,8 @@ def test_gripper_jump_fault_goes_up_then_returns():
 
 def test_ctrl_c_goes_up_then_returns():
     built = _built()
-    hover, ramp, _ = _cycle_counts(built)
-    interrupt_at = hover + ramp + 10
+    hover, catchup, _ = _cycle_counts(built)
+    interrupt_at = hover + catchup + 10
     arm_group = InterruptArmGroup(REST, interrupt_at=interrupt_at)
     sdk = FakeSdk(arm_group=arm_group)
     code, text, _ = _run(sdk, lambda n: "-")
@@ -786,3 +796,132 @@ def test_gains_default_calls_factory_without_args():
     assert code == 0
     assert seen == [{}]
     assert "joint 4:" not in "\n".join(lines)
+
+
+def test_hover_ramp_smooth_start_stop_and_capped():
+    from muse_qc.pick_plan import FREE_STEP_DEG, SETTLE_AT_HOVER_CYCLES
+    built = _built()
+    plan, ranges = built["plan"], built["ranges"]
+    low, high = ranges["hover"]
+    ramp = [wp for seg, wp, _ in plan[low:high - SETTLE_AT_HOVER_CYCLES]]
+    assert ramp and ramp[-1] == built["hover_joints"]
+    previous = list(REST)
+    peak = 0.0
+    for wp in ramp:
+        peak = max(peak, max(abs(w - p) for w, p in zip(wp, previous)))
+        previous = list(wp)
+    assert peak <= FREE_STEP_DEG + 1e-9
+    first = max(abs(w - p) for w, p in zip(ramp[0], REST))
+    last = max(abs(w - p) for w, p in zip(ramp[-1], ramp[-2]))
+    assert first <= 0.01 and last <= 0.01  # smooth start and stop
+    assert first < peak and last < peak
+
+
+def test_lower_fast_above_slow_zone_and_slow_below():
+    from muse_qc.pick_plan import SLOW_ZONE_MM
+    built = _built()
+    plan, ranges = built["plan"], built["ranges"]
+    low, high = ranges["lower"]
+    points = [built["hover_joints"]] + [wp for _, wp, _ in plan[low:high]]
+    zones = [z for z in (_fake_tip(list(wp))[2] * 1000.0 for wp in points)]
+    grip_z = 8.0
+    fast = slow = 0
+    for top, bottom in zip(zones, zones[1:]):
+        drop = top - bottom
+        assert drop >= -1e-9
+        if min(top, bottom) >= grip_z + SLOW_ZONE_MM - 1e-9:
+            fast += 1
+            assert drop == pytest.approx(0.5)  # 40 mm/s at 100 Hz
+        else:
+            slow += 1
+            assert drop == pytest.approx(0.1)  # 10 mm/s at 100 Hz
+    assert (fast, slow) == (67 * 2, 25 * 10)  # entry step included in fast
+
+
+def test_lift_slow_watch_then_fast():
+    from muse_qc.pick_plan import LIFT_SLOW_MM
+    built = _built()
+    plan, ranges = built["plan"], built["ranges"]
+    low, high = ranges["lift"]
+    waypoints = [built["grip_joints"]] + [wp for _, wp, _ in plan[low:high]]
+    zones = [_fake_tip(list(wp))[2] * 1000.0 for wp in waypoints]
+    grip_z = 8.0
+    slow = sum(1 for top, bottom in zip(zones, zones[1:])
+               if min(top, bottom) < grip_z + LIFT_SLOW_MM - 1e-9)
+    assert slow == 10 * 10  # first 10 mm at 10 mm/s for the part-lost watch
+    assert all(bottom >= top - 1e-9 for top, bottom in zip(zones, zones[1:]))
+
+
+def test_contact_in_fast_lower_stops_within_one_cycle_and_climbs():
+    from muse_qc.pick_plan import SLOW_ZONE_MM
+    built = _built()
+    hover, catchup, _ = _cycle_counts(built)
+    stop_at = hover + catchup + 5  # still in the fast part of lower
+    sdk = FakeSdk()
+    code, text, _ = _run(sdk, lambda n: ("L1 R1" if n >= stop_at else "-"))
+    assert code == 1
+    assert "contact while lowering:" in text
+    ranges = built["ranges"]
+    lower_set = {tuple(math.radians(v) for v in wp)
+                 for _, wp, _ in built["plan"][ranges["lower"][0]:ranges["lower"][1]]}
+    sends = _arm_sends(sdk)
+    assert len({item for item in sends if item in lower_set}) <= 5
+    stop_z = _fake_tip(list(built["plan"][ranges["lower"][0] + 3][1]))[2]
+    assert stop_z > (8.0 + SLOW_ZONE_MM) / 1000.0  # stopped in the fast zone
+    hover_rad = tuple(math.radians(v) for v in built["hover_joints"])
+    first_lower = next(i for i, item in enumerate(sends) if item in lower_set)
+    hover_back = next(i for i in range(first_lower, len(sends))
+                      if sends[i] == hover_rad)
+    for item in sends[first_lower:hover_back + 1]:
+        deg = [math.degrees(v) for v in item]
+        assert _fake_tip(deg)[2] >= stop_z - 1e-9  # climbs, never descends
+
+
+def test_gripper_fully_open_before_lower_starts():
+    sdk = FakeSdk()
+    code, _, _ = _run(sdk, lambda n: "-")
+    assert code == 0
+    built = _built()
+    ranges = built["ranges"]
+    lower_set = {tuple(math.radians(v) for v in wp)
+                 for _, wp, _ in built["plan"][ranges["lower"][0]:ranges["lower"][1]]}
+    arm_items, grip_items = _arm_sends(sdk), _grip_sends_deg(sdk)
+    assert len(arm_items) == len(grip_items)  # one gripper send per arm cycle
+    first_lower = next(i for i, item in enumerate(arm_items) if item in lower_set)
+    assert any(abs(value - OPEN_DEG) < 1e-9
+               for value in grip_items[:first_lower + 1])
+    hover_set = {tuple(math.radians(v) for v in wp)
+                 for _, wp, _ in built["plan"][ranges["hover"][0]:ranges["hover"][1]]}
+    opened_at = next(i for i, value in enumerate(grip_items)
+                     if abs(value - OPEN_DEG) < 1e-9)
+    assert opened_at <= first_lower
+    assert all(item in hover_set or item == arm_items[0]
+               for item in arm_items[:opened_at + 1])  # held hover until open
+
+
+def test_reference_plan_less_than_half_of_today():
+    ref = pick_plan.build_pick_plan(REST, (495.9, 330.0), 8.0, TEST_LIMITS,
+                                    solve_fn=_fake_solve)
+    assert ref["ok"] is True
+    old_total = 20 + 92 * 10 + 92 * 10 + 90 * 10 + 90 * 10 + 120
+    assert len(ref["plan"]) * 2 < old_total  # 1432 planned vs 3780 today
+
+
+def test_speed_deg_s_scales_free_ramps():
+    slow = pick_plan.build_pick_plan(REST, TABLE, 8.0, TEST_LIMITS,
+                                     solve_fn=_fake_solve,
+                                     free_speed_deg_s=2.0)
+    assert slow["ok"] is True
+    assert (slow["ranges"]["hover"][1] - slow["ranges"]["hover"][0]) == 57 + 50
+    sdk = FakeSdk()
+    lines = []
+    code = pick_test.main(
+        ["--table-mm", "495.9", "322.7", "--speed-deg-s", "2"],
+        sdk_factory=lambda: sdk,
+        check_fn=_always_ok, tip_fn=_fake_tip, solve_fn=_fake_solve,
+        joint_limits=TEST_LIMITS, find_port=lambda: "/dev/ttyFAKE",
+        sensor_factory=lambda: FakeSensor(lambda n: "-"),
+        out=lines.append,
+    )
+    assert code == 0
+    assert "hover 107" in "\n".join(lines)

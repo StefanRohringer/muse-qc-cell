@@ -1118,21 +1118,31 @@ human runs it, never CI and never an agent.
 
 Three modules share the work (`tests/test_pick.py`, fake SDK, fake
 sensor and fake IK only): `muse_qc/pick_plan.py` builds the labelled
-arm waypoint plan (hover ramp, 1 mm lower ladder at 10 mm/s, lift,
-put-down 2 mm higher, raise, return ramp plus 1 s settle, all at
-100 Hz), `muse_qc/pick_loop.py` flies it in one control loop, and
-`muse_qc/pick_test.py` is the CLI. Every arm waypoint passes
-`safety.check_target` per cycle with the grasp floor
+arm waypoint plan (trapezoid hover ramp at 15 deg/s with 30 deg/s2
+plus a 0.5 s hover settle, 1 mm ladder fast at 40 mm/s above the
+slow zone and 10 mm/s near the part, lift slow for the first 10 mm
+then fast, put-down 2 mm higher, fast raise, trapezoid return ramp
+plus 1 s settle, all at 100 Hz), `muse_qc/pick_loop.py` flies it in
+one control loop, and `muse_qc/pick_test.py` is the CLI. The
+trapezoid ramps start and stop smoothly instead of jumping to full
+speed, and the 0.5 s hover settle lets the joints rest after the
+ramp before the tip dives; both soften the visible tip swing, which
+happens behind the motor encoders and no gain can see. The gripper
+opens to `--open-mm` during the hover ramp (holding at hover until
+fully open) instead of in a separate phase afterwards. Every arm
+waypoint passes `safety.check_target` per cycle with the grasp floor
 `GRASP_Z_MIN_M` = 4 mm on the lower/lift/put-down/raise waypoints
-only; everywhere else the 30 mm floor is unchanged. Any contact
-while lowering stops the descent at once, holds 0.5 s, climbs back
-up the same ladder and returns. `--no-grip` only lowers to
-`--grip-z-mm` and holds, so the human can check the real tip height
-with a ruler first. `--grip-z-mm` takes 5 to 60 mm (default 5),
-`--open-mm` 25 to 50 mm (default 40), `--hold-s` 0.5 to 30 s
-(default 3); anything else is an argparse error (exit 2) before
-anything connects. `--no-xy-correction` flies the uncorrected target
-for A/B tests, to measure the uncorrected error near the part. No
+only; everywhere else the 30 mm floor is unchanged, and no safety
+check was given up for the speedup. Any contact while lowering
+stops the descent at once, holds 0.5 s, climbs back up the same
+ladder and returns. `--no-grip` only lowers to `--grip-z-mm` and
+holds, so the human can check the real tip height with a ruler
+first. `--grip-z-mm` takes 5 to 60 mm (default 5), `--open-mm`
+25 to 50 mm (default 28), `--hold-s` 0.5 to 30 s (default 1),
+`--speed-deg-s` 2 to 15 deg/s for the free ramps (default 15);
+anything else is an argparse error (exit 2) before anything
+connects. `--no-xy-correction` flies the uncorrected target for A/B
+tests, to measure the uncorrected error near the part. No
 gripper-project code is used, only the serial line protocol and the
 SDK motor protocol.
 
@@ -1174,8 +1184,9 @@ end readings: arm [-2.79 +0.12 -2.04 +2.94 +2.55 -0.36] gripper -126.28 deg
 SAM 3.1 on the full 1920x1080 frame finds the white 25 mm cube
 reliably, but not the grey/orange connector parts (about 25 px wide,
 low contrast on light wood): on 2026-10-29 the phrases "small part",
-"grey block", "orange and grey object" and "small grey box" all
-returned 0 boxes. `muse_qc/find_parts.py` therefore works in two
+"connector", "terminal block", "electrical connector" and "object"
+all returned 0 boxes on the zoomed 640 px crop, while "grey object"
+confirmed the part. `muse_qc/find_parts.py` therefore works in two
 steps: it compares the frame with a reference photo of the empty
 table (arm in its rest pose) and takes every new blob as a candidate,
 then sends a zoomed crop around each candidate to SAM 3.1 to confirm
@@ -1187,8 +1198,8 @@ Order, from the project root:
 
 ```bash
 uv run python -m muse_qc.find_parts --save-empty
-uv run python -m muse_qc.find_parts --image recordings/frame.png --no-sam
-uv run python -m muse_qc.find_parts --image recordings/frame.png
+uv run python -m muse_qc.find_parts --no-sam
+uv run python -m muse_qc.find_parts
 ```
 
 First store the reference with the table empty and the arm in its
@@ -1198,7 +1209,7 @@ rest pose: `--save-empty` takes one frame with
 Then place the parts and run with `--no-sam` first (change
 detection only, one line per candidate with blob centre, area and
 table mm, ending in `candidates: M`), then with SAM (default phrase
-`small part`, overridable with `--phrase`; one SAM call per
+`grey object`, overridable with `--phrase`; one SAM call per
 candidate on a square crop of side max(3x blob side, 160 px),
 upscaled to 640 px). Each line reports the centre used (SAM box
 centre when confirmed, blob centre otherwise), the area, the table
@@ -1210,6 +1221,18 @@ rectangles, green when confirmed, yellow otherwise, with id and
 table mm). A missing reference or a size mismatch prints a short
 message with exit 2; more than 12 blobs prints `too many changes`
 with exit 1.
+
+Real human run with one connector part and the white cube on the
+table (2026-10-29): the diff found the part (area about 430 mm2)
+while the cube was no candidate (probably merged with its long
+shadow above 3000 mm2), and only "grey object" confirmed it:
+
+```text
+part 0 center=(1148, 344) area_mm2=431 table_mm=(594.8, 369.4) sam=skipped
+candidates: 1
+part 0 center=(1146, 340) area_mm2=416 table_mm=(593.8, 371.7) sam=confirmed 0.82
+parts: 1 confirmed of 1 candidates
+```
 
 Blobs are found by Gaussian blur, absolute difference in LAB space
 (max over the channels, threshold 30), morphological open then

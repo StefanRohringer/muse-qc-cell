@@ -4,8 +4,10 @@ Builds the labelled waypoint list for muse_qc/pick_test.py: ramp
 from the clamped rest reading to the 100 mm hover joints, lower the
 tip straight down to the grip height, lift back up, put down again
 2 mm higher, raise, then ramp back to the rest reading and settle.
-The lower ladder solves the hover IK at every 1 mm of height, so
-the tip moves straight down at LOWER_MM_S. Every waypoint carries
+The free ramps fly at FREE_SPEED_DEG_S with an ACCEL_DEG_S2
+trapezoid plus a short hover settle; the ladder solves the hover
+IK at every 1 mm of height and descends fast (FAST_MM_S) above the
+slow zone, slow (LOWER_MM_S) near the part. Every waypoint carries
 its segment label and whether the grasp z floor applies.
 """
 
@@ -28,8 +30,17 @@ from muse_qc.xy_correction import correct_base_target_mm
 
 HOVER_MM = 100.0
 LOWER_MM_S = 10.0
-PUT_DOWN_LIFT_MM = 2.0
+FAST_MM_S = 40.0
+SLOW_ZONE_MM = 25.0
+LIFT_SLOW_MM = 10.0
+FREE_SPEED_DEG_S = 15.0
+ACCEL_DEG_S2 = 30.0
+SETTLE_AT_HOVER_S = 0.5
+SETTLE_AT_HOVER_CYCLES = int(SETTLE_AT_HOVER_S * LOOP_RATE_HZ)
+FREE_STEP_DEG = FREE_SPEED_DEG_S / LOOP_RATE_HZ  # 0.15 deg per command
 CYCLES_PER_MM = int(LOOP_RATE_HZ / LOWER_MM_S)  # 10 cycles per 1 mm
+FAST_CYCLES_PER_MM = LOOP_RATE_HZ / FAST_MM_S  # 2.5 cycles per 1 mm
+PUT_DOWN_LIFT_MM = 2.0
 SEG_HOVER = "hover"
 SEG_LOWER = "lower"
 SEG_LIFT = "lift"
@@ -55,6 +66,21 @@ def _steps_for(rungs: list[float]) -> list[int]:
     """Cycle count per rung step so each 1 mm takes CYCLES_PER_MM."""
     return [max(1, int(round(abs(b - a) * CYCLES_PER_MM)))
             for a, b in zip(rungs, rungs[1:])]
+
+
+def _rung_steps(upper: tuple[float, ...], lower: tuple[float, ...],
+                mm_dist: float, fast: bool) -> int:
+    """Cycle count for one ladder rung step at the rung speed.
+
+    Fast rungs take FAST_CYCLES_PER_MM per mm, slow rungs CYCLES_PER_MM
+    per mm; either way no joint moves more than FREE_STEP_DEG per
+    cycle, adding cycles when a rung needs more.
+    """
+    base_mm = FAST_CYCLES_PER_MM if fast else CYCLES_PER_MM
+    steps = max(1, int(round(abs(mm_dist) * base_mm)))
+    peak = max(abs(e - s) for s, e in zip(upper, lower))
+    need = int(math.ceil(peak / FREE_STEP_DEG)) if peak > 0.0 else 1
+    return max(steps, need)
 
 
 def _interpolate(start: tuple[float, ...], end: tuple[float, ...],
@@ -83,7 +109,9 @@ def _solve_ladder(solve_table: tuple[float, float], rungs: list[float],
 def build_pick_plan(start_deg: object, table_xy: object, grip_z_mm: float,
                     joint_limits: object = None, solve_fn: object = None,
                     hover_mm: float = HOVER_MM,
-                    use_xy_correction: bool = True) -> dict:
+                    use_xy_correction: bool = True,
+                    free_speed_deg_s: float = FREE_SPEED_DEG_S,
+                    accel_deg_s2: float = ACCEL_DEG_S2) -> dict:
     """Build the full labelled pick plan. Pure, moves nothing.
 
     Returns {"ok": True, "plan", "ranges", ...} or {"ok": False,
@@ -141,32 +169,48 @@ def build_pick_plan(start_deg: object, table_xy: object, grip_z_mm: float,
         plan.extend((segment, point, segment in GRASP_SEGMENTS) for point in points)
         ranges[segment] = (start_index, len(plan))
 
-    hover_pts = list(ramp_waypoints(rest, hover_joints))
+    hover_pts = list(ramp_waypoints(rest, hover_joints,
+                                      speed_deg_s=free_speed_deg_s,
+                                      accel_deg_s2=accel_deg_s2))
     hover_pts[-1] = hover_joints
-    _append(SEG_HOVER, hover_pts)
-    lower_steps = _steps_for(lower_rungs)
+    _append(SEG_HOVER, hover_pts + [hover_joints] * SETTLE_AT_HOVER_CYCLES)
+    lower_heights = list(zip(lower_rungs, lower_rungs[1:]))
     lower_pts: list[tuple[float, ...]] = []
-    for upper, lower, steps in zip(lower_joints, lower_joints[1:], lower_steps):
+    for upper, lower, (top, bottom) in zip(lower_joints, lower_joints[1:],
+                                          lower_heights):
+        fast = bottom >= grip_z + SLOW_ZONE_MM
+        steps = _rung_steps(upper, lower, top - bottom, fast)
         lower_pts += _interpolate(upper, lower, steps)
     lower_pts[-1] = lower_joints[-1]
     _append(SEG_LOWER, lower_pts)
     lift_pts: list[tuple[float, ...]] = []
-    for upper, lower, steps in zip(lower_joints, lower_joints[1:], lower_steps):
+    for upper, lower, (top, bottom) in zip(lower_joints, lower_joints[1:],
+                                          lower_heights):
+        fast = bottom >= grip_z + LIFT_SLOW_MM
+        steps = _rung_steps(lower, upper, top - bottom, fast)
         lift_pts = _interpolate(lower, upper, steps) + lift_pts
     lift_pts[-1] = hover_joints
     _append(SEG_LIFT, lift_pts)
-    put_steps = _steps_for(put_rungs)
+    put_z = grip_z + PUT_DOWN_LIFT_MM
+    put_heights = list(zip(put_rungs, put_rungs[1:]))
     put_pts: list[tuple[float, ...]] = []
-    for upper, lower, steps in zip(put_joints, put_joints[1:], put_steps):
+    for upper, lower, (top, bottom) in zip(put_joints, put_joints[1:],
+                                          put_heights):
+        fast = bottom >= put_z + SLOW_ZONE_MM
+        steps = _rung_steps(upper, lower, top - bottom, fast)
         put_pts += _interpolate(upper, lower, steps)
     put_pts[-1] = put_joints[-1]
     _append(SEG_PUTDOWN, put_pts)
     raise_pts: list[tuple[float, ...]] = []
-    for upper, lower, steps in zip(put_joints, put_joints[1:], put_steps):
+    for upper, lower, (top, bottom) in zip(put_joints, put_joints[1:],
+                                          put_heights):
+        steps = _rung_steps(lower, upper, top - bottom, True)
         raise_pts = _interpolate(lower, upper, steps) + raise_pts
     raise_pts[-1] = hover_joints
     _append(SEG_RAISE, raise_pts)
-    return_pts = list(ramp_waypoints(hover_joints, rest))
+    return_pts = list(ramp_waypoints(hover_joints, rest,
+                                     speed_deg_s=free_speed_deg_s,
+                                     accel_deg_s2=accel_deg_s2))
     return_pts[-1] = rest
     _append(SEG_RETURN, return_pts + [rest] * SETTLE_HOLD_CYCLES)
     return {
@@ -259,6 +303,9 @@ def plan_summary(plan: list[tuple[str, tuple[float, ...], bool]],
     state = "on" if info.get("use_xy_correction", True) else "off"
     return [
         f"segments at 100 Hz: {order} (total {len(plan)})",
+        f"speeds: free {FREE_SPEED_DEG_S:g} deg/s,"
+        f" accel {ACCEL_DEG_S2:g} deg/s2,"
+        f" vertical {FAST_MM_S:g}/{LOWER_MM_S:g} mm/s",
         f"hover tip z: {hover_tip[2]:.1f} mm,"
         f" grip tip z: {info['grip_z_mm']:.1f} mm",
         f"corrected base target: x={corr[0]:+.2f} y={corr[1]:+.2f} mm",

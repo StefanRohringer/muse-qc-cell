@@ -229,6 +229,55 @@ def test_ramp_steps_stay_within_speed_budget():
     assert ramp_waypoints([1.0] * 6, [1.0] * 6)[-1] == (1.0,) * 6
 
 
+def test_ramp_default_unchanged_with_keywords():
+    start = [1.0, 2.0, -3.0, 4.0, -5.0, 6.0]
+    end = [-2.0, 3.0, -1.0, 0.5, -0.5, 1.0]
+    assert ramp_waypoints(start, end) == ramp_waypoints(
+        start, end, speed_deg_s=5.0)
+    assert ramp_waypoints(start, end, speed_deg_s=15.0) != ramp_waypoints(start, end)
+
+
+def test_ramp_trapezoid_caps_leading_step_and_lasts_about_d_over_v():
+    import math as _math
+
+    start = [0.0] * 6
+    end = [10.0] + [0.0] * 5
+    points = ramp_waypoints(start, end, speed_deg_s=15.0, accel_deg_s2=30.0)
+    assert len(points) == _math.ceil((10.0 / 15.0 + 15.0 / 30.0) * 100.0)
+    assert points[-1] == (10.0, 0.0, 0.0, 0.0, 0.0, 0.0)  # exact end pose
+    previous = list(start)
+    peak = 0.0
+    for point in points:
+        peak = max(peak, max(abs(w - p) for w, p in zip(point, previous)))
+        previous = list(point)
+    assert peak <= 15.0 / 100.0 + 1e-9  # leading joint never faster
+    first = abs(points[0][0] - start[0])
+    last = abs(points[-1][0] - points[-2][0])
+    assert first <= 0.01 and last <= 0.01  # smooth start and stop
+    assert first < peak and last < peak
+
+
+def test_ramp_trapezoid_triangle_for_short_moves_and_zero_move():
+    import math as _math
+
+    start = [0.0] * 6
+    end = [1.0] + [0.0] * 5
+    peak_v = _math.sqrt(1.0 * 30.0)
+    points = ramp_waypoints(start, end, speed_deg_s=15.0, accel_deg_s2=30.0)
+    assert len(points) == _math.ceil(2.0 * peak_v / 30.0 * 100.0)
+    assert points[-1] == (1.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    assert ramp_waypoints(start, start, speed_deg_s=15.0,
+                          accel_deg_s2=30.0) == [(0.0,) * 6]
+
+
+def test_ramp_bad_speed_or_accel_refused():
+    with pytest.raises(ValueError):
+        ramp_waypoints([0.0] * 6, [1.0] * 6, speed_deg_s=0.0)
+    with pytest.raises(ValueError):
+        ramp_waypoints([0.0] * 6, [1.0] * 6, speed_deg_s=15.0,
+                       accel_deg_s2=-1.0)
+
+
 def test_plan_ends_with_clamped_settle_target():
     assert clamp_to_limits(REST_DEG, TEST_LIMITS) == CLAMPED_REST
     plan = build_plan(REST_DEG, TEST_LIMITS)

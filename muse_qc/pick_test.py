@@ -1,9 +1,9 @@
 """First pick with the arm. The human runs it by hand.
 
 Dry run builds and checks the plan, moving nothing. --execute flies
-one 100 Hz loop (muse_qc.pick_loop.PickLoop): hover, open, lower,
-grip, lift, hold, put down, open, raise, return. --no-grip only
-lowers and holds for a ruler check.
+one 100 Hz loop (muse_qc.pick_loop.PickLoop): hover (gripper opens
+during the hover ramp), lower, grip, lift, hold, put down, open,
+raise, return. --no-grip only lowers and holds for a ruler check.
 """
 from __future__ import annotations
 import argparse
@@ -21,8 +21,9 @@ from muse_qc.gripper_stream import open_touch_sensor
 from muse_qc.pick_loop import PickLoop
 from muse_qc.pick_plan import build_pick_plan, check_pick_plan, plan_summary
 GRIP_Z_MM = (5.0, 60.0, 5.0)
-OPEN_MM = (25.0, 50.0, 40.0)
-HOLD_S = (0.5, 30.0, 3.0)
+OPEN_MM = (25.0, 50.0, 28.0)
+HOLD_S = (0.5, 30.0, 1.0)
+SPEED_DEG_S = (2.0, 15.0, 15.0)
 def _ranged(text, name, low, high, unit):
     try:
         value = float(text)
@@ -35,6 +36,7 @@ def _ranged(text, name, low, high, unit):
 def _grip_z_type(text): return _ranged(text, "--grip-z-mm", *GRIP_Z_MM[:2], "mm")
 def _open_mm_type(text): return _ranged(text, "--open-mm", *OPEN_MM[:2], "mm")
 def _hold_s_type(text): return _ranged(text, "--hold-s", *HOLD_S[:2], "s")
+def _speed_type(text): return _ranged(text, "--speed-deg-s", *SPEED_DEG_S[:2], "deg/s")
 def _read_start(sdk):
     reader = Arm(sdk_factory=lambda: sdk)
     reader.connect()
@@ -45,7 +47,7 @@ def _create_sdk():
     return RebotArm()
 def _plan_and_check(arm_start_deg, grip_start_deg, table_xy, grip_z_mm, open_mm,
                     out, joint_limits, solve_fn, check_fn, tip_fn,
-                    use_xy_correction=True):
+                    use_xy_correction=True, speed_deg_s=SPEED_DEG_S[2]):
     open_deg = width_to_deg(open_mm)
     refused = validate_targets(grip_start_deg, open_deg)
     if refused is not None:
@@ -57,7 +59,8 @@ def _plan_and_check(arm_start_deg, grip_start_deg, table_xy, grip_z_mm, open_mm,
     try:
         built = build_pick_plan(arm_start_deg, table_xy, grip_z_mm,
                                 joint_limits, solve_fn=solve_fn,
-                                use_xy_correction=use_xy_correction)
+                                use_xy_correction=use_xy_correction,
+                                free_speed_deg_s=speed_deg_s)
         if not built.get("ok"):
             out(f"plan failed: {built.get('reason')}")
             return None, None
@@ -75,7 +78,8 @@ def _plan_and_check(arm_start_deg, grip_start_deg, table_xy, grip_z_mm, open_mm,
     return open_deg, built
 def dry_run(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, out=print,
             find_port=None, sensor_factory=None, joint_limits=None, check_fn=None,
-            tip_fn=None, solve_fn=None, use_xy_correction=True):
+            tip_fn=None, solve_fn=None, use_xy_correction=True,
+            speed_deg_s=SPEED_DEG_S[2]):
     reader, arm_start_deg, grip_start_deg = _read_start(sdk)
     try:
         out(f"rest joints deg: {[f'{v:+.2f}' for v in arm_start_deg]}")
@@ -88,7 +92,8 @@ def dry_run(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, out=print,
             _, built = _plan_and_check(arm_start_deg, grip_start_deg, table_xy,
                                        grip_z_mm, open_mm, out, joint_limits,
                                        solve_fn, check_fn, tip_fn,
-                                       use_xy_correction)
+                                       use_xy_correction,
+                                       speed_deg_s=speed_deg_s)
             if built is None:
                 return 1
             out("dry run: moves nothing, motors never enabled")
@@ -100,7 +105,7 @@ def dry_run(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, out=print,
 def execute(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, input_fn=input,
             out=print, find_port=None, sensor_factory=None, joint_limits=None,
             check_fn=None, tip_fn=None, arm_vlims=None, solve_fn=None,
-            use_xy_correction=True):
+            use_xy_correction=True, speed_deg_s=SPEED_DEG_S[2]):
     reader, arm_start_deg, grip_start_deg = _read_start(sdk)
     stream, sensor = None, None
     old_ref = safety.J6_REF
@@ -112,7 +117,8 @@ def execute(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, input_fn=input,
         open_deg, built = _plan_and_check(arm_start_deg, grip_start_deg, table_xy,
                                           grip_z_mm, open_mm, out, joint_limits,
                                           solve_fn, check_fn, tip_fn,
-                                          use_xy_correction)
+                                          use_xy_correction,
+                                          speed_deg_s=speed_deg_s)
         if built is None:
             return 1
         limits = safety.JOINT_LIMITS_DEG if joint_limits is None else joint_limits
@@ -197,11 +203,13 @@ def main(argv=None, sdk_factory=None, **kwargs):
     parser.add_argument("--grip-z-mm", type=_grip_z_type, default=GRIP_Z_MM[2],
                         help="grip tip height in mm, 5 to 60 (default 5)")
     parser.add_argument("--open-mm", type=_open_mm_type, default=OPEN_MM[2],
-                        help="jaw opening in mm, 25 to 50 (default 40)")
+                        help="jaw opening in mm, 25 to 50 (default 28)")
     parser.add_argument("--no-grip", action="store_true",
                         help="only lower to --grip-z-mm and hold for a ruler check")
     parser.add_argument("--hold-s", type=_hold_s_type, default=HOLD_S[2],
-                        help="hold time in s, 0.5 to 30 (default 3)")
+                        help="hold time in s, 0.5 to 30 (default 1)")
+    parser.add_argument("--speed-deg-s", type=_speed_type, default=SPEED_DEG_S[2],
+                        help="free ramp speed in deg/s, 2 to 15 (default 15)")
     parser.add_argument("--gains", choices=("default", "soft"), default="default",
                         help="motor gain profile (default or soft joints 4/5)")
     parser.add_argument("--execute", action="store_true", help="fly the pick after confirmation")
@@ -215,6 +223,7 @@ def main(argv=None, sdk_factory=None, **kwargs):
     run = execute if args.execute else dry_run
     return run(sdk, (args.table_mm[0], args.table_mm[1]), args.grip_z_mm,
                args.open_mm, args.no_grip, args.hold_s,
-               use_xy_correction=not args.no_xy_correction, **kwargs)
+               use_xy_correction=not args.no_xy_correction,
+               speed_deg_s=args.speed_deg_s, **kwargs)
 if __name__ == "__main__":
     sys.exit(main())

@@ -2,9 +2,11 @@
 
 PickLoop is the 100 Hz callback used by muse_qc.pick_test: it walks
 the arm waypoints of muse_qc.pick_plan with a fresh safety check per
-cycle, commands the gripper every cycle, watches the touch sensor and
-climbs back to the hover height before returning after any fault,
-contact stop or abort. Protocol use only, no gripper-project code.
+cycle, opens the gripper during the hover walk (holding at hover
+until fully open), commands the gripper every cycle, watches the
+touch sensor and climbs back to the hover height before returning
+after any fault, contact stop or abort. Protocol use only, no
+gripper-project code.
 """
 from __future__ import annotations
 import math
@@ -209,10 +211,22 @@ class PickLoop:
         self.detour = list(range(low, high)) + list(range(first, last))
         self.di = 0
         self.phase = "abort"
+    def _grip_at_open(self):
+        return abs(self.grip_cmd - self.open_deg) <= 1e-9
+
+    def _nudge_grip_open(self):
+        diff = self.open_deg - self.grip_cmd
+        if abs(diff) <= GRIP_STEP_DEG:
+            self.grip_cmd = self.open_deg
+        else:
+            self.grip_cmd = self.grip_cmd + math.copysign(GRIP_STEP_DEG, diff)
+
     def _do_walk(self):
         if self.phase == "lower" and self.contacts:
             self._contact_stop()
             return
+        if self.phase == "hover":
+            self._nudge_grip_open()
         if not self._walk_send(self.k):
             return
         self.k += 1
@@ -228,7 +242,10 @@ class PickLoop:
         if not finished or self.phase not in _WALKS:
             return
         if self.phase == "hover":
-            self.phase = "open"
+            if self._grip_at_open():
+                self._to_lower()
+            else:
+                self.phase = "open"  # hold hover until fully open
         elif self.phase == "lower":
             if self.no_grip:
                 self.left = self.hold_cycles
