@@ -585,3 +585,41 @@ motion finished, gripper back at the open width
   P2 A=(505.0, 348.7) B=(491.6, 371.8); hover output not kept
   P3 A=(690.4, 307.6) B=(698.2, 333.4); hold measured tip mm: x=+285.6 y=-195.0 z=+99.7
   A first try for P2 at table (509.7, 383.2) = base (360.5, -13.8) was refused before moving: "plan failed: unreachable: IK did not converge". With the gripper pointing straight down at 100 mm hover the reach ends between 345 mm (P3 worked) and 360 mm from the joint 1 axis.
+- Human ran python -m muse_qc.pick_test --table-mm 495.9 330 (dry run, 2026-10-29, arm power supply on): the first try was refused at waypoint 7673 (invalid current reading: the clamped joint 2 read exactly 0.0 in the chained pre-check), fixed in b15bfd8. After the fix:
+```text
+rest joints deg: ['-2.79', '+1.13', '-1.72', '+2.72', '+2.44', '-1.91']
+gripper rest deg: -126.45 (width about 40.1 mm)
+segments at 100 Hz: hover 2016 lower 920 lift 920 put-down 900 raise 900 return 2116 (total 7772)
+hover tip z: 99.8 mm, grip tip z: 8.0 mm
+corrected base target: x=+288.35 y=-9.75 mm
+xy correction: on
+all waypoints ok
+dry run: moves nothing, motors never enabled
+```
+- Human ran python -m muse_qc.pick_test --table-mm 495.9 330 --no-grip --grip-z-mm 40 --execute and the same with --grip-z-mm 20 (2026-10-29, arm power supply on, hand on the power supply switch): OK. Printed "holding at tip z 39.7 mm" and "holding at tip z 19.7 mm"; measured with a ruler 40 mm and 19 mm. The height correction holds within about 1 mm down to 20 mm.
+- Human checked the x/y correction at low height (2026-10-29): during the 40 mm hold the white cube was slid under the centre between the finger tips; afterwards python -m muse_qc.vision_sam "white cube" gave table_mm=(491.0, 327.8) (confidence 0.80) for the commanded (495.9, 330), about 5 mm off.
+- Human ran python -m muse_qc.pick_test --table-mm 495.9 330 --execute (2026-10-29, grip z 8 mm): "missed grip", correct: the table image showed that no part lay at the target.
+- Human ran the same with one connector part placed at the target (2026-10-29, grip z 8 mm): the fingers closed to bilateral contact, but the part slipped out while lifting:
+```text
+contact: gripper commanded deg -50.93 measured deg -54.22 contacts L1 L2 R2
+contacts L1 L2 R1 R2 (lifting)
+contacts L2 R1 R2 (lifting)
+contacts L2 R2 (lifting)
+contacts R2 (lifting)
+part lost while lifting
+contacts - (lifting)
+```
+- Human ran python -m muse_qc.vision_sam with "small part", "grey block", "orange and grey object" and "small grey box" on the connector part from the table camera (2026-10-29): 0 boxes each (on 2026-10-28 "small part" had found it). The part is only about 25 px wide in the 1920x1080 image.
+- Human ran python -m muse_qc.pick_test --table-mm 495.9 330 --grip-z-mm 5 --execute (2026-10-29, arm power supply on, hand on the power supply switch, the part placed by hand under the finger tips during a --no-grip 40 mm hold): OK, FIRST PICK. The part was lifted to 100 mm, held with all four sensors, put down and released.
+```text
+segments at 100 Hz: hover 2016 lower 950 lift 950 put-down 930 raise 930 return 2116 (total 7892)
+hover tip z: 99.8 mm, grip tip z: 5.0 mm
+corrected base target: x=+288.35 y=-9.75 mm
+xy correction: on
+all waypoints ok
+contact: gripper commanded deg -45.83 measured deg -49.39 contacts L2 R2
+contacts L1 L2 R1 R2 (lifting)
+part lifted, holding
+stopping: the motors will be disabled now
+end readings: arm [-2.79 +0.12 -2.04 +2.94 +2.55 -0.36] gripper -126.28 deg
+```

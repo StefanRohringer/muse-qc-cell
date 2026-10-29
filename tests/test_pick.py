@@ -482,7 +482,7 @@ def test_dry_run_never_enables_or_sends():
     assert code == 0
     text = "\n".join(lines)
     assert "segments at 100 Hz:" in text
-    assert "hover tip z: 100.0 mm" in text and "grip tip z: 8.0 mm" in text
+    assert "hover tip z: 100.0 mm" in text and "grip tip z: 5.0 mm" in text
     assert "corrected base target:" in text
     assert "xy correction: on" in text
     assert "dry run: moves nothing, motors never enabled" in text
@@ -659,6 +659,8 @@ def test_part_lost_printed_and_no_open_above_putdown():
     code, text, _ = _run(sdk, script)
     assert code == 0
     assert "part lost while lifting" in text
+    assert "no part held, holding" in text
+    assert "part lifted, holding" not in text
     contact_cmd = OPEN_DEG + (touch_at - close_start) * GRIP_STEP
     squeeze = min(contact_cmd + 2.0, CLOSED_DEG)
     arm_items, grip_items = _arm_sends(sdk), _grip_sends_deg(sdk)

@@ -239,7 +239,7 @@ class PickLoop:
                 self.phase = "close"
         elif self.phase == "lift":
             self.left = self.hold_cycles
-            self._out("part lifted, holding")
+            self._out("no part held, holding" if self.lost else "part lifted, holding")
             self.phase = "top_hold"
         elif self.phase == "put-down":
             self.phase = "reopen"

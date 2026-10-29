@@ -1128,7 +1128,7 @@ only; everywhere else the 30 mm floor is unchanged. Any contact
 while lowering stops the descent at once, holds 0.5 s, climbs back
 up the same ladder and returns. `--no-grip` only lowers to
 `--grip-z-mm` and holds, so the human can check the real tip height
-with a ruler first. `--grip-z-mm` takes 5 to 60 mm (default 8),
+with a ruler first. `--grip-z-mm` takes 5 to 60 mm (default 5),
 `--open-mm` 25 to 50 mm (default 40), `--hold-s` 0.5 to 30 s
 (default 3); anything else is an argparse error (exit 2) before
 anything connects. `--no-xy-correction` flies the uncorrected target
@@ -1149,6 +1149,25 @@ The height correction is verified only at 100 mm so far, hence the
 40 and 20 mm ruler stops before the grip run with one part. Parts
 must lie 31 to 34.5 cm from the joint 1 axis (the verified x/y
 correction range).
+
+The default grip height is 5 mm: at 8 mm only the soft finger tips
+touched the 14.5 mm high part and it slipped out while lifting, at
+5 mm it held. The first pick used the default with the part placed
+by hand under the finger tips (the table camera did not find it
+with SAM that day, see DEVLOG):
+
+```text
+segments at 100 Hz: hover 2016 lower 950 lift 950 put-down 930 raise 930 return 2116 (total 7892)
+hover tip z: 99.8 mm, grip tip z: 5.0 mm
+corrected base target: x=+288.35 y=-9.75 mm
+xy correction: on
+all waypoints ok
+contact: gripper commanded deg -45.83 measured deg -49.39 contacts L2 R2
+contacts L1 L2 R1 R2 (lifting)
+part lifted, holding
+stopping: the motors will be disabled now
+end readings: arm [-2.79 +0.12 -2.04 +2.94 +2.55 -0.36] gripper -126.28 deg
+```
 
 ## Safety notes
 

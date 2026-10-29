@@ -19,7 +19,7 @@ from muse_qc.gripper_motor import CONFIRM_PROMPT, GRIPPER_CONFIG_VLIM
 from muse_qc.gripper_stream import open_touch_sensor
 from muse_qc.pick_loop import PickLoop
 from muse_qc.pick_plan import build_pick_plan, check_pick_plan, plan_summary
-GRIP_Z_MM = (5.0, 60.0, 8.0)
+GRIP_Z_MM = (5.0, 60.0, 5.0)
 OPEN_MM = (25.0, 50.0, 40.0)
 HOLD_S = (0.5, 30.0, 3.0)
 def _ranged(text, name, low, high, unit):
@@ -194,7 +194,7 @@ def main(argv=None, sdk_factory=None, **kwargs):
     parser.add_argument("--table-mm", nargs=2, type=float, required=True,
                         metavar=("X", "Y"), help="part position in table mm")
     parser.add_argument("--grip-z-mm", type=_grip_z_type, default=GRIP_Z_MM[2],
-                        help="grip tip height in mm, 5 to 60 (default 8)")
+                        help="grip tip height in mm, 5 to 60 (default 5)")
     parser.add_argument("--open-mm", type=_open_mm_type, default=OPEN_MM[2],
                         help="jaw opening in mm, 25 to 50 (default 40)")
     parser.add_argument("--no-grip", action="store_true",
