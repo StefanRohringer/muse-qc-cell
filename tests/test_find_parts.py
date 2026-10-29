@@ -61,9 +61,30 @@ def _frame_with(parts):
 
 
 def _two_parts():
+    """Two part rects at reachable table spots (~(505, 360), ~(567, 317)).
+
+    Both map outside every skip zone (boxes, arm zone, reach), so
+    they still reach SAM as before.
+    """
     grey = (110, 110, 110)
     orange = (30, 140, 230)
-    return [(100, 150, 140, 175, grey), (400, 300, 430, 320, orange)]
+    return [(307, 305, 346, 330, grey), (345, 270, 384, 295, orange)]
+
+
+def _rect_at(table_xy, half=(20, 13)):
+    """Filled rect centred on the pixel mapping to table_xy."""
+    import numpy
+
+    from muse_qc.table_coords import table_homography
+
+    homography = table_homography(_fake_markers(), None)
+    inv = numpy.linalg.inv(numpy.array(homography, dtype=float))
+    vec = inv @ numpy.array([table_xy[0], table_xy[1], 1.0])
+    center_x, center_y = int(round(vec[0] / vec[2])), int(round(vec[1] / vec[2]))
+    return (
+        center_x - half[0], center_y - half[1],
+        center_x + half[0], center_y + half[1], (110, 110, 110),
+    )
 
 
 def _setup(monkeypatch, texts=None, seen=None):
@@ -98,8 +119,8 @@ def test_blobs_found_at_right_centres(monkeypatch, tmp_path, capsys):
     ])
     assert code == 0
     out = capsys.readouterr().out
-    assert "part 0 center=(120, 163)" in out
-    assert "part 1 center=(416, 310)" in out
+    assert "part 0 center=(327, 318)" in out
+    assert "part 1 center=(365, 283)" in out
     assert "candidates: 2" in out
 
 
@@ -252,5 +273,95 @@ def test_detect_changes_pure_without_table_mapping():
     )
     assert len(blobs) == 2
     centres = sorted(blob["center"] for blob in blobs)
-    assert centres[0] == (120.5, 163.0)
-    assert centres[1] == (415.5, 310.5)
+    assert centres[0] == (327.0, 318.0)
+    assert centres[1] == (365.0, 283.0)
+
+
+def test_classify_skip_zones():
+    assert find_parts.classify_skip(None) is None
+    assert find_parts.classify_skip((376.4, 423.8)) == "in box good"
+    assert find_parts.classify_skip((390.9, 451.5)) == "in box good"
+    assert find_parts.classify_skip((675.4, 420.3)) == "in box bad"
+    assert find_parts.classify_skip((500.0, 150.0)) == "arm zone"
+    assert find_parts.classify_skip((100.0, 450.0)) == "out of reach"
+    assert find_parts.classify_skip((505.0, 360.0)) is None
+    assert find_parts.classify_skip((567.0, 317.0)) is None
+
+
+def _run_frame(monkeypatch, tmp_path, capsys, parts, texts=None, seen=None):
+    _setup(monkeypatch, texts=texts, seen=seen)
+    _write(tmp_path / "empty.png", _background())
+    _write(tmp_path / "frame.png", _frame_with(parts))
+    code = _run_main(monkeypatch, tmp_path, [
+        "--image", str(tmp_path / "frame.png"),
+        "--empty", str(tmp_path / "empty.png"),
+    ])
+    assert code == 0
+    return capsys.readouterr().out
+
+
+def test_skip_good_box_no_sam_call(monkeypatch, tmp_path, capsys):
+    seen: list = []
+    out = _run_frame(monkeypatch, tmp_path, capsys,
+                     [_rect_at((376.4, 423.8))], seen=seen)
+    assert seen == []
+    assert "skipped: in box good" in out
+    assert "parts: 0 confirmed of 1 candidates (1 skipped)" in out
+
+
+def test_skip_bad_box_no_sam_call(monkeypatch, tmp_path, capsys):
+    seen: list = []
+    out = _run_frame(monkeypatch, tmp_path, capsys,
+                     [_rect_at((675.4, 420.3))], seen=seen)
+    assert seen == []
+    assert "skipped: in box bad" in out
+    assert "parts: 0 confirmed of 1 candidates (1 skipped)" in out
+
+
+def test_skip_arm_zone_no_sam_call(monkeypatch, tmp_path, capsys):
+    seen: list = []
+    out = _run_frame(monkeypatch, tmp_path, capsys,
+                     [_rect_at((500.0, 150.0))], seen=seen)
+    assert seen == []
+    assert "skipped: arm zone" in out
+    assert "parts: 0 confirmed of 1 candidates (1 skipped)" in out
+
+
+def test_skip_out_of_reach_no_sam_call(monkeypatch, tmp_path, capsys):
+    seen: list = []
+    out = _run_frame(monkeypatch, tmp_path, capsys,
+                     [_rect_at((100.0, 450.0))], seen=seen)
+    assert seen == []
+    assert "skipped: out of reach" in out
+    assert "parts: 0 confirmed of 1 candidates (1 skipped)" in out
+
+
+def test_real_candidate_still_goes_to_sam(monkeypatch, tmp_path, capsys):
+    seen: list = []
+    texts = ["0<|box;x1=270;y1=270;x2=370;y2=370;w=100;h=100;c=0.88|>"]
+    out = _run_frame(monkeypatch, tmp_path, capsys,
+                     [_rect_at((505.0, 360.0))], texts=texts, seen=seen)
+    assert len(seen) == 1
+    assert "sam=confirmed 0.88" in out
+    assert "parts: 1 confirmed of 1 candidates" in out
+    assert "skipped" not in out
+
+
+def test_skipped_summary_count(monkeypatch, tmp_path, capsys):
+    seen: list = []
+    texts = ["0<|box;x1=270;y1=270;x2=370;y2=370;w=100;h=100;c=0.88|>"]
+    parts = [
+        _rect_at((390.9, 451.5)),
+        _rect_at((500.0, 150.0)),
+        _rect_at((100.0, 450.0)),
+        _rect_at((675.4, 420.3)),
+        _rect_at((505.0, 360.0)),
+    ]
+    out = _run_frame(monkeypatch, tmp_path, capsys, parts,
+                     texts=texts, seen=seen)
+    assert len(seen) == 1
+    assert "skipped: in box good" in out
+    assert "skipped: in box bad" in out
+    assert "skipped: arm zone" in out
+    assert "skipped: out of reach" in out
+    assert "parts: 1 confirmed of 5 candidates (4 skipped)" in out

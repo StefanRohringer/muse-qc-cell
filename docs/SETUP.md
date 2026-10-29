@@ -1224,6 +1224,16 @@ table mm). A missing reference or a size mismatch prints a short
 message with exit 2; more than 12 blobs prints `too many changes`
 with exit 1.
 
+Before SAM, every candidate is checked against three skip zones and
+skipped ones cost no SAM call: within 70 mm (max of |dx|, |dy|) of
+a sorting box centre from `drop_plan.BOXES_TABLE_MM` (parts already
+sorted), inside the arm zone x 380 to 610 mm, y 0 to 300 mm (the
+arm, cables and gripper at rest), and farther than 345 mm from the
+joint 1 axis (out of reach, cannot be picked). A skipped candidate
+prints `skipped: <reason>` instead of a SAM verdict, the summary
+becomes `parts: N confirmed of M candidates (K skipped)`, and the
+annotated image draws skipped boxes in grey with the reason.
+
 Real human run with one connector part and the white cube on the
 table (2026-10-29): the diff found the part (area about 430 mm2)
 while the cube was no candidate (probably merged with its long

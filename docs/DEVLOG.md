@@ -710,3 +710,34 @@ id 0 box=(1187, 170, 1372, 350) center=(1279.5, 260.0) confidence=0.83 table_mm=
 id 1 box=(714, 173, 875, 342) center=(794.5, 257.5) confidence=0.83 table_mm=(376.4, 423.8)
 boxes: 2
 ```
+- Human ran python -m muse_qc.find_parts and python -m muse_qc.pick_test --table-mm 502.5 360.5 --drop good (dry run, then --execute) (2026-10-29, arm power supply on, hand on the power supply switch; one earlier attempt stopped with JointStateUnavailable because the power supply was still off): OK, FIRST FULL SORTING RUN. The arm picked the part, carried it with the tool tilted 30 deg to the left box and dropped it in; the touch sensors confirmed the release. Human: "it gripped it and put it into the green box".
+```text
+part 0 center=(999, 360) area_mm2=553 table_mm=(502.5, 360.5) sam=confirmed 0.88
+segments at 100 Hz: hover 821 lower 390 lift 270 to-box 321 release 1 return 761 (total 2564)
+drop box: good at table mm (+376.4, +423.8), r=418.5 mm
+drop joints deg: +16.59 -91.53 -83.54 +52.01 -0.00 +0.00
+drop tilt: 30.0 deg, fk tip base mm (+401.1, +119.5, +170.0), real tip z 129.9 mm
+to-box lowest tip z: 99.7 mm
+contact: gripper commanded deg -45.82 measured deg -49.32 contacts L2 R2
+contacts L1 L2 R1 R2 (lifting)
+part lifted, holding
+dropped into the good box
+```
+- Human ran python -m muse_qc.find_parts and python -m muse_qc.pick_test --table-mm 513.4 353.3 --drop bad --execute (2026-10-29, arm power supply on): OK, the part went into the right (bad) box. find_parts also reported the part already lying in the good box and three candidates on the gripper fingers and cables (fixed in this change by the skip zones).
+```text
+part 0 center=(818, 212) area_mm2=900 table_mm=(390.9, 451.5) sam=confirmed 0.72
+part 1 center=(920, 600) area_mm2=1384 table_mm=(452.8, 211.7) sam=no box
+part 2 center=(952, 738) area_mm2=200 table_mm=(472.7, 125.9) sam=no box
+part 3 center=(954, 510) area_mm2=2412 table_mm=(474.3, 267.4) sam=no box
+part 4 center=(1016, 371) area_mm2=545 table_mm=(513.4, 353.3) sam=confirmed 0.86
+parts: 2 confirmed of 5 candidates
+segments at 100 Hz: hover 811 lower 390 lift 270 to-box 316 release 1 return 787 (total 2575)
+drop box: bad at table mm (+675.4, +420.3), r=436.2 mm
+drop joints deg: -24.29 -95.40 -87.66 +52.25 +0.00 +0.01
+drop tilt: 30.0 deg, fk tip base mm (+397.6, -179.5, +170.0), real tip z 128.4 mm
+to-box lowest tip z: 99.3 mm
+contact: gripper commanded deg -45.67 measured deg -49.21 contacts L2 R2
+contacts L1 L2 R1 R2 (lifting)
+part lifted, holding
+dropped into the bad box
+```

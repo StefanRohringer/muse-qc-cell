@@ -12,6 +12,7 @@ Hand-run only (real camera and API); tests use synthetic images:
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -21,6 +22,8 @@ import numpy
 
 from muse_qc.camera_top import open_table_camera
 from muse_qc.detect_markers import detect_table_markers, scale_px_per_mm
+from muse_qc.drop_plan import BOXES_TABLE_MM
+from muse_qc.target_pose import ARM_BASE_IN_TABLE_MM
 from muse_qc.model_check import (
     KEY_NAME,
     _is_auth_error,
@@ -49,6 +52,40 @@ EMPTY_PATH = "recordings/empty_table.png"
 TABLE_X_MAX_MM = 990.0
 TABLE_Y_MAX_MM = 540.0
 GROW_PX = 10
+# Skip zones for diff blobs, table mm. Parts already sorted sit in the
+# 100 mm boxes (square keep-out around the box centre), the arm with
+# cables and gripper rests in ARM_ZONE_TABLE_MM, and anything beyond
+# REACH_MAX_MM from the joint 1 axis cannot be picked anyway.
+BOX_KEEP_OUT_MM = 70.0
+ARM_ZONE_TABLE_MM = (380.0, 610.0, 0.0, 300.0)  # x_min, x_max, y_min, y_max
+REACH_MAX_MM = 345.0
+
+
+def classify_skip(table_mm):
+    """Return the skip reason for a candidate table position, or None.
+
+    "in box good"/"in box bad" is within BOX_KEEP_OUT_MM (max of
+    |dx|, |dy|) of the drop_plan box centre, "arm zone" is inside
+    ARM_ZONE_TABLE_MM, "out of reach" is farther than REACH_MAX_MM
+    from the joint 1 axis. None (no mapping) is never skipped.
+    """
+    if table_mm is None:
+        return None
+    table_x, table_y = float(table_mm[0]), float(table_mm[1])
+    for name in ("good", "bad"):
+        box = BOXES_TABLE_MM.get(name)
+        if box is None:
+            continue
+        if max(abs(table_x - box[0]), abs(table_y - box[1])) \
+                <= BOX_KEEP_OUT_MM:
+            return f"in box {name}"
+    x_min, x_max, y_min, y_max = ARM_ZONE_TABLE_MM
+    if x_min <= table_x <= x_max and y_min <= table_y <= y_max:
+        return "arm zone"
+    base_x, base_y = ARM_BASE_IN_TABLE_MM
+    if math.dist((table_x, table_y), (base_x, base_y)) > REACH_MAX_MM:
+        return "out of reach"
+    return None
 
 
 def detect_changes(frame, empty, scale, to_table_mm=None):
@@ -148,17 +185,31 @@ def _request_error(exc):
 
 
 def annotate(frame, results):
-    """Return a copy of frame with blob rectangles, ids and table mm."""
+    """Return a copy of frame with blob rectangles, ids and table mm.
+
+    Skipped blobs are grey with the skip reason below the box.
+    """
     out = frame.copy()
     for index, item in enumerate(results):
         x, y, width, height = item["bbox"]
-        color = (0, 255, 0) if item["confirmed"] else (0, 255, 255)
+        if item.get("skipped") is not None:
+            color = (128, 128, 128)
+        elif item["confirmed"]:
+            color = (0, 255, 0)
+        else:
+            color = (0, 255, 255)
         cv2.rectangle(out, (x, y), (x + width, y + height), color, 2)
         table_x, table_y = item["table_mm"]
         cv2.putText(
             out, f"{index} ({table_x:.0f}, {table_y:.0f})",
             (x, max(0, y - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2,
         )
+        if item.get("skipped") is not None:
+            cv2.putText(
+                out, str(item["skipped"]),
+                (x, y + height + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+                color, 2,
+            )
     return out
 
 
@@ -249,6 +300,17 @@ def main(argv=None):
             return 1
     results = []
     for blob in blobs:
+        blob_table = to_table(blob["center"])
+        reason = classify_skip(blob_table)
+        if reason is not None:
+            results.append({
+                "bbox": blob["bbox"], "pixel": blob["center"],
+                "area_mm2": blob["area_mm2"],
+                "table_mm": blob_table,
+                "confirmed": False, "confidence": None,
+                "skipped": reason,
+            })
+            continue
         confirmed, sam_center, confidence = False, None, None
         if client is not None:
             try:
@@ -263,11 +325,18 @@ def main(argv=None):
             "area_mm2": blob["area_mm2"],
             "table_mm": to_table(pixel),
             "confirmed": confirmed, "confidence": confidence,
+            "skipped": None,
         })
     results.sort(key=lambda item: item["table_mm"][0])
     for index, item in enumerate(results):
         pixel_x, pixel_y = item["pixel"]
         table_x, table_y = item["table_mm"]
+        if item["skipped"] is not None:
+            print(f"part {index} center=({pixel_x:.0f}, {pixel_y:.0f})"
+                  f" area_mm2={item['area_mm2']:.0f}"
+                  f" table_mm=({table_x:.1f}, {table_y:.1f})"
+                  f" skipped: {item['skipped']}")
+            continue
         if client is None:
             sam_text = "skipped"
         elif not item["confirmed"]:
@@ -279,11 +348,14 @@ def main(argv=None):
         print(f"part {index} center=({pixel_x:.0f}, {pixel_y:.0f})"
               f" area_mm2={item['area_mm2']:.0f}"
               f" table_mm=({table_x:.1f}, {table_y:.1f}) sam={sam_text}")
+    skipped = sum(1 for item in results if item["skipped"] is not None)
+    skipped_text = f" ({skipped} skipped)" if skipped else ""
     if client is None:
-        print(f"candidates: {len(results)}")
+        print(f"candidates: {len(results)}{skipped_text}")
     else:
         done = sum(1 for item in results if item["confirmed"])
-        print(f"parts: {done} confirmed of {len(results)} candidates")
+        print(f"parts: {done} confirmed of {len(results)}"
+              f" candidates{skipped_text}")
     try:
         path = save_annotated(annotate(frame, results))
     except (OSError, RuntimeError) as exc:
