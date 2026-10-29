@@ -138,15 +138,18 @@ def write_report_from_records(
     record_paths: list[str | Path],
     out: str | Path | None = None,
     recordings_dir: str | Path = "recordings",
+    now=None,
 ) -> Path:
     """Write the report HTML for exactly the given record files.
 
     Only the listed records appear in the report, so one agent run
     reports only its own inspections. Each path must hold one JSON
     record dict as written by record.write_record. The default
-    output is recordings/report_<timestamp>.html (the CLI default
-    recordings/report.html is unchanged). Raises RuntimeError when
-    a record cannot be read or the page cannot be written.
+    output is recordings/report_<timestamp>.html in local time
+    like every other recordings file name (the CLI default
+    recordings/report.html is unchanged). now is an injectable
+    zero-argument clock returning a datetime. Raises RuntimeError
+    when a record cannot be read or the page cannot be written.
     """
     records: list[dict] = []
     for candidate in record_paths:
@@ -161,7 +164,8 @@ def write_report_from_records(
         records.append(record)
     target_dir = Path(recordings_dir)
     if out is None:
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        ticks = now if now is not None else datetime.now
+        stamp = ticks().strftime("%Y%m%d_%H%M%S")
         out_path = target_dir / f"report_{stamp}.html"
     else:
         out_path = Path(out)

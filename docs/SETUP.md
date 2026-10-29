@@ -1459,8 +1459,11 @@ only executes the tools and enforces safety. The model never sends
 coordinates and never moves the arm directly: positions always
 come from our own latest scan (the model only passes part ids),
 and every motion goes through the `pick_test --inspect --execute`
-path with its safety checks. The pick confirmation is passed
-through only after the human typed "yes" once for the whole run.
+path with its safety checks. Each sort runs as its own
+`python -m muse_qc.pick_test` child process, so the operating
+system frees the serial port when the sort exits. The pick
+confirmation is passed through only after the human typed "yes"
+once for the whole run.
 
 Tools offered to the model:
 

@@ -10,6 +10,9 @@ real devices or the real API here.
 from __future__ import annotations
 
 import json
+import signal
+import sys
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -617,3 +620,188 @@ def test_report_built_only_from_this_run_records(tmp_path):
     assert "count_20261028_120000" not in page
     assert "parts inspected: 2, good: 1, bad: 1" in page
     assert old.is_file()
+
+
+class _FakeStdin:
+    def __init__(self):
+        self.written: list[str] = []
+        self.closed = False
+
+    def write(self, text):
+        self.written.append(text)
+
+    def flush(self):
+        pass
+
+    def close(self):
+        self.closed = True
+
+
+class _FakeStdout:
+    def __init__(self, proc):
+        self._proc = proc
+
+    def readline(self):
+        proc = self._proc
+        if proc.raise_ki and not proc.ki_raised:
+            proc.ki_raised = True
+            raise KeyboardInterrupt
+        if proc.pos < len(proc.lines):
+            line = proc.lines[proc.pos]
+            proc.pos += 1
+            return line + "\n"
+        return ""
+
+    def __iter__(self):
+        while True:
+            line = self.readline()
+            if line == "":
+                return
+            yield line
+
+
+class _FakeProc:
+    """Fake pick_test child: scripted lines, no real process."""
+
+    def __init__(self, lines, exit_code=0, raise_ki=False):
+        self.lines = list(lines)
+        self.pos = 0
+        self.exit_code = exit_code
+        self.raise_ki = raise_ki
+        self.ki_raised = False
+        self.stdin = _FakeStdin()
+        self.stdout = _FakeStdout(self)
+        self.signals: list = []
+        self.kills = 0
+        self.waits = 0
+
+    def send_signal(self, number):
+        self.signals.append(number)
+
+    def kill(self):
+        self.kills += 1
+
+    def wait(self):
+        self.waits += 1
+        return self.exit_code
+
+
+def test_real_sort_child_streams_and_parses(capsys):
+    made = []
+
+    def factory(cmd):
+        proc = _FakeProc([
+            "inspect: levers 3 verdict good",
+            "dropped into the good box",
+            "recordings/count_child_000001.json",
+        ])
+        made.append((cmd, proc))
+        return proc
+
+    result = agent_tools.real_sort([478.7, 344.7], popen_factory=factory)
+    cmd, proc = made[0]
+    assert cmd[:3] == [sys.executable, "-m", "muse_qc.pick_test"]
+    assert cmd[cmd.index("--table-mm") + 1:][:2] == ["478.7", "344.7"]
+    assert "--inspect" in cmd and "--execute" in cmd
+    assert proc.stdin.written == ["yes\n"]
+    assert proc.stdin.closed is True
+    assert (result["outcome"], result["levers"], result["verdict"],
+            result["box"]) == ("sorted", 3, "good", "good")
+    assert result["record"] == "recordings/count_child_000001.json"
+    assert result["exit_code"] == 0
+    shown = capsys.readouterr().out
+    assert "dropped into the good box" in shown
+
+
+def test_real_sort_interrupt_drains_without_killing():
+    proc = _FakeProc(
+        ["contact: gripper commanded deg -45.82",
+         "interrupted by human, holding position"],
+        exit_code=1, raise_ki=True)
+    result = agent_tools.real_sort(
+        [478.7, 344.7], popen_factory=lambda cmd: proc)
+    assert result["outcome"] == "interrupted"
+    assert proc.kills == 0
+    assert proc.signals == []
+    assert proc.waits >= 1
+    assert result["exit_code"] == 1
+    assert "interrupted by human, holding position" in result["lines"]
+
+
+def test_real_sort_timeout_sends_sigint():
+    ticks = iter([0.0, 1000.0, 1000.0])
+    proc = _FakeProc(["working..."], exit_code=1)
+    result = agent_tools.real_sort(
+        [478.7, 344.7], popen_factory=lambda cmd: proc,
+        timeout_s=600.0, clock=lambda: next(ticks))
+    assert proc.signals == [signal.SIGINT]
+    assert proc.kills == 0
+    assert result["outcome"] == "error"
+    assert result["reason"] == "sort timed out after 600 s"
+    assert result["exit_code"] == 1
+
+
+def test_parse_pick_lines_error_reasons():
+    busy = ("request failed: new_dm_serial failed: open serial port"
+            " /dev/ttyACM0 failed: Device or resource busy")
+    parsed = agent_tools.parse_pick_lines(["plan ok", busy])
+    assert parsed["outcome"] == "error"
+    assert parsed["reason"] == busy
+    motion = agent_tools.parse_pick_lines(
+        ["motion failed: old", "request failed: later"])
+    assert motion["outcome"] == "error"
+    assert motion["reason"] == "request failed: later"
+    only_motion = agent_tools.parse_pick_lines(["motion failed: stuck"])
+    assert only_motion["reason"] == "motion failed: stuck"
+    ok = agent_tools.parse_pick_lines(
+        ["inspect: levers 3 verdict good",
+         "dropped into the good box"])
+    assert ok["outcome"] == "sorted"
+    assert ok["reason"] is None
+
+
+def test_reports_use_local_time(tmp_path):
+    fixed = datetime(2026, 10, 29, 21, 55, 12)
+    fake = agent_tools.fake_report(
+        ["a.json"], str(tmp_path), now=lambda: fixed)
+    assert Path(fake).name == "report_fake_20261029_215512.html"
+    from muse_qc.inspection.report import write_report_from_records
+
+    real = write_report_from_records(
+        [], recordings_dir=str(tmp_path), now=lambda: fixed)
+    assert Path(real).name == "report_20261029_215512.html"
+
+
+def test_two_child_sorts_in_one_run(tmp_path):
+    made = []
+
+    def factory(cmd):
+        made.append(cmd)
+        number = len(made)
+        return _FakeProc([
+            "inspect: levers 3 verdict good",
+            "dropped into the good box",
+            f"recordings/count_child_{number:06d}.json",
+        ])
+
+    sort = lambda pos: agent_tools.real_sort(  # noqa: E731
+        pos, popen_factory=factory)
+    scan = _scan_fn_factory([[[P0[0], P0[1]], [P1[0], P1[1]]], [P1]])
+    report = _report_fn_factory(tmp_path)
+    script = [
+        [_message("scan"), _call("c1", "scan_table", {})],
+        [_message("sort"), _call("c2", "inspect_and_sort",
+                                 {"part_id": 0})],
+        [_message("scan"), _call("c3", "scan_table", {})],
+        [_message("sort"), _call("c4", "inspect_and_sort",
+                                 {"part_id": 0})],
+        [_message("report"), _call("c5", "write_report", {})],
+        [_message("end"), _call("c6", "finish",
+                                {"summary": "2 sorted"})],
+    ]
+    result, _, _ = _run(script, scan, sort, report, tmp_path)
+    assert result["finished"] is True
+    assert result["good"] == 2
+    assert len(made) == 2
+    assert report.seen == [["recordings/count_child_000001.json",
+                            "recordings/count_child_000002.json"]]

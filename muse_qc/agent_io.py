@@ -1,14 +1,86 @@
-"""Response item helpers for the agent loop. No hardware, no API.
+"""Response item helpers and child runner for the agent loop.
 
 Reads message text and function calls from dict or SDK object
 items, converts every output item to a plain dict for the replay
 history (reasoning items with encrypted_content included: with
-store=False they must be sent back), and formats the token usage
-line. The transcript never sees these dicts; it only holds model
-text, tool calls and tool results.
+store=False they must be sent back), formats the token usage
+line, and runs one pick_test sort as a child process. The
+transcript never sees these dicts; it only holds model text,
+tool calls and tool results.
 """
 
 from __future__ import annotations
+
+import signal
+import time
+
+SORT_TIMEOUT_S = 600.0
+
+
+def default_popen(cmd):
+    """Start cmd with merged stderr, text pipes and a "yes" on stdin.
+
+    PYTHONUNBUFFERED keeps the child output streaming line by
+    line. The factory takes only cmd so tests can inject a fake.
+    """
+    import os
+    import subprocess
+
+    env = dict(os.environ)
+    env["PYTHONUNBUFFERED"] = "1"
+    return subprocess.Popen(
+        cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT, text=True, env=env)
+
+
+def run_child(cmd, popen_factory, timeout_s=SORT_TIMEOUT_S,
+              clock=None, out=print):
+    """Run cmd as a child, answer "yes", stream lines, return them.
+
+    Returns (lines, exit_code, timed_out). Each line is printed
+    live and collected. The child is never killed: Ctrl+C reaches
+    it too (same foreground group), so on KeyboardInterrupt the
+    rest of its output is drained until it exits. On timeout it
+    gets SIGINT (never SIGKILL) and the caller adds the reason.
+    """
+    ticks = clock if clock is not None else time.monotonic
+    proc = popen_factory(cmd)
+    lines: list[str] = []
+
+    def emit(raw: str) -> None:
+        text = raw.rstrip("\n")
+        out(text)
+        lines.append(text)
+
+    stdin = getattr(proc, "stdin", None)
+    if stdin is not None:
+        try:
+            stdin.write("yes\n")
+            stdin.flush()
+        except (OSError, ValueError):
+            pass
+        try:
+            stdin.close()
+        except (OSError, ValueError):
+            pass
+    start = ticks()
+    try:
+        while True:
+            if ticks() - start > timeout_s:
+                proc.send_signal(signal.SIGINT)
+                return lines, proc.wait(), True
+            raw = proc.stdout.readline()
+            if raw == "":
+                break
+            emit(raw)
+    except KeyboardInterrupt:
+        try:
+            for rest in proc.stdout:
+                emit(rest)
+        except KeyboardInterrupt:
+            pass
+        return lines, proc.wait(), False
+    return lines, proc.wait(), False
 
 
 def field(item, name, default=None):

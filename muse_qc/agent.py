@@ -343,10 +343,9 @@ def main(argv=None, client_factory=None, toolset=None, input_fn=None,
                 return 2
             out("agent: human confirmed,"
                 " keep a hand on the power supply switch")
-            confirm = lambda prompt: "yes"  # noqa: E731
             toolset = (
                 agent_tools.real_scan,
-                lambda position: agent_tools.real_sort(position, confirm),
+                agent_tools.real_sort,
                 agent_tools.real_report,
             )
     elif toolset is None:

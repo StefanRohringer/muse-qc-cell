@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import math
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 SAME_PART_MM = 15.0
@@ -177,6 +177,7 @@ def parse_pick_lines(lines: list[str]) -> dict:
     missed = False
     failed = None
     halted = None
+    err_reason = None
     for line in lines:
         match = _INSPECT_RE.search(line)
         if match is not None:
@@ -190,6 +191,9 @@ def parse_pick_lines(lines: list[str]) -> dict:
             failed = line
         if "interrupted by human, holding position" in line:
             halted = line
+        if line.startswith(("request failed:", "motion failed:",
+                            "sort timed out")):
+            err_reason = line
         stripped = line.strip()
         if stripped.endswith(".json") and "count_" in Path(stripped).name:
             record = stripped
@@ -209,7 +213,7 @@ def parse_pick_lines(lines: list[str]) -> dict:
         "verdict": verdict,
         "box": box,
         "record": record,
-        "reason": halted or failed,
+        "reason": err_reason if outcome == "error" else halted or failed,
     }
 
 
@@ -290,11 +294,17 @@ class FakeTable:
         }
 
 
-def fake_report(record_paths, recordings_dir="recordings") -> str:
-    """Write a fake HTML report listing exactly these records."""
+def fake_report(record_paths, recordings_dir="recordings",
+               now=None) -> str:
+    """Write a fake HTML report listing exactly these records.
+
+    now is an injectable zero-argument clock returning a datetime
+    (local time, like every other recordings file name).
+    """
+    ticks = now if now is not None else datetime.now
     target = Path(recordings_dir)
     target.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    stamp = ticks().strftime("%Y%m%d_%H%M%S")
     out_path = target / f"report_fake_{stamp}.html"
     items = "".join(f"<p>{path}</p>" for path in record_paths)
     out_path.write_text(
@@ -345,20 +355,36 @@ def real_scan() -> dict:
     return {"parts": parts, "skipped": skipped, "image": str(path)}
 
 
-def real_sort(table_mm, input_fn) -> dict:
-    """Run one real pick_test inspect sort at table_mm. --execute only."""
-    from muse_qc import pick_test
+def real_sort(table_mm, popen_factory=None, timeout_s=None,
+              clock=None) -> dict:
+    """Run one real pick_test inspect sort as a child. --execute only.
 
-    lines: list[str] = []
+    Each sort is its own process so the operating system frees the
+    serial port when the child exits. The child's yes prompt is
+    answered on stdin (the human confirmed once for the whole run).
+    Returns the parsed result with the last lines and exit_code.
+    """
+    import sys
+
+    from muse_qc.agent_io import SORT_TIMEOUT_S, default_popen, run_child
+
+    limit = SORT_TIMEOUT_S if timeout_s is None else timeout_s
+    factory = popen_factory if popen_factory is not None \
+        else default_popen
+    cmd = [sys.executable, "-m", "muse_qc.pick_test",
+           "--table-mm", f"{float(table_mm[0])}",
+           f"{float(table_mm[1])}", "--inspect", "--execute"]
     try:
-        pick_test.main(
-            ["--table-mm", f"{float(table_mm[0])}",
-             f"{float(table_mm[1])}", "--inspect", "--execute"],
-            input_fn=input_fn, out=lines.append)
-    except Exception as exc:  # noqa: BLE001 - collected, key never printed
-        lines.append(f"request failed: {exc}")
+        lines, exit_code, timed_out = run_child(
+            cmd, factory, limit, clock)
+    except Exception as exc:  # noqa: BLE001 - collected, no key
+        lines, exit_code, timed_out = \
+            [f"request failed: {exc}"], None, False
+    if timed_out:
+        lines = list(lines) + [f"sort timed out after {limit:g} s"]
     result = parse_pick_lines(lines)
     result["lines"] = lines[-12:]
+    result["exit_code"] = exit_code
     return result
 
 
