@@ -5,7 +5,9 @@ PART_PROMPT, then SAM 3.1 counts the levers on the cropped and
 enlarged part with LEVER_PROMPT. Boxes at or above MIN_CONFIDENCE
 are kept, overlapping duplicates are merged (IoU above
 IOU_THRESHOLD keeps the higher confidence), and boxes shorter than
-MIN_BAR_HEIGHT_FRAC of the crop height are dropped as remnants.
+MIN_BAR_PART_FRAC of the enlarged part height or shorter than
+MIN_BAR_TALLEST_FRAC of the tallest confident bar are dropped as
+remnants.
 Prints the part box, one dropped line per remnant, one line per
 kept lever box plus "levers: N" and
 "verdict: good|bad", and saves two annotated copies:
@@ -48,7 +50,8 @@ LEVER_PROMPT = "orange bar"
 GRIPPER_ZONE_Y = 380
 CROP_MARGIN_PX = 15
 CROP_SCALE = 8
-MIN_BAR_HEIGHT_FRAC = 0.3
+MIN_BAR_PART_FRAC = 0.35
+MIN_BAR_TALLEST_FRAC = 0.6
 
 
 def _iou(first: dict, second: dict) -> float:
@@ -94,16 +97,30 @@ def count_levers(boxes: list[dict]) -> list[dict]:
 
 
 def drop_short_bars(
-    boxes: list[dict], crop_height: int
+    boxes: list[dict], part_height_px: int
 ) -> tuple[list[dict], list[dict]]:
     """Split lever boxes into bars and too-short remnants.
 
-    A bar is at least MIN_BAR_HEIGHT_FRAC of the crop height; a
-    box of exactly that height is kept.
+    A bar must satisfy both rules: height at least
+    MIN_BAR_PART_FRAC of the enlarged part height
+    (part_height_px * CROP_SCALE, without the crop margin) and
+    height at least MIN_BAR_TALLEST_FRAC of the tallest box in
+    the input. A box of exactly either limit is kept. An empty
+    input stays empty.
     """
-    limit = MIN_BAR_HEIGHT_FRAC * crop_height
-    bars = [box for box in boxes if box["y2"] - box["y1"] >= limit]
-    short = [box for box in boxes if box["y2"] - box["y1"] < limit]
+    if not boxes:
+        return [], []
+    part_limit = MIN_BAR_PART_FRAC * part_height_px * CROP_SCALE
+    tallest = max(box["y2"] - box["y1"] for box in boxes)
+    tallest_limit = MIN_BAR_TALLEST_FRAC * tallest
+    bars = []
+    short = []
+    for box in boxes:
+        height = box["y2"] - box["y1"]
+        if height >= part_limit and height >= tallest_limit:
+            bars.append(box)
+        else:
+            short.append(box)
     return bars, short
 
 
@@ -206,7 +223,8 @@ def run_count(
         print(f"request failed: {exc}")
         return 2
     kept, dropped = drop_short_bars(
-        count_levers(parse_output_text(lever_text)), crop.shape[0]
+        count_levers(parse_output_text(lever_text)),
+        int(part["y2"]) - int(part["y1"]),
     )
     for box in dropped:
         print(

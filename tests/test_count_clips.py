@@ -374,12 +374,85 @@ def test_good_part_drops_nothing(tmp_path, capsys):
 
 def test_bar_of_exactly_min_height_is_kept():
     boxes = parse_output_text(
-        "1<|box;x1=0;y1=0;x2=10;y2=180;w=10;h=180;c=0.9|>,"
-        "2<|box;x1=20;y1=0;x2=30;y2=179;w=10;h=179;c=0.9|>"
+        "1<|box;x1=0;y1=0;x2=10;y2=112;w=10;h=112;c=0.9|>,"
+        "2<|box;x1=20;y1=0;x2=30;y2=111;w=10;h=111;c=0.9|>"
     )
-    kept, dropped = drop_short_bars(boxes, 600)
+    kept, dropped = drop_short_bars(boxes, 40)
     assert [box["id"] for box in kept] == [1]
     assert [box["id"] for box in dropped] == [2]
+
+
+def test_bar_of_exactly_tallest_frac_is_kept():
+    boxes = parse_output_text(
+        "1<|box;x1=0;y1=0;x2=10;y2=200;w=10;h=200;c=0.9|>,"
+        "2<|box;x1=20;y1=0;x2=30;y2=120;w=10;h=120;c=0.9|>,"
+        "3<|box;x1=40;y1=0;x2=50;y2=119;w=10;h=119;c=0.9|>"
+    )
+    kept, dropped = drop_short_bars(boxes, 20)
+    assert [box["id"] for box in kept] == [1, 2]
+    assert [box["id"] for box in dropped] == [3]
+
+
+def test_small_part_three_bars_are_kept():
+    boxes = parse_output_text(
+        "2<|box;x1=222;y1=249;x2=258;y2=373;w=36;h=124;c=0.77|>,"
+        "1<|box;x1=171;y1=251;x2=208;y2=374;w=37;h=123;c=0.74|>,"
+        "0<|box;x1=282;y1=244;x2=314;y2=371;w=32;h=127;c=0.73|>"
+    )
+    kept, dropped = drop_short_bars(count_levers(boxes), 31)
+    assert [box["id"] for box in kept] == [2, 1, 0]
+    assert dropped == []
+    assert verdict(len(kept)) == "good"
+
+
+def test_2026_10_28_good_part_bars_are_kept():
+    kept, dropped = drop_short_bars(
+        count_levers(parse_output_text(THREE_BARS)), 46
+    )
+    assert len(kept) == 3
+    assert dropped == []
+
+
+def test_2026_10_28_bad_part_remnant_is_dropped():
+    kept, dropped = drop_short_bars(
+        count_levers(parse_output_text(BAD_BARS)), 46
+    )
+    assert [box["id"] for box in kept] == [2, 0]
+    assert [box["id"] for box in dropped] == [1]
+
+
+def test_single_short_bar_alone_is_dropped():
+    boxes = parse_output_text(
+        "1<|box;x1=323;y1=206;x2=364;y2=296;w=41;h=90;c=0.59|>"
+    )
+    kept, dropped = drop_short_bars(count_levers(boxes), 46)
+    assert kept == []
+    assert [box["id"] for box in dropped] == [1]
+
+
+def test_empty_list_stays_empty():
+    kept, dropped = drop_short_bars([], 46)
+    assert kept == []
+    assert dropped == []
+
+
+def test_small_part_run_count_is_good(tmp_path, capsys):
+    part = "9<|box;x1=327;y1=187;x2=354;y2=218;w=27;h=31;c=0.80|>"
+    levers = (
+        "2<|box;x1=222;y1=249;x2=258;y2=373;w=36;h=124;c=0.77|>,"
+        "1<|box;x1=171;y1=251;x2=208;y2=374;w=37;h=123;c=0.74|>,"
+        "0<|box;x1=282;y1=244;x2=314;y2=371;w=32;h=127;c=0.73|>"
+    )
+    code = count_clips.run_count(
+        SECRET, _arm_frame(), "orange bar",
+        lambda key: _SeqClient([part, levers]),
+        recordings_dir=tmp_path,
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "dropped (too short)" not in out
+    assert "levers: 3" in out
+    assert "verdict: good" in out
 
 
 def test_run_prints_every_kept_box_with_confidence(tmp_path, capsys):

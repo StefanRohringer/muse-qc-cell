@@ -741,3 +741,65 @@ contacts L1 L2 R1 R2 (lifting)
 part lifted, holding
 dropped into the bad box
 ```
+- Human ran python -m muse_qc.find_parts --no-sam after retaking the empty-table reference with the two boxes in place (2026-10-29, before the skip zones): "candidates: 0".
+- Human ran python -m muse_qc.find_parts with the skip zones (2026-10-29, one part in each box, gripper resting 40 mm open, empty-table reference taken with a different gripper opening): every candidate was skipped, no SAM call.
+```text
+part 0 center=(814, 212) area_mm2=987 table_mm=(388.5, 451.7) skipped: in box good
+part 1 center=(922, 598) area_mm2=1061 table_mm=(454.3, 212.4) skipped: arm zone
+part 2 center=(956, 510) area_mm2=2127 table_mm=(475.1, 267.8) skipped: arm zone
+part 3 center=(1061, 516) area_mm2=2284 table_mm=(540.7, 263.5) skipped: arm zone
+part 4 center=(1075, 614) area_mm2=1220 table_mm=(549.2, 202.8) skipped: arm zone
+part 5 center=(1228, 246) area_mm2=742 table_mm=(644.0, 428.9) skipped: in box bad
+parts: 0 confirmed of 6 candidates (6 skipped)
+```
+- Human retook the empty-table reference with python -m muse_qc.find_parts --save-empty (2026-10-29, boxes empty, gripper resting 40 mm open as after every pick), then ran --no-sam on the empty table ("candidates: 0") and the SAM run with one part placed in front of the gripper:
+```text
+part 0 center=(1014, 380) area_mm2=655 table_mm=(511.3, 348.0) sam=confirmed 0.88
+parts: 1 confirmed of 1 candidates
+```
+  The human noted the shadows of the lamp, the arm and the boxes; they are part of the reference, so only lighting changes matter (retake the reference after a lighting change).
+- Human ran python -m muse_qc.pick_test --table-mm 511.3 348.0 --drop good (dry run, then --execute) (2026-10-29, arm power supply on, hand on the power supply switch): OK, third sorting run.
+```text
+to-box lowest tip z: 99.6 mm
+contact: gripper commanded deg -45.97 measured deg -49.43 contacts L2 R2
+contacts L1 L2 R1 R2 (lifting)
+part lifted, holding
+dropped into the good box
+end readings: arm [-2.79 +0.14 -2.68 +4.62 +2.57 -0.45] gripper -126.30 deg
+```
+- Human ran python -m muse_qc.find_parts and python -m muse_qc.pick_test --table-mm 512.3 343.7 --drop bad (dry run, then --execute) (2026-10-29, arm power supply on): OK, fourth sorting run. The arm settles a few tenths of a degree differently after each run, so small changes on the gripper show up as candidates; the arm zone skips them.
+```text
+part 0 center=(781, 216) area_mm2=868 table_mm=(368.3, 449.6) skipped: in box good
+part 1 center=(901, 634) area_mm2=193 table_mm=(440.9, 190.0) skipped: arm zone
+part 2 center=(913, 568) area_mm2=187 table_mm=(448.6, 231.7) skipped: arm zone
+part 3 center=(949, 502) area_mm2=781 table_mm=(471.2, 272.1) skipped: arm zone
+part 4 center=(953, 740) area_mm2=198 table_mm=(473.0, 124.4) skipped: arm zone
+part 5 center=(1015, 387) area_mm2=618 table_mm=(512.3, 343.7) sam=confirmed 0.73
+part 6 center=(1066, 514) area_mm2=924 table_mm=(543.6, 264.7) skipped: arm zone
+part 7 center=(1085, 620) area_mm2=182 table_mm=(555.4, 198.5) skipped: arm zone
+parts: 1 confirmed of 8 candidates (7 skipped)
+to-box lowest tip z: 99.1 mm
+contact: gripper commanded deg -45.67 measured deg -49.25 contacts L2 R2
+contacts L1 L2 R1 R2 (lifting)
+part lifted, holding
+dropped into the bad box
+```
+- Human tried the full chain by hand (2026-10-29, arm power supply on): python -m muse_qc.find_parts found the part at table mm (514.8, 342.0) (sam=confirmed 0.81, 2 candidates skipped "in box good"), then python -m muse_qc.camera_arm took recordings/armcam_20261029_133942.png with the arm back in the home pose (the part lies free in front of the fingers, about 31 px high), then python -m muse_qc.count_clips on that image: FAIL, a good part with 3 intact levers was judged bad because all three lever boxes were dropped as too short (fixed in this change).
+```text
+part: box=(327, 187, 354, 218) confidence=0.80
+dropped (too short): id 2 box=(222, 249, 258, 373) confidence=0.77
+dropped (too short): id 1 box=(171, 251, 208, 374) confidence=0.74
+dropped (too short): id 0 box=(282, 244, 314, 371) confidence=0.73
+levers: 0
+verdict: bad
+```
+- Human ran python -m muse_qc.count_clips --image recordings/armcam_20261029_133942.png again with the new bar rules (2026-10-29, no arm motion, 2 SAM calls): OK, the good part is now counted correctly.
+```text
+part: box=(327, 187, 354, 218) confidence=0.80
+id 2 box=(222, 249, 258, 373) center=(240.0, 311.0) confidence=0.77
+id 1 box=(171, 251, 208, 374) center=(189.5, 312.5) confidence=0.74
+id 0 box=(282, 244, 314, 371) center=(298.0, 307.5) confidence=0.73
+levers: 3
+verdict: good
+```
+Human work on sorting (2026-10-29): the human placed and measured the two sorting boxes (100 x 100 x 70 mm, good left, bad right) after the first placement left too little room, decided on the vel2 gains after comparing default, soft, stiff and vel2 hold runs with a gentle hand push, reviewed every diff (review file before the commit, push review before every push), asked for the skip zones after seeing candidates in the boxes and on the gripper, retook the empty-table reference, ran all sorting runs with a hand on the power supply switch, and found the lever-count failure by running the camera, counting and picking steps one after another.
