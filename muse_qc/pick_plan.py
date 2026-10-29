@@ -17,6 +17,7 @@ from muse_qc import safety
 from muse_qc.first_move_plan import (
     LOOP_RATE_HZ,
     SETTLE_HOLD_CYCLES,
+    SIM_ZERO_DEG,
     SPEED_FRACTION,
     clamp_to_limits,
     ramp_waypoints,
@@ -215,7 +216,13 @@ def abort_detour(plan: list[tuple[str, tuple[float, ...], bool]],
 def check_pick_plan(plan: list[tuple[str, tuple[float, ...], bool]],
                     start_deg: object, check_fn: object = None,
                     tip_fn: object = None) -> tuple[bool, int, dict | None]:
-    """Check every waypoint chained, grasp floor only where flagged. Pure."""
+    """Check every waypoint chained, grasp floor only where flagged. Pure.
+
+    Exact 0.0 in a chained waypoint is a command (the clamped rest),
+    not missing feedback, so it is nudged to SIM_ZERO_DEG for the
+    current-state validity rule that rejects 0.0 live reads; commanded
+    waypoints are never changed.
+    """
     check = safety.check_target if check_fn is None else check_fn
     tip_of = real_tip_m if tip_fn is None else tip_fn
     previous = tuple(float(v) for v in start_deg)
@@ -227,9 +234,12 @@ def check_pick_plan(plan: list[tuple[str, tuple[float, ...], bool]],
             joints_deg=tuple(waypoint), speed=SPEED_FRACTION,
         )
         current_tip = tip_of(list(previous))
+        current_joints = tuple(
+            SIM_ZERO_DEG if value == 0.0 else value for value in previous
+        )
         current = safety.CurrentState(
             x=current_tip[0], y=current_tip[1], z=current_tip[2],
-            joints_deg=previous, reading_age_ms=READING_AGE_MS,
+            joints_deg=current_joints, reading_age_ms=READING_AGE_MS,
         )
         result = check(target, current, **extra)
         if not result.get("ok"):
