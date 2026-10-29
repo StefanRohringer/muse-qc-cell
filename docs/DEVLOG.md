@@ -663,3 +663,15 @@ joint 5: mean err -0.01 deg, p2p 1.77 deg, rms 0.27 deg, swing 0.5 Hz
 joint 6: mean err -0.01 deg, p2p 0.07 deg, rms 0.02 deg
 ```
   Without the push (earlier run, same point) joint 5 had p2p 0.15 deg and rms 0.03 deg. Next: A/B with a stiffer joint 4/5 profile.
+- Human ran python -m muse_qc.hold_test --table-mm 495.9 330 --gains stiff --execute (2026-10-29, arm power supply on) with the same gentle hand push on the finger tips during the hold: no improvement. Joint 4 got worse (p2p 4.63 deg vs 1.09 deg with default), no buzzing or oscillation on its own, but the motion felt "strange" to the human. Hand pushes are not exactly repeatable, so the comparison is rough; stiff is not used.
+```text
+hold commanded deg: -1.94 -100.76 -93.42 +82.66 -0.00 +0.01
+hold measured deg: -1.98 -100.75 -93.45 +84.03 -0.01 +0.10
+hold measured tip mm: x=+281.5 y=-9.7 z=+100.7
+joint 1: mean err -0.01 deg, p2p 0.15 deg, rms 0.03 deg
+joint 2: mean err +0.00 deg, p2p 1.42 deg, rms 0.11 deg
+joint 3: mean err +0.00 deg, p2p 1.25 deg, rms 0.10 deg
+joint 4: mean err -0.01 deg, p2p 4.63 deg, rms 0.41 deg, swing 1.1 Hz
+joint 5: mean err -0.01 deg, p2p 2.27 deg, rms 0.35 deg, swing 0.9 Hz
+joint 6: mean err -0.01 deg, p2p 0.17 deg, rms 0.04 deg
+```

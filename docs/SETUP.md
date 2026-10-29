@@ -1304,6 +1304,9 @@ Safety rule: if the arm buzzes, hums or oscillates on its own
 with stiff, switch the power supply off at once and stay on
 default.
 
+`--gains vel2` tests the velocity loop only (vel_kp x2.0 for
+joints 4 and 5, position loop unchanged). Test it WITHOUT pushing first, then compare joint 4/5 peak-to-peak and RMS with the default run without push; the same safety rule as for stiff applies (buzz, hum or oscillation on its own means power supply off at once).
+
 The soft gains live only in a runtime copy:
 `write_runtime_yaml` copies the SDK hardware yaml into a
 temporary directory (never into the repo, never into the SDK

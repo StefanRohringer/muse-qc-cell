@@ -12,6 +12,9 @@ position/velocity loop: vel_kp 0.0008 on joints 4/5 versus
 0.0125 on joints 1 to 3), not only play behind the encoder.
 The "stiff" profile raises pos_kp by 30 % and vel_kp by 50 %
 for joints 4 and 5 only; the integral terms are unchanged.
+Stiff (pos_kp x1.3, vel_kp x1.5) was worse in the 2026-10-29 push
+test, so "vel2" tests the velocity loop alone (vel_kp x2.0 for
+joints 4 and 5 only, pos_kp, pos_ki and vel_ki unchanged).
 Overrides are written into a copy of the SDK hardware
 yaml in a temporary directory (never into the repo or the SDK
 package) and passed to RebotArm(hw_yaml=...). The SDK file itself
@@ -34,6 +37,7 @@ HARDWARE_KEY = "hardware_yaml"
 SOFT_POS_KP_FACTOR = 0.7
 STIFF_POS_KP_FACTOR = 1.3
 STIFF_VEL_KP_FACTOR = 1.5
+VEL2_VEL_KP_FACTOR = 2.0
 GAIN_PROFILES = {
     "default": {},
     "soft": {
@@ -45,6 +49,10 @@ GAIN_PROFILES = {
             "vel_kp_factor": STIFF_VEL_KP_FACTOR},
         5: {"pos_kp_factor": STIFF_POS_KP_FACTOR,
             "vel_kp_factor": STIFF_VEL_KP_FACTOR},
+    },
+    "vel2": {
+        4: {"vel_kp_factor": VEL2_VEL_KP_FACTOR},
+        5: {"vel_kp_factor": VEL2_VEL_KP_FACTOR},
     },
 }
 

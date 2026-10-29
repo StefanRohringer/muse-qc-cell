@@ -212,6 +212,31 @@ def test_gains_stiff_passes_hw_yaml_to_factory(monkeypatch):
     assert "vel_kp" in text
 
 
+def test_gains_vel2_passes_hw_yaml_to_factory(monkeypatch):
+    monkeypatch.setattr(hover_move, "solve_hover", _fake_solve_ok)
+    arm = FakeArm(REST_DEG)
+    seen = []
+
+    def factory(**kwargs):
+        seen.append(kwargs)
+        return arm
+
+    lines = []
+    code = hold_test.main(
+        ["--table-mm", "495.9", "322.7", "--gains", "vel2"],
+        sdk_factory=factory,
+        check_fn=_always_ok, tip_fn=_fake_tip,
+        joint_limits=TEST_LIMITS, out=lines.append,
+    )
+    assert code == 0
+    (kwargs,) = seen
+    runtime = Path(kwargs["hw_yaml"])
+    assert runtime.is_file()
+    text = "\n".join(str(line) for line in lines)
+    assert "joint 4: vel_kp 0.0008 -> 0.0016" in text
+    assert "joint 5: vel_kp 0.0008 -> 0.0016" in text
+
+
 def test_hold_stream_keeps_only_hold_samples():
     group = FakeGroup(REST_DEG)
     waypoints = [tuple(REST_DEG), tuple(GOAL_DEG), tuple(GOAL_DEG)]
