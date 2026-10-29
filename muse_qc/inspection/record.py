@@ -34,8 +34,13 @@ def build_record(
     dropped: list[dict],
     expected_levers: int,
     timestamp: str | None = None,
+    part_offset_px: float | None = None,
 ) -> dict:
-    """Build the JSON-safe record dict of one inspection run."""
+    """Build the JSON-safe record dict of one inspection run.
+
+    part_offset_px is the chosen part centre's distance to the
+    expected target position (None without a target search).
+    """
     if timestamp is None:
         timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
     count = len(kept)
@@ -51,6 +56,8 @@ def build_record(
             "y2": int(part["y2"]),
         },
         "part_confidence": float(part["confidence"]),
+        "part_offset_px": (
+            None if part_offset_px is None else float(part_offset_px)),
         "lever_prompt": lever_prompt,
         "kept_boxes": [_box_entry(box) for box in kept],
         "dropped_boxes": [_box_entry(box) for box in dropped],

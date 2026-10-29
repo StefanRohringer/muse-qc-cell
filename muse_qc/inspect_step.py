@@ -123,7 +123,8 @@ def run_inspection(
         return None
     try:
         result = counter(client_of(key), frame, count_clips.LEVER_PROMPT,
-                         recordings_dir, source)
+                         recordings_dir, source,
+                         expected_px=count_clips.EXPECTED_PART_PX)
     except Exception as exc:  # noqa: BLE001 - mapped to a short message
         out(f"inspect failed: {exc}")
         return None

@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import cv2
 import numpy
+import pytest
 
 import muse_qc.count_clips as count_clips
 import muse_qc.vision_sam as vision_sam
@@ -106,10 +107,12 @@ def _real_count_files():
 
 def test_constants_match_spec():
     assert count_clips.PART_PROMPT == "small part"
-    assert count_clips.LEVER_PROMPT == "orange bar"
+    assert count_clips.LEVER_PROMPT == "brown bar"
     assert count_clips.GRIPPER_ZONE_Y == 380
     assert count_clips.CROP_MARGIN_PX == 15
     assert count_clips.CROP_SCALE == 8
+    assert count_clips.EXPECTED_PART_PX == (340, 201)
+    assert count_clips.MAX_PART_OFFSET_PX == 60
 
 
 def test_gripper_zone_box_with_equal_confidence_is_ignored(tmp_path, capsys):
@@ -164,6 +167,87 @@ def test_find_part_returns_none_without_usable_box():
     assert find_part(parse_output_text("")) is None
     assert find_part(parse_output_text(GRIPPER_ONLY)) is None
     assert find_part(parse_output_text(LOW_PART)) is None
+
+
+# A lower-confidence box centred exactly at EXPECTED_PART_PX plus a
+# higher-confidence box far right (another part lying on its side).
+TARGET_AND_RIGHT = (
+    "3<|box;x1=500;y1=180;x2=540;y2=230;w=40;h=50;c=0.91|>,"
+    "7<|box;x1=320;y1=181;x2=360;y2=221;w=40;h=40;c=0.76|>"
+)
+FAR_PART = "3<|box;x1=500;y1=180;x2=540;y2=230;w=40;h=50;c=0.91|>"
+
+
+def test_find_part_with_expected_px_picks_centre_part():
+    boxes = parse_output_text(TARGET_AND_RIGHT)
+    assert find_part(boxes)["confidence"] == 0.91
+    part = find_part(boxes, count_clips.EXPECTED_PART_PX)
+    assert part is not None
+    assert part["confidence"] == 0.76
+    assert part["center"] == (340.0, 201.0)
+
+
+def test_find_part_with_expected_px_rejects_far_part():
+    boxes = parse_output_text(FAR_PART)
+    assert find_part(boxes) is not None
+    assert find_part(boxes, count_clips.EXPECTED_PART_PX) is None
+
+
+def test_count_frame_target_not_in_view(tmp_path):
+    result = count_clips.count_frame(
+        _SeqClient([FAR_PART, THREE_BARS]),
+        _arm_frame(), "brown bar", recordings_dir=tmp_path,
+        expected_px=count_clips.EXPECTED_PART_PX)
+    assert result["ok"] is False
+    assert result["reason"] == "part: target not in view"
+    assert result["stage"] == "no-part"
+    assert result["levers"] is None and result["verdict"] is None
+
+
+def test_target_not_in_view_gives_exit_code_3(tmp_path, capsys):
+    code = count_clips.run_count(
+        SECRET, _arm_frame(), "brown bar",
+        lambda key: _SeqClient([FAR_PART, THREE_BARS]),
+        recordings_dir=tmp_path,
+        expected_px=count_clips.EXPECTED_PART_PX,
+    )
+    assert code == 3
+    assert "part: target not in view" in capsys.readouterr().out
+
+
+def test_record_holds_part_offset_px(tmp_path):
+    import json
+    import math
+
+    result = count_clips.count_frame(
+        _SeqClient([PART_AND_GRIPPER, THREE_BARS]),
+        _arm_frame(), "brown bar", recordings_dir=tmp_path,
+        expected_px=count_clips.EXPECTED_PART_PX)
+    assert result["ok"] is True
+    record = json.loads(Path(result["record"]).read_text(encoding="utf-8"))
+    assert record["part_offset_px"] == pytest.approx(
+        math.dist((334.5, 210.0), (340, 201)))
+    plain = count_clips.count_frame(
+        _SeqClient([PART_AND_GRIPPER, THREE_BARS]),
+        _arm_frame(), "brown bar", recordings_dir=tmp_path)
+    assert plain["ok"] is True
+    record = json.loads(Path(plain["record"]).read_text(encoding="utf-8"))
+    assert record["part_offset_px"] is None
+
+
+def test_main_expect_target_rechecks_saved_image(tmp_path, capsys,
+                                                 monkeypatch):
+    image_path = tmp_path / "armcam.png"
+    assert cv2.imwrite(str(image_path), _arm_frame())
+    monkeypatch.setattr(count_clips, "read_api_key", lambda: SECRET)
+    monkeypatch.setattr(
+        count_clips, "_default_client_factory",
+        lambda key: _SeqClient([FAR_PART, THREE_BARS]))
+    monkeypatch.chdir(tmp_path)
+    code = count_clips.main(
+        ["--image", str(image_path), "--expect-target"])
+    assert code == 3
+    assert "part: target not in view" in capsys.readouterr().out
 
 
 def test_no_part_gives_exit_code_3(tmp_path, capsys):

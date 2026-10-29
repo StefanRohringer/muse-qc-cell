@@ -674,7 +674,7 @@ image) and picks the remaining box with the highest confidence at
 or above `MIN_CONFIDENCE` (0.5). Then it crops that box plus
 `CROP_MARGIN_PX` = 15 on each side (clamped to the image), enlarges
 the crop `CROP_SCALE` = 8 times with `cv2.INTER_CUBIC`, and sends
-the crop with `LEVER_PROMPT` ("orange bar") to SAM 3.1 again. Lever
+the crop with `LEVER_PROMPT` ("brown bar") to SAM 3.1 again. Lever
 boxes at or above confidence 0.5 are kept, overlapping duplicates
 are merged (IoU above 0.5 keeps the higher confidence), and a box
 is kept only when it reaches `MIN_BAR_PART_FRAC` = 0.35 of the
@@ -699,11 +699,20 @@ project root:
 
 ```bash
 uv run python -m muse_qc.count_clips --image recordings/armcam_test.png
-uv run python -m muse_qc.count_clips --image recordings/armcam_test.png --prompt "orange bar"
+uv run python -m muse_qc.count_clips --image recordings/armcam_test.png --prompt "brown bar"
 ```
 
 `--prompt` overrides only the lever prompt; the part prompt is
-always `PART_PROMPT`. All values above are constants at the top of
+always `PART_PROMPT`. With `--expect-target` only the part near
+`EXPECTED_PART_PX` = (340, 201) is accepted (up to
+`MAX_PART_OFFSET_PX` = 60 px away), as the hover inspection does,
+so a saved hover image can be re-checked the same way:
+
+```bash
+uv run python -m muse_qc.count_clips --image recordings/armcam_test.png --expect-target
+```
+
+All values above are constants at the top of
 `muse_qc/count_clips.py`.
 
 Exit codes: 0 done, 1 image not readable (or the crop or an
@@ -1439,7 +1448,12 @@ let the arm settle, then the main thread grabs one frame with the
 arm camera, saves it as recordings/armcam_<timestamp>.png, counts
 the levers with count_clips.count_frame and hands the verdict to
 the loop, which takes the ranges of that box and continues with
-lower as today. The control loop thread never opens the camera
+lower as today. The inspection only accepts the part near
+`EXPECTED_PART_PX` = (340, 201) in the image (up to
+`MAX_PART_OFFSET_PX` = 60 px away) and counts its levers with
+`LEVER_PROMPT` ("brown bar"); otherwise it reports
+"part: target not in view" and aborts without gripping. The
+control loop thread never opens the camera
 and never calls the API; without `--inspect` everything behaves
 exactly as today.
 

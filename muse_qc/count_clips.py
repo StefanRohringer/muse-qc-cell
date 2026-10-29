@@ -1,8 +1,9 @@
-"""Count orange levers on an arm camera image with SAM 3.1 (hand-run).
+"""Count brown levers on an arm camera image with SAM 3.1 (hand-run).
 
 Two steps: SAM 3.1 first finds the part on the full image with
 PART_PROMPT, then SAM 3.1 counts the levers on the cropped and
-enlarged part with LEVER_PROMPT. Boxes at or above MIN_CONFIDENCE
+enlarged part with LEVER_PROMPT ("brown bar": the orange levers
+look brown under the evening lamp). Boxes at or above MIN_CONFIDENCE
 are kept, overlapping duplicates are merged (IoU above
 IOU_THRESHOLD keeps the higher confidence), and boxes shorter than
 MIN_BAR_PART_FRAC of the enlarged part height or shorter than
@@ -24,6 +25,7 @@ Run by the human only (it contacts the Meta Model API):
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -46,12 +48,14 @@ EXPECTED_LEVERS = 3
 MIN_CONFIDENCE = 0.5
 IOU_THRESHOLD = 0.5
 PART_PROMPT = "small part"
-LEVER_PROMPT = "orange bar"
+LEVER_PROMPT = "brown bar"
 GRIPPER_ZONE_Y = 380
 CROP_MARGIN_PX = 15
 CROP_SCALE = 8
 MIN_BAR_PART_FRAC = 0.35
 MIN_BAR_TALLEST_FRAC = 0.6
+EXPECTED_PART_PX = (340, 201)
+MAX_PART_OFFSET_PX = 60
 
 
 def _iou(first: dict, second: dict) -> float:
@@ -129,12 +133,16 @@ def verdict(count: int) -> str:
     return "good" if count == EXPECTED_LEVERS else "bad"
 
 
-def find_part(boxes: list[dict]) -> dict | None:
+def find_part(boxes: list[dict], expected_px=None) -> dict | None:
     """Return the part box above the gripper zone, or None.
 
     Ignores boxes without confidence, below MIN_CONFIDENCE, or
     inside the gripper zone (center y at or above GRIPPER_ZONE_Y).
-    Picks the remaining box with the highest confidence.
+    Without expected_px picks the remaining box with the highest
+    confidence. With expected_px (the target part position in the
+    arm camera image at the hover pose) picks the nearest centre
+    instead, or None when even that is farther than
+    MAX_PART_OFFSET_PX away.
     """
     candidates = [
         box
@@ -145,7 +153,14 @@ def find_part(boxes: list[dict]) -> dict | None:
     ]
     if not candidates:
         return None
-    return max(candidates, key=lambda box: box["confidence"])
+    if expected_px is None:
+        return max(candidates, key=lambda box: box["confidence"])
+    target = (float(expected_px[0]), float(expected_px[1]))
+    nearest = min(candidates,
+                  key=lambda box: math.dist(box["center"], target))
+    if math.dist(nearest["center"], target) > MAX_PART_OFFSET_PX:
+        return None
+    return nearest
 
 
 def crop_and_enlarge(frame: numpy.ndarray, box: dict) -> numpy.ndarray:
@@ -194,15 +209,18 @@ def count_frame(
     prompt: str,
     recordings_dir: str | Path = "recordings",
     source_image: str | Path = "",
+    expected_px=None,
 ) -> dict:
     """Find the part on one frame and count its levers; return a dict.
 
     Runs the same two SAM calls as run_count (part, then levers on
     the enlarged crop) and saves the two annotated images plus the
-    JSON record exactly as run_count does. Returns {"ok", "reason",
-    "levers", "verdict", "full_image", "crop_image", "record"} plus
-    "stage" (which step failed), "part", "kept" and "dropped" for
-    printing. Prints nothing and never includes any key.
+    JSON record exactly as run_count does. With expected_px only
+    the target part near that image position is accepted. Returns
+    {"ok", "reason", "levers", "verdict", "full_image",
+    "crop_image", "record"} plus "stage" (which step failed),
+    "part", "kept" and "dropped" for printing. Prints nothing and
+    never includes any key.
     """
     try:
         part_text = fetch_output_text(
@@ -210,8 +228,10 @@ def count_frame(
         )
     except Exception as exc:  # noqa: BLE001 - mapped to a short message
         return _fail(f"request failed: {exc}", "part-request")
-    part = find_part(parse_output_text(part_text))
+    part = find_part(parse_output_text(part_text), expected_px)
     if part is None:
+        if expected_px is not None:
+            return _fail("part: target not in view", "no-part")
         return _fail("part: not found", "no-part")
     try:
         crop = crop_and_enlarge(frame, part)
@@ -238,6 +258,11 @@ def count_frame(
         failed.update({"levers": len(kept), "verdict": verdict(len(kept)),
                        "part": part, "kept": kept, "dropped": dropped})
         return failed
+    offset = None
+    if expected_px is not None:
+        offset = math.dist(
+            part["center"],
+            (float(expected_px[0]), float(expected_px[1])))
     try:
         record_path = write_record(
             build_record(
@@ -249,6 +274,7 @@ def count_frame(
                 kept=kept,
                 dropped=dropped,
                 expected_levers=EXPECTED_LEVERS,
+                part_offset_px=offset,
             ),
             recordings_dir,
         )
@@ -279,6 +305,7 @@ def run_count(
     make_client: Callable[[str], object],
     recordings_dir: str | Path = "recordings",
     source_image: str | Path = "",
+    expected_px=None,
 ) -> int:
     """Find the part, count its levers; return the exit code.
 
@@ -299,7 +326,8 @@ def run_count(
     except Exception as exc:  # noqa: BLE001 - mapped to a short message
         print(f"request failed: {exc}")
         return 2
-    result = count_frame(client, frame, prompt, recordings_dir, source_image)
+    result = count_frame(client, frame, prompt, recordings_dir,
+                         source_image, expected_px)
     if result["part"] is not None:
         part, kept, dropped = result["part"], result["kept"], result["dropped"]
         print(
@@ -343,6 +371,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--image", required=True, help="saved image file")
     parser.add_argument("--prompt", default=LEVER_PROMPT)
+    parser.add_argument("--expect-target", action="store_true",
+                        help="only accept the part near EXPECTED_PART_PX,"
+                        " as the hover inspection does")
     args = parser.parse_args(argv)
     try:
         frame = load_image(args.image)
@@ -355,6 +386,7 @@ def main(argv: list[str] | None = None) -> int:
         args.prompt,
         _default_client_factory,
         source_image=args.image,
+        expected_px=EXPECTED_PART_PX if args.expect_target else None,
     )
 
 

@@ -735,7 +735,30 @@ def test_run_inspection_no_part_fails(tmp_path):
     box = inspect_step.run_inspection(
         lines.append, **_inspection_kwargs(tmp_path, ["", THREE_BARS]))
     assert box is None
-    assert "inspect failed: part: not found" in "\n".join(lines)
+    assert "inspect failed: part: target not in view" in "\n".join(lines)
+
+
+def test_run_inspection_sends_brown_bar_to_target_part(tmp_path):
+    phrases: list[str] = []
+    texts = [PART_AND_GRIPPER, THREE_BARS]
+
+    def make_client(key):
+        client = SimpleNamespace()
+
+        def create(**kwargs):
+            phrases.append(kwargs["input"][0]["content"][0]["text"])
+            return SimpleNamespace(output_text=texts[len(phrases) - 1])
+
+        client.responses = SimpleNamespace(create=create)
+        return client
+
+    lines = []
+    box = inspect_step.run_inspection(
+        lines.append,
+        **_inspection_kwargs(tmp_path, [], make_client=make_client))
+    assert box == "good"
+    assert phrases == ["small part", "brown bar"]
+    assert "inspect: levers 3 verdict good" in "\n".join(lines)
 
 
 def test_run_inspection_missing_node_fails():

@@ -20,7 +20,7 @@ present; bad = a lever missing or torn out.
    reports each box center in table coordinates.
 3. The arm camera takes a close-up between the gripper fingers
    (`camera_arm.py`); the lever counter finds the part with "small part",
-   enlarges the crop 8x, and counts "orange bar" boxes (`count_clips.py`).
+   enlarges the crop 8x, and counts "brown bar" boxes (`count_clips.py`).
    Exactly 3 levers = good, otherwise bad.
 4. Each inspection is saved as a JSON record plus annotated images
    (`inspection/record.py`, `inspection/draw.py`) and collected into one
@@ -36,7 +36,7 @@ table camera
   -> arm camera image
   -> SAM 3.1 "small part"
   -> crop + enlarge 8x
-  -> SAM 3.1 "orange bar"
+  -> SAM 3.1 "brown bar"
   -> height filter (drops remnants of torn-out levers)
   -> 3 levers = GOOD, otherwise BAD
   -> JSON record + HTML report
