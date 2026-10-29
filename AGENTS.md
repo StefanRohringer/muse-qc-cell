@@ -21,7 +21,7 @@ Built during the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026).
 - safety.check_target is inside every tool that moves the arm; the agent cannot call or bypass it.
 - Tools take part IDs and bin names only, never coordinates (target design, planned, not built yet: current tools pass pixel and table coordinates).
 - Every safety limit has pytest tests, including targets that must be rejected.
-- Small modules, one file per job, max 300 lines per module (tests excluded).
+- Small modules, one file per job, max 400 lines per module (tests excluded).
 - One tool per file (target design, planned, not built yet: current entry points are main(), run_detection() and run_count()).
 
 ## Agent loop (target design, planned, not built yet)
