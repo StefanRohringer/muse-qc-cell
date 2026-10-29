@@ -443,7 +443,7 @@ def test_cli_no_xy_correction_dry_run():
     lines = []
     code = pick_test.main(
         ["--table-mm", "495.9", "322.7", "--no-xy-correction"],
-        sdk_factory=lambda: sdk,
+        sdk_factory=lambda **kwargs: sdk,
         check_fn=_always_ok, tip_fn=_fake_tip, solve_fn=_fake_solve,
         joint_limits=TEST_LIMITS, find_port=lambda: "/dev/ttyFAKE",
         sensor_factory=lambda: FakeSensor(lambda n: "-"),
@@ -483,7 +483,7 @@ def test_dry_run_never_enables_or_sends():
     lines = []
     code = pick_test.main(
         ["--table-mm", "495.9", "322.7"],
-        sdk_factory=lambda: sdk,
+        sdk_factory=lambda **kwargs: sdk,
         check_fn=_always_ok, tip_fn=_fake_tip, solve_fn=_fake_solve,
         joint_limits=TEST_LIMITS, find_port=lambda: "/dev/ttyFAKE",
         sensor_factory=lambda: FakeSensor(lambda n: "-"),
@@ -510,7 +510,7 @@ def test_dry_run_real_safety_chained_passes():
     lines = []
     code = pick_test.main(
         ["--table-mm", "495.9", "322.7"],
-        sdk_factory=lambda: sdk,
+        sdk_factory=lambda **kwargs: sdk,
         tip_fn=_fake_tip, solve_fn=_fake_solve, joint_limits=TEST_LIMITS,
         find_port=lambda: "/dev/ttyFAKE",
         sensor_factory=lambda: FakeSensor(lambda n: "-"),
@@ -524,7 +524,7 @@ def test_execute_without_yes_enables_nothing():
     lines = []
     code = pick_test.main(
         ["--table-mm", "495.9", "322.7", "--execute"],
-        sdk_factory=lambda: sdk,
+        sdk_factory=lambda **kwargs: sdk,
         input_fn=lambda prompt: "no",
         tip_fn=_fake_tip, solve_fn=_fake_solve, joint_limits=TEST_LIMITS,
         arm_vlims=VLIMS, find_port=lambda: "/dev/ttyFAKE",
@@ -776,7 +776,9 @@ def test_gains_soft_passes_hw_yaml_to_factory():
     assert "joint 5: pos_kp" in text
 
 
-def test_gains_default_calls_factory_without_args():
+def test_gains_default_is_vel2():
+    from pathlib import Path
+
     sdk = FakeSdk()
     seen = []
 
@@ -787,6 +789,32 @@ def test_gains_default_calls_factory_without_args():
     lines = []
     code = pick_test.main(
         ["--table-mm", "495.9", "322.7"],
+        sdk_factory=factory,
+        check_fn=_always_ok, tip_fn=_fake_tip, solve_fn=_fake_solve,
+        joint_limits=TEST_LIMITS, find_port=lambda: "/dev/ttyFAKE",
+        sensor_factory=lambda: FakeSensor(lambda n: "-"),
+        out=lines.append,
+    )
+    assert code == 0
+    (kwargs,) = seen
+    runtime = Path(kwargs["hw_yaml"])
+    assert runtime.is_file()
+    text = "\n".join(lines)
+    assert "joint 4: vel_kp 0.0008 -> 0.0016" in text
+    assert "joint 5: vel_kp 0.0008 -> 0.0016" in text
+
+
+def test_gains_explicit_default_calls_factory_without_args():
+    sdk = FakeSdk()
+    seen = []
+
+    def factory(**kwargs):
+        seen.append(kwargs)
+        return sdk
+
+    lines = []
+    code = pick_test.main(
+        ["--table-mm", "495.9", "322.7", "--gains", "default"],
         sdk_factory=factory,
         check_fn=_always_ok, tip_fn=_fake_tip, solve_fn=_fake_solve,
         joint_limits=TEST_LIMITS, find_port=lambda: "/dev/ttyFAKE",
@@ -917,7 +945,7 @@ def test_speed_deg_s_scales_free_ramps():
     lines = []
     code = pick_test.main(
         ["--table-mm", "495.9", "322.7", "--speed-deg-s", "2"],
-        sdk_factory=lambda: sdk,
+        sdk_factory=lambda **kwargs: sdk,
         check_fn=_always_ok, tip_fn=_fake_tip, solve_fn=_fake_solve,
         joint_limits=TEST_LIMITS, find_port=lambda: "/dev/ttyFAKE",
         sensor_factory=lambda: FakeSensor(lambda n: "-"),

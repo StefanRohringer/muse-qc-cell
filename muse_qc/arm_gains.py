@@ -15,6 +15,10 @@ for joints 4 and 5 only; the integral terms are unchanged.
 Stiff (pos_kp x1.3, vel_kp x1.5) was worse in the 2026-10-29 push
 test, so "vel2" tests the velocity loop alone (vel_kp x2.0 for
 joints 4 and 5 only, pos_kp, pos_ki and vel_ki unchanged).
+Vel2 without push was clearly calmer than default on 2026-10-29
+(joint 4 p2p 0.55 vs 1.07 deg, no swing frequency any more), so
+"vel3" is the next A/B step (vel_kp x3.0 for joints 4 and 5 only,
+nothing else changed).
 Overrides are written into a copy of the SDK hardware
 yaml in a temporary directory (never into the repo or the SDK
 package) and passed to RebotArm(hw_yaml=...). The SDK file itself
@@ -38,6 +42,7 @@ SOFT_POS_KP_FACTOR = 0.7
 STIFF_POS_KP_FACTOR = 1.3
 STIFF_VEL_KP_FACTOR = 1.5
 VEL2_VEL_KP_FACTOR = 2.0
+VEL3_VEL_KP_FACTOR = 3.0
 GAIN_PROFILES = {
     "default": {},
     "soft": {
@@ -53,6 +58,10 @@ GAIN_PROFILES = {
     "vel2": {
         4: {"vel_kp_factor": VEL2_VEL_KP_FACTOR},
         5: {"vel_kp_factor": VEL2_VEL_KP_FACTOR},
+    },
+    "vel3": {
+        4: {"vel_kp_factor": VEL3_VEL_KP_FACTOR},
+        5: {"vel_kp_factor": VEL3_VEL_KP_FACTOR},
     },
 }
 

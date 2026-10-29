@@ -675,3 +675,31 @@ joint 4: mean err -0.01 deg, p2p 4.63 deg, rms 0.41 deg, swing 1.1 Hz
 joint 5: mean err -0.01 deg, p2p 2.27 deg, rms 0.35 deg, swing 0.9 Hz
 joint 6: mean err -0.01 deg, p2p 0.17 deg, rms 0.04 deg
 ```
+- Human ran python -m muse_qc.hold_test --table-mm 495.9 330 --gains vel2 --execute (2026-10-29, arm power supply on), first without touching, then with the gentle hand push on the finger tips. Without push vel2 is clearly calmer than default (joint 4 p2p 0.55 vs 1.07 deg, joint 5 p2p 0.04 vs 0.15 deg, no swing frequency any more); with push the numbers mostly show how far the hand pushed (not repeatable), the joints came back exactly. No buzzing.
+```text
+without push:
+hold measured deg: -1.93 -100.77 -93.43 +82.65 -0.01 -0.01
+joint 4: mean err -0.01 deg, p2p 0.55 deg, rms 0.03 deg, swing n/a
+joint 5: mean err -0.01 deg, p2p 0.04 deg, rms 0.02 deg, swing n/a
+with push:
+hold measured deg: -1.93 -100.77 -93.43 +82.65 -0.01 -0.01
+joint 4: mean err -0.01 deg, p2p 4.13 deg, rms 0.52 deg, swing 2.1 Hz
+joint 5: mean err -0.01 deg, p2p 3.23 deg, rms 0.40 deg, swing 0.8 Hz
+```
+- Human ran python -m muse_qc.find_parts with the two boxes in place (new empty-table reference with the boxes, 2026-10-29): the part was confirmed, four candidates on the gripper fingers and cables (the arm rested slightly off the reference pose) were rejected by SAM.
+```text
+part 0 center=(952, 740) area_mm2=206 table_mm=(472.8, 123.9) sam=no box
+part 1 center=(960, 503) area_mm2=918 table_mm=(478.1, 271.8) sam=no box
+part 2 center=(1002, 772) area_mm2=202 table_mm=(503.8, 104.4) sam=no box
+part 3 center=(1003, 360) area_mm2=575 table_mm=(505.3, 360.0) sam=confirmed 0.82
+part 4 center=(1054, 512) area_mm2=751 table_mm=(536.5, 265.6) sam=no box
+parts: 1 confirmed of 5 candidates
+```
+- Human ran python -m muse_qc.pick_test --table-mm 505.3 360.0 --gains vel2 --execute (2026-10-29, arm power supply on, hand on the power supply switch): OK, part picked and lifted with all four sensors. Human: "still wobbles, but not as strongly any more".
+```text
+segments at 100 Hz: hover 820 lower 390 lift 270 put-down 386 raise 186 return 870 (total 2922)
+corrected base target: x=+316.93 y=-19.57 mm
+contact: gripper commanded deg -46.57 measured deg -49.82 contacts L2 R2
+contacts L1 L2 R1 R2 (lifting)
+part lifted, holding
+```

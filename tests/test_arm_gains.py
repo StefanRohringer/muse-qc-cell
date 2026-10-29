@@ -145,6 +145,46 @@ def test_describe_vel2_lines(monkeypatch, tmp_path):
     ]
 
 
+def test_vel3_profile_only_lists_joints_4_and_5():
+    assert set(GAIN_PROFILES["vel3"]) == {4, 5}
+    for joint in (4, 5):
+        change = GAIN_PROFILES["vel3"][joint]
+        assert change["vel_kp_factor"] == pytest.approx(3.0)
+        assert "pos_kp_factor" not in change
+        assert "pos_ki" not in change
+        assert "vel_ki" not in change
+
+
+def test_describe_vel3_lines(monkeypatch, tmp_path):
+    _use_fake_config(monkeypatch, tmp_path)
+    assert describe("vel3") == [
+        "joint 4: vel_kp 0.0008 -> 0.0024",
+        "joint 5: vel_kp 0.0008 -> 0.0024",
+    ]
+
+
+def test_vel3_runtime_yaml_round_trips(monkeypatch, tmp_path):
+    _use_fake_config(monkeypatch, tmp_path)
+    out_dir = tmp_path / "runtime"
+    path = write_runtime_yaml("vel3", out_dir)
+    assert path.is_absolute()
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    loops = {entry["name"]: entry["POS_VEL"] for entry in data["joints"]}
+    assert loops["joint4"]["vel_kp"] == pytest.approx(0.0024)
+    assert loops["joint5"]["vel_kp"] == pytest.approx(0.0024)
+    assert loops["joint4"]["pos_kp"] == 70.0
+    assert loops["joint5"]["pos_kp"] == 60.0
+    assert loops["joint4"]["pos_ki"] == 1.0
+    assert loops["joint4"]["vel_ki"] == 0.002
+    assert loops["joint5"]["pos_ki"] == 1.0
+    assert loops["joint5"]["vel_ki"] == 0.002
+    assert loops["joint1"]["vel_kp"] == 0.0125
+    assert loops["joint6"] == {
+        "vel_kp": 0.0008, "vel_ki": 0.002,
+        "pos_kp": 60.0, "pos_ki": 1.0, "vlim": 3.0,
+    }
+
+
 def test_vel2_runtime_yaml_round_trips(monkeypatch, tmp_path):
     _use_fake_config(monkeypatch, tmp_path)
     out_dir = tmp_path / "runtime"

@@ -1144,7 +1144,9 @@ anything else is an argparse error (exit 2) before anything
 connects. `--no-xy-correction` flies the uncorrected target for A/B
 tests, to measure the uncorrected error near the part. No
 gripper-project code is used, only the serial line protocol and the
-SDK motor protocol.
+SDK motor protocol. `--gains` defaults to `vel2` (the best
+profile so far, see section 30); `hold_test` keeps `default` so
+A/B runs stay explicit.
 
 Order, with the hand on the power supply switch:
 
@@ -1305,14 +1307,29 @@ with stiff, switch the power supply off at once and stay on
 default.
 
 `--gains vel2` tests the velocity loop only (vel_kp x2.0 for
-joints 4 and 5, position loop unchanged). Test it WITHOUT pushing first, then compare joint 4/5 peak-to-peak and RMS with the default run without push; the same safety rule as for stiff applies (buzz, hum or oscillation on its own means power supply off at once).
+joints 4 and 5, position loop unchanged). The 2026-10-29 hold
+without push showed vel2 clearly calmer than default (joint 4
+p2p 0.55 vs 1.07 deg, joint 5 p2p 0.04 vs 0.15 deg, no swing
+frequency any more) with no buzzing; with the gentle hand push
+the numbers mostly show how far the hand pushed (not
+repeatable) and the joints came back exactly (see
+docs/DEVLOG.md). Vel2 is therefore the best profile so far and
+is now the default of `muse_qc/pick_test.py`; `hold_test` keeps
+`default` so A/B runs stay explicit.
+
+`--gains vel3` is the next A/B candidate (vel_kp x3.0 for joints
+4 and 5 only, nothing else changed). Test it WITHOUT pushing
+first, then compare joint 4/5 peak-to-peak and RMS with the
+default run without push; the same safety rule as for stiff
+applies (buzz, hum or oscillation on its own means power supply
+off at once).
 
 The soft gains live only in a runtime copy:
 `write_runtime_yaml` copies the SDK hardware yaml into a
 temporary directory (never into the repo, never into the SDK
 package) and `make_arm` passes it as `RebotArm(hw_yaml=...)`;
 `--gains` exists on `muse_qc/pick_test.py` too (default
-`default`, same describe lines). The SDK file stays untouched,
+`vel2`, same describe lines). The SDK file stays untouched,
 and a normal run restores the default gains by itself: the SDK
 writes vel_kp/vel_ki/pos_kp/pos_ki into the Damiao registers 25
 to 28 on every `mode_pos_vel` call from the loaded yaml values.

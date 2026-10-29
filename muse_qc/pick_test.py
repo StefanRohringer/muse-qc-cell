@@ -211,7 +211,7 @@ def main(argv=None, sdk_factory=None, **kwargs):
     parser.add_argument("--speed-deg-s", type=_speed_type, default=SPEED_DEG_S[2],
                         help="free ramp speed in deg/s, 2 to 15 (default 15)")
     parser.add_argument("--gains", choices=tuple(GAIN_PROFILES),
-                        default="default",
+                        default="vel2",
                         help="motor gain profile for joints 4/5")
     parser.add_argument("--execute", action="store_true", help="fly the pick after confirmation")
     parser.add_argument("--no-xy-correction", action="store_true",
