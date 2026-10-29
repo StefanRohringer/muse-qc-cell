@@ -703,3 +703,10 @@ contact: gripper commanded deg -46.57 measured deg -49.82 contacts L2 R2
 contacts L1 L2 R1 R2 (lifting)
 part lifted, holding
 ```
+- Human ran python -m muse_qc.vision_sam "box" with the two sorting boxes (100 x 100 x 70 mm) on the table (2026-10-29): both found, left box = good, right box = bad.
+```text
+table mapping: calibrated
+id 0 box=(1187, 170, 1372, 350) center=(1279.5, 260.0) confidence=0.83 table_mm=(675.4, 420.3)
+id 1 box=(714, 173, 875, 342) center=(794.5, 257.5) confidence=0.83 table_mm=(376.4, 423.8)
+boxes: 2
+```

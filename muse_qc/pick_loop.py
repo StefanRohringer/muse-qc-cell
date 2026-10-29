@@ -5,7 +5,10 @@ the arm waypoints of muse_qc.pick_plan with a fresh safety check per
 cycle, opens the gripper during the hover walk (holding at hover
 until fully open), commands the gripper every cycle, watches the
 touch sensor and climbs back to the hover height before returning
-after any fault, contact stop or abort. Protocol use only, no
+after any fault, contact stop or abort. On a drop run an abort
+during to-box walks the remaining carry waypoints to the drop pose
+and then returns, during release it returns straight away; the
+gripper is never opened on an abort. Protocol use only, no
 gripper-project code.
 """
 from __future__ import annotations
@@ -13,6 +16,7 @@ import math
 import threading
 import time
 from muse_qc import safety
+from muse_qc.drop_plan import DROP_HOLD_CYCLES
 from muse_qc.first_move_plan import LOOP_RATE_HZ, SPEED_FRACTION, real_tip_m
 from muse_qc.gripper_grip import CLOSED_DEG, SAFE_MAX_DEG, SAFE_MIN_DEG
 from muse_qc.gripper_stream import JUMP_DEG, SENSOR_TIMEOUT_S
@@ -20,13 +24,15 @@ from muse_qc.pick_plan import abort_detour
 GRIP_STEP_DEG = 15.0 / LOOP_RATE_HZ
 SQUEEZE_DEG = 2.0
 FAULT_HOLD_CYCLES = int(0.5 * LOOP_RATE_HZ)
-_WALKS = ("hover", "lower", "lift", "put-down", "raise", "return")
+DROP_WALKS = ("to-box",)
+_WALKS = ("hover", "lower", "lift", "put-down", "raise", "return") + DROP_WALKS
 class PickLoop:
     """100 Hz pick callback: walk the plan with touch-aware phases."""
     def __init__(self, arm_group, gripper_group, arm_vlim, gripper_vlim,
                  arm_start_rad, plan, tips, ranges, hover_z, open_deg,
                  start_grip_deg, hold_cycles, no_grip, sensor, out=print,
-                 check_fn=None, tip_fn=None):
+                 check_fn=None, tip_fn=None, drop_box=None,
+                 release_open_deg=None):
         self.arm_group = arm_group
         self.gripper_group = gripper_group
         self.arm_vlim = [float(v) for v in arm_vlim]
@@ -36,6 +42,9 @@ class PickLoop:
         self.grip_cmd = self.measured = float(start_grip_deg)
         self.cmd_arm_rad = [float(v) for v in arm_start_rad]
         self.hold_cycles, self.no_grip = int(hold_cycles), bool(no_grip)
+        self.drop_box = drop_box
+        self.release_open_deg = (None if release_open_deg is None
+                                 else float(release_open_deg))
         self._sensor, self._out = sensor, out
         self.check = safety.check_target if check_fn is None else check_fn
         self.tip_of = real_tip_m if tip_fn is None else tip_fn
@@ -132,9 +141,30 @@ class PickLoop:
         self._send(self.cmd_arm_rad, self.grip_cmd + math.copysign(GRIP_STEP_DEG, diff))
         return False
     def _start_abort(self):
-        self.detour = abort_detour(self.plan, self.tips, self.ranges, self.hover_z,
-                                   self.pos)
+        if self.drop_box is not None and self._in_drop_segment("to-box"):
+            first, end = self.ranges["to-box"]
+            low, high = self.ranges["return"]
+            at = first if self.pos is None else max(first, self.pos)
+            self.detour = list(range(at, end)) + list(range(low, high))
+        elif self.drop_box is not None and self._in_drop_segment("release"):
+            low, high = self.ranges["return"]
+            hold = [] if self.pos is None else [self.pos]
+            self.detour = hold + list(range(low, high))
+        else:
+            self.detour = abort_detour(self.plan, self.tips, self.ranges,
+                                       self.hover_z, self.pos)
         self.di = 0
+        self.abort_requested = False
+        self.phase = "abort"
+
+    def _in_drop_segment(self, segment: str) -> bool:
+        """Whether the loop is inside one drop segment right now."""
+        if segment == "to-box":
+            if self.phase == "to-box":
+                return True
+        elif self.phase in ("release", "release_hold"):
+            return True
+        return self.pos is not None and self.plan[self.pos][0] == segment
         self.abort_requested = False
         self.phase = "abort"
     def _contact_stop(self):
@@ -181,14 +211,19 @@ class PickLoop:
         elif self.phase == "squeeze":
             assert self.squeeze_target is not None
             self._ramp(self.squeeze_target, self._to_squeeze_hold)
-        elif self.phase in ("open", "miss_open", "reopen"):
+        elif self.phase in ("open", "miss_open", "reopen", "drop_open"):
             self._ramp(self.open_deg, {"open": self._to_lower,
                                        "miss_open": self._start_abort,
-                                       "reopen": self._to_raise}[self.phase])
-        elif self.phase in ("bottom_hold", "squeeze_hold", "top_hold"):
+                                       "reopen": self._to_raise,
+                                       "drop_open": self._to_return}[self.phase])
+        elif self.phase == "release":
+            self._do_release()
+        elif self.phase in ("bottom_hold", "squeeze_hold", "top_hold",
+                            "release_hold"):
             self._hold_then({"bottom_hold": self._to_raise_detour,
                              "squeeze_hold": self._to_lift,
-                             "top_hold": self._to_putdown}[self.phase])
+                             "top_hold": self._to_after_lift,
+                             "release_hold": self._to_released}[self.phase])
         elif self.phase == "abort":
             if self.di >= len(self.detour):
                 self.phase = "finish"
@@ -201,14 +236,36 @@ class PickLoop:
     def _to_lower(self): self._walk_seg("lower")
     def _to_lift(self): self._walk_seg("lift")
     def _to_raise(self): self._walk_seg("raise")
+    def _to_return(self): self._walk_seg("return")
+    def _to_after_lift(self):
+        if self.drop_box is None:
+            self._walk_seg("put-down")
+        else:
+            self._walk_seg("to-box")
     def _to_putdown(self): self._walk_seg("put-down")
+    def _to_released(self):
+        if self.contacts:
+            self._out("part still held after release")
+        else:
+            self._out(f"dropped into the {self.drop_box} box")
+        self._walk_seg("return")
+    def _do_release(self):
+        assert self.release_open_deg is not None
+        if not self._hold():
+            return
+        if self._step_grip(self.release_open_deg):
+            self.left = DROP_HOLD_CYCLES
+            self.phase = "release_hold"
     def _to_squeeze_hold(self):
         self.left = FAULT_HOLD_CYCLES
         self.phase = "squeeze_hold"
     def _to_raise_detour(self):
-        low, high = self.ranges["raise"]
         first, last = self.ranges["return"]
-        self.detour = list(range(low, high)) + list(range(first, last))
+        if "raise" in self.ranges:
+            low, high = self.ranges["raise"]
+            self.detour = list(range(low, high)) + list(range(first, last))
+        else:
+            self.detour = list(range(first, last))
         self.di = 0
         self.phase = "abort"
     def _grip_at_open(self):
@@ -239,6 +296,14 @@ class PickLoop:
                                   or not (self.contacts & safety.GRIP_RIGHT)):
                 self.lost = True
                 self._out("part lost while lifting")
+        if self.phase == "to-box":
+            if self.contacts != self._prev:
+                self._prev = frozenset(self.contacts)
+                self._out(f"contacts {' '.join(sorted(self.contacts)) or '-'} (carrying)")
+            if not self.lost and (not (self.contacts & safety.GRIP_LEFT)
+                                  or not (self.contacts & safety.GRIP_RIGHT)):
+                self.lost = True
+                self._out("part lost while carrying")
         if not finished or self.phase not in _WALKS:
             return
         if self.phase == "hover":
@@ -258,6 +323,12 @@ class PickLoop:
             self.left = self.hold_cycles
             self._out("no part held, holding" if self.lost else "part lifted, holding")
             self.phase = "top_hold"
+        elif self.phase == "to-box":
+            if self.lost:
+                self._out("no part held, holding")
+                self.phase = "drop_open"
+            else:
+                self.phase = "release"
         elif self.phase == "put-down":
             self.phase = "reopen"
         elif self.phase == "raise":

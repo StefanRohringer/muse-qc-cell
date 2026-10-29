@@ -16,6 +16,7 @@ from __future__ import annotations
 import math
 
 from muse_qc import safety
+from muse_qc.drop_plan import SEG_RELEASE, SEG_TOBOX, build_drop_segments
 from muse_qc.first_move_plan import (
     LOOP_RATE_HZ,
     SETTLE_HOLD_CYCLES,
@@ -48,6 +49,9 @@ SEG_PUTDOWN = "put-down"
 SEG_RAISE = "raise"
 SEG_RETURN = "return"
 SEGMENTS = (SEG_HOVER, SEG_LOWER, SEG_LIFT, SEG_PUTDOWN, SEG_RAISE, SEG_RETURN)
+SEGMENTS_DROP = (SEG_HOVER, SEG_LOWER, SEG_LIFT, SEG_TOBOX, SEG_RELEASE, SEG_RETURN)
+SEGMENTS_ALL = (SEG_HOVER, SEG_LOWER, SEG_LIFT, SEG_PUTDOWN, SEG_RAISE,
+                SEG_TOBOX, SEG_RELEASE, SEG_RETURN)
 GRASP_SEGMENTS = frozenset({SEG_LOWER, SEG_LIFT, SEG_PUTDOWN, SEG_RAISE})
 READING_AGE_MS = 1000.0 / LOOP_RATE_HZ
 
@@ -111,7 +115,9 @@ def build_pick_plan(start_deg: object, table_xy: object, grip_z_mm: float,
                     hover_mm: float = HOVER_MM,
                     use_xy_correction: bool = True,
                     free_speed_deg_s: float = FREE_SPEED_DEG_S,
-                    accel_deg_s2: float = ACCEL_DEG_S2) -> dict:
+                    accel_deg_s2: float = ACCEL_DEG_S2,
+                    drop_joints: object = None,
+                    tip_fn: object = None) -> dict:
     """Build the full labelled pick plan. Pure, moves nothing.
 
     Returns {"ok": True, "plan", "ranges", ...} or {"ok": False,
@@ -119,7 +125,10 @@ def build_pick_plan(start_deg: object, table_xy: object, grip_z_mm: float,
     at 100 Hz; ranges maps each segment to its [start, end) slice.
     With use_xy_correction the base target is shifted through
     xy_correction.correct_base_target_mm first, so the real tip
-    lands on the part; False flies the uncorrected target.
+    lands on the part; False flies the uncorrected target. With
+    drop_joints the plan is hover, lower, lift, to-box, release,
+    return (no put-down, no raise); the lift still ends at the
+    hover height.
     """
     try:
         start = tuple(float(v) for v in start_deg)
@@ -191,28 +200,47 @@ def build_pick_plan(start_deg: object, table_xy: object, grip_z_mm: float,
         lift_pts = _interpolate(lower, upper, steps) + lift_pts
     lift_pts[-1] = hover_joints
     _append(SEG_LIFT, lift_pts)
-    put_z = grip_z + PUT_DOWN_LIFT_MM
-    put_heights = list(zip(put_rungs, put_rungs[1:]))
-    put_pts: list[tuple[float, ...]] = []
-    for upper, lower, (top, bottom) in zip(put_joints, put_joints[1:],
-                                          put_heights):
-        fast = bottom >= put_z + SLOW_ZONE_MM
-        steps = _rung_steps(upper, lower, top - bottom, fast)
-        put_pts += _interpolate(upper, lower, steps)
-    put_pts[-1] = put_joints[-1]
-    _append(SEG_PUTDOWN, put_pts)
-    raise_pts: list[tuple[float, ...]] = []
-    for upper, lower, (top, bottom) in zip(put_joints, put_joints[1:],
-                                          put_heights):
-        steps = _rung_steps(lower, upper, top - bottom, True)
-        raise_pts = _interpolate(lower, upper, steps) + raise_pts
-    raise_pts[-1] = hover_joints
-    _append(SEG_RAISE, raise_pts)
-    return_pts = list(ramp_waypoints(hover_joints, rest,
-                                     speed_deg_s=free_speed_deg_s,
-                                     accel_deg_s2=accel_deg_s2))
-    return_pts[-1] = rest
-    _append(SEG_RETURN, return_pts + [rest] * SETTLE_HOLD_CYCLES)
+    drop: tuple[float, ...] | None = None
+    if drop_joints is None:
+        put_z = grip_z + PUT_DOWN_LIFT_MM
+        put_heights = list(zip(put_rungs, put_rungs[1:]))
+        put_pts: list[tuple[float, ...]] = []
+        for upper, lower, (top, bottom) in zip(put_joints, put_joints[1:],
+                                              put_heights):
+            fast = bottom >= put_z + SLOW_ZONE_MM
+            steps = _rung_steps(upper, lower, top - bottom, fast)
+            put_pts += _interpolate(upper, lower, steps)
+        put_pts[-1] = put_joints[-1]
+        _append(SEG_PUTDOWN, put_pts)
+        raise_pts: list[tuple[float, ...]] = []
+        for upper, lower, (top, bottom) in zip(put_joints, put_joints[1:],
+                                              put_heights):
+            steps = _rung_steps(lower, upper, top - bottom, True)
+            raise_pts = _interpolate(lower, upper, steps) + raise_pts
+        raise_pts[-1] = hover_joints
+        _append(SEG_RAISE, raise_pts)
+        return_pts = list(ramp_waypoints(hover_joints, rest,
+                                         speed_deg_s=free_speed_deg_s,
+                                         accel_deg_s2=accel_deg_s2))
+        return_pts[-1] = rest
+        _append(SEG_RETURN, return_pts + [rest] * SETTLE_HOLD_CYCLES)
+    else:
+        try:
+            drop = tuple(float(v) for v in drop_joints)
+        except (TypeError, ValueError):
+            return {"ok": False, "reason": "bad drop joints"}
+        if len(drop) != 6 or not all(math.isfinite(v) for v in drop):
+            return {"ok": False, "reason": "bad drop joints"}
+        segs = build_drop_segments(hover_joints, drop, rest,
+                                   free_speed_deg_s=free_speed_deg_s,
+                                   accel_deg_s2=accel_deg_s2,
+                                   tip_fn=tip_fn)
+        if not segs.get("ok"):
+            return {"ok": False, "reason": str(segs.get("reason"))}
+        offset = len(plan)
+        plan.extend(segs["plan"])
+        for segment, (low, high) in segs["ranges"].items():
+            ranges[segment] = (low + offset, high + offset)
     return {
         "ok": True,
         "plan": plan,
@@ -220,6 +248,7 @@ def build_pick_plan(start_deg: object, table_xy: object, grip_z_mm: float,
         "hover_joints": hover_joints,
         "grip_joints": lower_joints[-1],
         "putdown_joints": put_joints[-1],
+        "drop_joints": drop,
         "rest_joints": rest,
         "corrected_base_mm": (corr_x, corr_y),
         "solve_table_mm": solve_table,
@@ -295,9 +324,11 @@ def check_pick_plan(plan: list[tuple[str, tuple[float, ...], bool]],
 def plan_summary(plan: list[tuple[str, tuple[float, ...], bool]],
                  info: dict) -> list[str]:
     """Human-readable plan lines: segment counts, tip heights, target."""
+    names = [segment for segment in SEGMENTS_ALL
+             if segment in info.get("ranges", {})] or list(SEGMENTS)
     counts = {segment: sum(1 for item in plan if item[0] == segment)
-              for segment in SEGMENTS}
-    order = " ".join(f"{segment} {counts[segment]}" for segment in SEGMENTS)
+              for segment in names}
+    order = " ".join(f"{segment} {counts[segment]}" for segment in names)
     corr = info["corrected_base_mm"]
     hover_tip = info["hover_tip_mm"]
     state = "on" if info.get("use_xy_correction", True) else "off"

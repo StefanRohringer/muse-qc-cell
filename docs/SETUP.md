@@ -1334,6 +1334,57 @@ and a normal run restores the default gains by itself: the SDK
 writes vel_kp/vel_ki/pos_kp/pos_ki into the Damiao registers 25
 to 28 on every `mode_pos_vel` call from the loaded yaml values.
 
+## 31. Sorting into the good and bad box
+
+Two open boxes (100 x 100 mm, 70 mm high, open on top) stand on the
+table: the left box takes good parts, the right box takes rejects.
+Their centres (top rim in the camera view) were measured by the
+human with `python -m muse_qc.vision_sam "box"` as table mm
+(376.4, 423.8) for good and (675.4, 420.3) for bad.
+`muse_qc/drop_plan.py` keeps these positions plus the nominal
+170 mm IK tip height and the 30 deg tool tilt. The arm correction
+puts the real tip about 40 mm lower, about 130 mm above the table,
+i.e. about 60 mm above the rim; below 110 mm real tip height
+(40 mm above the rim) the solve refuses with "drop tip too low".
+
+A vertical tool does not reach the boxes at that height (about 360
+to 420 mm reach at 110 to 140 mm tip height), so the drop pose tilts
+the tool 30 deg away from the joint 1 axis in the radial direction
+(the finger tips point outward, away from the arm). `solve_drop`
+uses the same SDK IK machinery as the hover solve but applies no x/y
+correction: the correction was fitted only for r 312.8 to 345 mm,
+and the wide box opening forgives 2 to 3 cm. The carry ramp
+(`build_drop_segments`) refuses the plan with "transit too low"
+unless every to-box waypoint keeps the corrected tip at or above
+90 mm (unchanged); there is no touch-guarded put-down in the box,
+the gripper just opens over it. An abort during to-box walks the
+remaining carry waypoints to the drop pose and then returns, during
+release it returns straight away; the gripper is never opened on an
+abort.
+
+With `--drop good|bad` the pick plan is hover, lower, lift, to-box,
+release, return (no put-down, no raise); the lift still ends at the
+hover height. During to-box the loop keeps the part-lost watch
+exactly as during lift, then opens the gripper to 40 mm over the
+box, holds 1 s, and reads the touch sensors once: no contacts means
+the part dropped into the box, contacts left mean it is still held
+(warning only). Without `--drop` the behaviour is unchanged
+(put-down). Only the human runs it, never CI and never an agent.
+
+Order, with the hand on the power supply switch:
+
+```bash
+uv run python -m muse_qc.find_parts --save-empty
+uv run python -m muse_qc.pick_test --table-mm X Y --drop good
+uv run python -m muse_qc.pick_test --table-mm X Y --drop good --execute
+```
+
+Save the empty-table reference again with the boxes in place first:
+`find_parts --save-empty` with the table without parts and the arm
+at rest, otherwise the boxes themselves become candidates. Parts
+must lie between the arm and the boxes within about 345 mm of the
+joint 1 axis, the outer range of the x/y correction.
+
 ## Safety notes
 
 Read-only review of the SDK file

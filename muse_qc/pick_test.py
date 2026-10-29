@@ -4,6 +4,9 @@ Dry run builds and checks the plan, moving nothing. --execute flies
 one 100 Hz loop (muse_qc.pick_loop.PickLoop): hover (gripper opens
 during the hover ramp), lower, grip, lift, hold, put down, open,
 raise, return. --no-grip only lowers and holds for a ruler check.
+With --drop good|bad the plan is hover, lower, lift, to-box,
+release, return instead: the arm carries the part to the good
+(left) or bad (right) box and opens the gripper over it.
 """
 from __future__ import annotations
 import argparse
@@ -12,6 +15,11 @@ import sys
 from muse_qc import safety
 from muse_qc.arm import Arm
 from muse_qc.arm_gains import GAIN_PROFILES, describe, make_arm
+from muse_qc.drop_plan import (
+    BOXES_TABLE_MM,
+    RELEASE_OPEN_MM,
+    solve_drop,
+)
 from muse_qc.first_move import CONFIRM_WORD
 from muse_qc.first_move_plan import LOOP_RATE_HZ, VLIM_FRACTION
 from muse_qc.first_move_plan import clamp_to_limits, read_sdk_vlims, real_tip_m, scale_vlim
@@ -20,6 +28,7 @@ from muse_qc.gripper_motor import CONFIRM_PROMPT, GRIPPER_CONFIG_VLIM
 from muse_qc.gripper_stream import open_touch_sensor
 from muse_qc.pick_loop import PickLoop
 from muse_qc.pick_plan import build_pick_plan, check_pick_plan, plan_summary
+from muse_qc.target_pose import table_to_base_mm
 GRIP_Z_MM = (5.0, 60.0, 5.0)
 OPEN_MM = (25.0, 50.0, 28.0)
 HOLD_S = (0.5, 30.0, 1.0)
@@ -47,27 +56,61 @@ def _create_sdk():
     return RebotArm()
 def _plan_and_check(arm_start_deg, grip_start_deg, table_xy, grip_z_mm, open_mm,
                     out, joint_limits, solve_fn, check_fn, tip_fn,
-                    use_xy_correction=True, speed_deg_s=SPEED_DEG_S[2]):
+                    use_xy_correction=True, speed_deg_s=SPEED_DEG_S[2],
+                    drop=None, solve_drop_fn=None):
     open_deg = width_to_deg(open_mm)
     refused = validate_targets(grip_start_deg, open_deg)
+    release_open_deg = None
+    if drop is not None:
+        release_open_deg = width_to_deg(RELEASE_OPEN_MM)
+        refused = refused or validate_targets(grip_start_deg, release_open_deg)
     if refused is not None:
         out(refused)
         return None, None
     out(f"open width: {open_mm:.0f} mm -> gripper {open_deg:+.2f} deg")
+    if drop is not None:
+        out(f"release width: {RELEASE_OPEN_MM:.0f} mm"
+            f" -> gripper {release_open_deg:+.2f} deg")
+    check = safety.check_target if check_fn is None else check_fn
+    tip_of = real_tip_m if tip_fn is None else tip_fn
     old_ref = safety.J6_REF
     safety.set_j6_ref(arm_start_deg[5])
     try:
+        drop_joints = None
+        solved = None
+        if drop is not None:
+            solver = solve_drop if solve_drop_fn is None else solve_drop_fn
+            solved = solver(BOXES_TABLE_MM[drop], arm_start_deg)
+            if not solved.get("ok"):
+                out(f"drop solve failed: {solved.get('reason')}")
+                return None, None
+            drop_joints = solved["joints_deg"]
         built = build_pick_plan(arm_start_deg, table_xy, grip_z_mm,
                                 joint_limits, solve_fn=solve_fn,
                                 use_xy_correction=use_xy_correction,
-                                free_speed_deg_s=speed_deg_s)
+                                free_speed_deg_s=speed_deg_s,
+                                drop_joints=drop_joints, tip_fn=tip_of)
         if not built.get("ok"):
             out(f"plan failed: {built.get('reason')}")
             return None, None
         for line in plan_summary(built["plan"], built):
             out(line)
-        check = safety.check_target if check_fn is None else check_fn
-        tip_of = real_tip_m if tip_fn is None else tip_fn
+        if drop is not None:
+            box_xy = BOXES_TABLE_MM[drop]
+            base_x, base_y = table_to_base_mm(box_xy[0], box_xy[1])
+            radius = math.hypot(base_x, base_y)
+            joints = solved["joints_deg"]
+            tip = solved["tip_base_mm"]
+            out(f"drop box: {drop} at table mm ({box_xy[0]:+.1f},"
+                f" {box_xy[1]:+.1f}), r={radius:.1f} mm")
+            out("drop joints deg: " + " ".join(f"{v:+.2f}" for v in joints))
+            out(f"drop tilt: {solved['tilt_deg']:.1f} deg,"
+                f" fk tip base mm ({tip[0]:+.1f}, {tip[1]:+.1f}, {tip[2]:+.1f}),"
+                f" real tip z {solved['real_tip_z_mm']:.1f} mm")
+            low, high = built["ranges"]["to-box"]
+            lowest = min(tip_of(list(wp))[2]
+                         for _, wp, _ in built["plan"][low:high]) * 1000.0
+            out(f"to-box lowest tip z: {lowest:.1f} mm")
         ok, bad, res = check_pick_plan(built["plan"], arm_start_deg, check, tip_of)
     finally:
         safety.set_j6_ref(old_ref)
@@ -79,7 +122,7 @@ def _plan_and_check(arm_start_deg, grip_start_deg, table_xy, grip_z_mm, open_mm,
 def dry_run(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, out=print,
             find_port=None, sensor_factory=None, joint_limits=None, check_fn=None,
             tip_fn=None, solve_fn=None, use_xy_correction=True,
-            speed_deg_s=SPEED_DEG_S[2]):
+            speed_deg_s=SPEED_DEG_S[2], drop=None, solve_drop_fn=None):
     reader, arm_start_deg, grip_start_deg = _read_start(sdk)
     try:
         out(f"rest joints deg: {[f'{v:+.2f}' for v in arm_start_deg]}")
@@ -93,7 +136,8 @@ def dry_run(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, out=print,
                                        grip_z_mm, open_mm, out, joint_limits,
                                        solve_fn, check_fn, tip_fn,
                                        use_xy_correction,
-                                       speed_deg_s=speed_deg_s)
+                                       speed_deg_s=speed_deg_s,
+                                       drop=drop, solve_drop_fn=solve_drop_fn)
             if built is None:
                 return 1
             out("dry run: moves nothing, motors never enabled")
@@ -105,7 +149,8 @@ def dry_run(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, out=print,
 def execute(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, input_fn=input,
             out=print, find_port=None, sensor_factory=None, joint_limits=None,
             check_fn=None, tip_fn=None, arm_vlims=None, solve_fn=None,
-            use_xy_correction=True, speed_deg_s=SPEED_DEG_S[2]):
+            use_xy_correction=True, speed_deg_s=SPEED_DEG_S[2],
+            drop=None, solve_drop_fn=None):
     reader, arm_start_deg, grip_start_deg = _read_start(sdk)
     stream, sensor = None, None
     old_ref = safety.J6_REF
@@ -118,7 +163,8 @@ def execute(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, input_fn=input,
                                           grip_z_mm, open_mm, out, joint_limits,
                                           solve_fn, check_fn, tip_fn,
                                           use_xy_correction,
-                                          speed_deg_s=speed_deg_s)
+                                          speed_deg_s=speed_deg_s,
+                                          drop=drop, solve_drop_fn=solve_drop_fn)
         if built is None:
             return 1
         limits = safety.JOINT_LIMITS_DEG if joint_limits is None else joint_limits
@@ -149,10 +195,12 @@ def execute(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, input_fn=input,
         tip_of = real_tip_m if tip_fn is None else tip_fn
         plan, ranges = built["plan"], built["ranges"]
         tips = [tip_of(list(wp)) for _, wp, _ in plan]
+        release_open_deg = (width_to_deg(RELEASE_OPEN_MM)
+                              if drop is not None else None)
         stream = PickLoop(arm_group, gripper_group, slow, gripper_slow, arm_start_rad,
                           plan, tips, ranges, tips[ranges["hover"][1] - 1][2], open_deg,
                           grip_start_deg, round(hold_s * LOOP_RATE_HZ), no_grip, sensor,
-                          out, check, tip_of)
+                          out, check, tip_of, drop, release_open_deg)
         total = len(plan) + 2 * round(hold_s * LOOP_RATE_HZ) + 500
         live = False
         try:
@@ -216,12 +264,16 @@ def main(argv=None, sdk_factory=None, **kwargs):
     parser.add_argument("--execute", action="store_true", help="fly the pick after confirmation")
     parser.add_argument("--no-xy-correction", action="store_true",
                         help="fly the uncorrected target (for A/B tests)")
+    parser.add_argument("--drop", choices=("good", "bad"), default=None,
+                        help="carry the part to the good (left) or bad (right)"
+                        " box and release it over the box (default: put down)")
     args = parser.parse_args(argv)
     out = kwargs.get("out", print)
     for line in describe(args.gains):
         out(line)
     sdk = make_arm(args.gains, factory=sdk_factory)
     run = execute if args.execute else dry_run
+    kwargs.setdefault("drop", args.drop)
     return run(sdk, (args.table_mm[0], args.table_mm[1]), args.grip_z_mm,
                args.open_mm, args.no_grip, args.hold_s,
                use_xy_correction=not args.no_xy_correction,
