@@ -191,6 +191,14 @@ def execute(
                 out(f"hold measured tip mm: x={tip_m[0] * 1000.0:+.1f} "
                     f"y={tip_m[1] * 1000.0:+.1f} "
                     f"z={tip_m[2] * 1000.0:+.1f}")
+                commanded_tip = (
+                    target_tips[snapshot_index]
+                    if target_tips and snapshot_index < len(target_tips)
+                    else None
+                )
+                if commanded_tip is not None:
+                    offset_mm = (tip_m[2] - commanded_tip[2]) * 1000.0
+                    out(f"hold tip z offset: {offset_mm:+.1f} mm")
             out("motion finished, arm holds the settle pose")
             return 0
         finally:

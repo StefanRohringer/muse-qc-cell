@@ -132,7 +132,7 @@ def _sends(group, name):
 def test_mit_gains_match_dm_config():
     assert tuple(MIT_KP) == (120.0, 120.0, 120.0, 18.0, 18.0, 18.0)
     assert tuple(MIT_KD) == (8.0, 8.0, 8.0, 2.0, 2.0, 2.0)
-    assert TAU_SCALE == 1.0
+    assert tuple(TAU_SCALE) == (1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
 
 
 def test_mit_execute_sends_only_mit_with_gains_and_tau(monkeypatch, tmp_path):
@@ -160,7 +160,7 @@ def test_mit_execute_sends_only_mit_with_gains_and_tau(monkeypatch, tmp_path):
         assert kp == pytest.approx(list(MIT_KP))
         assert kd == pytest.approx(list(MIT_KD))
     for _, pos, _vel, _kp, _kd, tau in sends:
-        assert tau[0] == pytest.approx(TAU_SCALE * 2.0 * pos[0])
+        assert tau[0] == pytest.approx(TAU_SCALE[0] * 2.0 * pos[0])
         assert tau[1:] == pytest.approx([0.0] * 5)
     assert len({round(call[5][0], 9) for call in sends}) > 1
     text = "\n".join(str(line) for line in lines)
@@ -290,7 +290,7 @@ def test_mit_dry_run_prints_gains_and_gravity(monkeypatch):
     assert "hold mode: mit-ff" in text
     assert "mit kp: 120 120 120 18 18 18" in text
     assert "mit kd: 8 8 8 2 2 2" in text
-    assert "tau scale: 1.0" in text
+    assert "tau scale: 1.00 1.00 1.00 1.00 1.00 1.00" in text
     for joint, value in enumerate([0.1, 0.2, 0.3, 0.4, 0.5, 0.6], start=1):
         assert f"joint {joint} gravity torque: {value:+.3f} N*m" in text
     assert "enable" not in arm.groups["arm"].calls
@@ -326,3 +326,108 @@ def test_gravity_lines_format_with_fake_function():
     assert len(lines) == 6
     assert lines[0] == "joint 1 gravity torque: +0.500 N*m"
     assert lines[5] == "joint 6 gravity torque: +0.500 N*m"
+
+
+def test_default_scale_keeps_unscaled_lines():
+    lines = gravity_lines(GOAL_DEG, gravity_fn=lambda q: [0.5] * 6)
+    assert all("scaled" not in line for line in lines)
+    assert mit_hold.describe_mit() == [
+        "mit kp: 120 120 120 18 18 18",
+        "mit kd: 8 8 8 2 2 2",
+        "tau scale: 1.00 1.00 1.00 1.00 1.00 1.00",
+    ]
+
+
+def test_per_joint_scale_reaches_tau(monkeypatch, tmp_path):
+    monkeypatch.setattr(hover_move, "solve_hover", _fake_solve_ok)
+    monkeypatch.chdir(tmp_path)
+    arm = FakeMitArm(REST_DEG, follow=True)
+    scale = (1.0, 0.5, 1.4, 2.0, 0.0, 1.0)
+    raw = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    code = hold_test.main(
+        ["--table-mm", "495.9", "322.7", "--hold-s", "5",
+         "--hold-mode", "mit-ff",
+         "--tau-scale"] + [str(v) for v in scale] + ["--execute"],
+        sdk_factory=lambda: arm,
+        input_fn=lambda prompt: "yes",
+        check_fn=_always_ok, tip_fn=_fake_tip,
+        vlims=VLIMS, joint_limits=TEST_LIMITS,
+        gravity_fn=lambda q: list(raw), out=lambda line: None,
+    )
+    assert code == 0
+    sends = _sends(arm.groups["arm"], "send_mit")
+    assert sends, "arm commands must go through send_mit"
+    for _, _pos, _vel, _kp, _kd, tau in sends:
+        assert tau == pytest.approx(
+            [s * v for s, v in zip(scale, raw)])
+
+
+def test_bad_tau_scale_refused_before_enable():
+    group = FakeMitGroup(REST_DEG, follow=False)
+    with pytest.raises(ValueError):
+        mit_hold.make_begin_fn(
+            gravity_fn=_q_gravity, tau_scale=(1.0,) * 5)
+    with pytest.raises(ValueError):
+        mit_hold.make_begin_fn(
+            gravity_fn=_q_gravity,
+            tau_scale=(1.0, 1.0, 1.0, 2.5, 1.0, 1.0))
+    with pytest.raises(ValueError):
+        mit_hold.make_begin_fn(
+            gravity_fn=_q_gravity,
+            tau_scale=(1.0, -0.1, 1.0, 1.0, 1.0, 1.0))
+    with pytest.raises(ValueError):
+        mit_hold.make_stream_factory({}, tau_scale=(1.0,) * 7)
+    with pytest.raises(ValueError):
+        mit_hold.describe_mit(
+            [1.0, 1.0, 1.0, 1.0, 1.0, float("nan")])
+    assert "enable" not in group.calls
+
+
+def test_tau_scale_out_of_range_cli_refused_before_connect():
+    def factory():
+        raise AssertionError("must not connect on a bad --tau-scale")
+
+    with pytest.raises(SystemExit) as exc:
+        hold_test.main(
+            ["--table-mm", "495.9", "322.7", "--hold-mode", "mit-ff",
+             "--tau-scale", "1.0", "1.0", "1.0", "2.5", "1.0", "1.0"],
+            sdk_factory=factory,
+            out=lambda line: None,
+        )
+    assert exc.value.code == 2
+
+
+def test_tau_scale_with_posvel_refused():
+    def factory():
+        raise AssertionError("must not connect on --tau-scale with posvel")
+
+    with pytest.raises(SystemExit) as exc:
+        hold_test.main(
+            ["--table-mm", "495.9", "322.7",
+             "--tau-scale", "1.0", "1.0", "1.4", "1.0", "1.0", "1.0"],
+            sdk_factory=factory,
+            out=lambda line: None,
+        )
+    assert exc.value.code == 2
+
+
+def test_mit_dry_run_prints_scaled_torque(monkeypatch):
+    monkeypatch.setattr(hover_move, "solve_hover", _fake_solve_ok)
+    arm = FakeMitArm(REST_DEG, follow=False)
+    lines = []
+    code = hold_test.main(
+        ["--table-mm", "495.9", "322.7", "--hold-mode", "mit-ff",
+         "--tau-scale", "1.0", "1.0", "1.4", "1.0", "1.0", "1.0"],
+        sdk_factory=lambda: arm,
+        check_fn=_always_ok, tip_fn=_fake_tip,
+        joint_limits=TEST_LIMITS,
+        gravity_fn=lambda q: [0.0, 7.474, -5.564, -0.236, 0.0, 0.0],
+        out=lines.append,
+    )
+    assert code == 0
+    text = "\n".join(str(line) for line in lines)
+    assert "tau scale: 1.00 1.00 1.40 1.00 1.00 1.00" in text
+    assert "joint 3 gravity torque: -5.564 N*m, scaled -7.790 N*m" in text
+    assert "joint 2 gravity torque: +7.474 N*m, scaled +7.474 N*m" in text
+    assert "enable" not in arm.groups["arm"].calls
+    assert _sends(arm.groups["arm"], "send_mit") == []

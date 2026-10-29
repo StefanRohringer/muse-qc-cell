@@ -28,8 +28,38 @@ from muse_qc.waypoint_stream import WaypointStream
 # send_mit call below agree with the DM configuration.
 MIT_KP = (120.0, 120.0, 120.0, 18.0, 18.0, 18.0)
 MIT_KD = (8.0, 8.0, 8.0, 2.0, 2.0, 2.0)
-# Gravity feed-forward scale per joint. Constant for now, no CLI flag.
-TAU_SCALE = 1.0
+# Gravity feed-forward scale per joint (--tau-scale on hold_test).
+# The gripper is heavier than the SDK model, so joints holding
+# against gravity may need more than 1.0 (joint 3 holds +1.10 deg
+# off at 1.0, see docs/DEVLOG.md 2026-10-30).
+TAU_SCALE = (1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
+TAU_SCALE_MIN = 0.0
+TAU_SCALE_MAX = 2.0
+
+
+def validate_tau_scale(tau_scale: object) -> list[float]:
+    """Return six per-joint torque scales, refusing bad values early.
+
+    Needs six finite values, each within 0.0 to 2.0. Anything else
+    raises ValueError before the arm is enabled.
+    """
+    try:
+        values = [float(value) for value in tau_scale]
+    except TypeError:
+        raise ValueError(
+            f"Need six torque scales, got {tau_scale!r}."
+        ) from None
+    if len(values) != 6 or not all(math.isfinite(v) for v in values):
+        raise ValueError(
+            f"Need six finite torque scales, got {tau_scale!r}."
+        )
+    for value in values:
+        if not TAU_SCALE_MIN <= value <= TAU_SCALE_MAX:
+            raise ValueError(
+                "Torque scales must be within "
+                f"{TAU_SCALE_MIN:.1f} to {TAU_SCALE_MAX:.1f}, got {values}."
+            )
+    return values
 # Tracking guard: abort when any arm joint stays further than this
 # from its commanded position for this many cycles in a row.
 TRACKING_ERR_DEG = 5.0
@@ -75,25 +105,41 @@ def gravity_torque_Nm(joint_rad: object) -> list[float]:
     return [float(value) for value in list(tau)[:6]]
 
 
-def describe_mit() -> list[str]:
+def describe_mit(tau_scale: object = None) -> list[str]:
     """Return one line each for the MIT gains and the torque scale."""
+    scale = validate_tau_scale(TAU_SCALE if tau_scale is None else tau_scale)
     return [
         f"mit kp: {' '.join(f'{v:.0f}' for v in MIT_KP)}",
         f"mit kd: {' '.join(f'{v:.0f}' for v in MIT_KD)}",
-        f"tau scale: {TAU_SCALE:.1f}",
+        f"tau scale: {' '.join(f'{v:.2f}' for v in scale)}",
     ]
 
 
-def gravity_lines(hover_deg: object, gravity_fn: object = None) -> list[str]:
-    """Return one N*m line per joint for the gravity torque at hover."""
+def gravity_lines(
+    hover_deg: object,
+    gravity_fn: object = None,
+    tau_scale: object = None,
+) -> list[str]:
+    """Return one N*m line per joint for the gravity torque at hover.
+
+    With a per-joint scale different from 1.0 each line also shows
+    the scaled torque that is actually sent.
+    """
+    scale = validate_tau_scale(TAU_SCALE if tau_scale is None else tau_scale)
     function = gravity_fn if gravity_fn is not None else gravity_torque_Nm
     q_rad = [math.radians(float(value)) for value in hover_deg]
     tau = [float(value) for value in function(q_rad)]
     if len(tau) != 6:
         raise ValueError(f"Need six gravity torques, got {len(tau)}.")
+    if all(value == 1.0 for value in scale):
+        return [
+            f"joint {joint} gravity torque: {value:+.3f} N*m"
+            for joint, value in enumerate(tau, start=1)
+        ]
     return [
-        f"joint {joint} gravity torque: {value:+.3f} N*m"
-        for joint, value in enumerate(tau, start=1)
+        f"joint {joint} gravity torque: {value:+.3f} N*m,"
+        f" scaled {value * factor:+.3f} N*m"
+        for joint, (value, factor) in enumerate(zip(tau, scale), start=1)
     ]
 
 
@@ -101,25 +147,26 @@ def make_begin_fn(
     gravity_fn: object = None,
     kp: object = MIT_KP,
     kd: object = MIT_KD,
-    tau_scale: float = TAU_SCALE,
+    tau_scale: object = TAU_SCALE,
 ):
     """Build the first_move begin_fn for MIT mode.
 
     Switches the arm group to MIT (before enable, never mid-run),
     then sends the first command at the measured start pose with
-    the config gains and tau = TAU_SCALE * g(q). The gripper group
-    is never touched. Returns the first command in radians.
+    the config gains and tau = scale * g(q) per joint. The gripper
+    group is never touched. Returns the first command in radians.
+    Bad scales raise ValueError here, before anything is enabled.
     """
     kp_list = [float(value) for value in kp]
     kd_list = [float(value) for value in kd]
-    scale = float(tau_scale)
+    scale = validate_tau_scale(tau_scale)
 
     def begin(group: object, slow: object) -> list[float]:
         del slow  # MIT sends kp/kd, not velocity limits.
         group.mode_mit()
         first_rad = [math.radians(v) for v in read_current_deg(group)]
         function = gravity_fn if gravity_fn is not None else gravity_torque_Nm
-        tau = [scale * float(v) for v in function(list(first_rad))]
+        tau = [s * float(v) for s, v in zip(scale, function(list(first_rad)))]
         group.send_mit(
             list(first_rad), vel=[0.0] * len(first_rad),
             kp=kp_list, kd=kd_list, tau=tau,
@@ -146,7 +193,7 @@ class MitHoldStream(WaypointStream):
         segments: object = (),
         kp: object = MIT_KP,
         kd: object = MIT_KD,
-        tau_scale: float = TAU_SCALE,
+        tau_scale: object = TAU_SCALE,
         gravity_fn: object = None,
         on_tracking_error: object = None,
         **kwargs,
@@ -157,7 +204,7 @@ class MitHoldStream(WaypointStream):
         self.hold_samples: list[list[float]] = []
         self._kp = [float(value) for value in kp]
         self._kd = [float(value) for value in kd]
-        self._tau_scale = float(tau_scale)
+        self._tau_scale = validate_tau_scale(tau_scale)
         self._gravity_fn = gravity_fn
         self._on_tracking_error = on_tracking_error
         self._bad_cycles = 0
@@ -165,7 +212,7 @@ class MitHoldStream(WaypointStream):
         self.tracking_error: dict | None = None
 
     def _command_tau(self, joint_rad: list[float]) -> list[float]:
-        """Return TAU_SCALE * g(q) for one command in radians."""
+        """Return scale * g(q) per joint for one command in radians."""
         function = (
             self._gravity_fn if self._gravity_fn is not None
             else gravity_torque_Nm
@@ -173,7 +220,7 @@ class MitHoldStream(WaypointStream):
         tau = [float(value) for value in function(list(joint_rad))]
         if len(tau) != 6:
             raise ValueError(f"Need six gravity torques, got {len(tau)}.")
-        return [self._tau_scale * value for value in tau]
+        return [s * value for s, value in zip(self._tau_scale, tau)]
 
     def _send(self, joint_rad: list[float]) -> None:
         commanded = [float(value) for value in joint_rad]
@@ -235,14 +282,20 @@ def make_stream_factory(
     captured: dict,
     gravity_fn: object = None,
     on_tracking_error: object = None,
+    tau_scale: object = TAU_SCALE,
 ):
-    """Build the first_move stream factory keeping a MitHoldStream."""
+    """Build the first_move stream factory keeping a MitHoldStream.
+
+    Bad scales raise ValueError here, before anything is enabled.
+    """
+    scale = validate_tau_scale(tau_scale)
 
     def build(group, waypoints, tips, slow, first_rad, check_fn, tip_fn,
               snapshot_index=None):
         stream = MitHoldStream(
             group, waypoints, tips, slow, first_rad,
             check_fn, tip_fn, segments=captured.get("segments", ()),
+            tau_scale=scale,
             gravity_fn=gravity_fn, on_tracking_error=on_tracking_error,
             snapshot_index=snapshot_index,
         )

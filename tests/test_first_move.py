@@ -480,9 +480,10 @@ def test_execute_prints_hold_lines_before_finished():
     tip_mm = tuple(v * 1000.0 for v in REST_TIP_M)
     assert (f"hold measured tip mm: x={tip_mm[0]:+.1f} "
             f"y={tip_mm[1]:+.1f} z={tip_mm[2]:+.1f}") in lines
+    assert "hold tip z offset: +0.0 mm" in lines
     hold_at = [lines.index(line) for line in lines
                if line.startswith("hold ")]
-    assert len(hold_at) == 3
+    assert len(hold_at) == 4
     assert hold_at == sorted(hold_at)
     assert max(hold_at) < lines.index("motion finished, arm holds the settle pose")
 

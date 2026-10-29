@@ -1425,6 +1425,26 @@ joint 6: mean err -0.02 deg, p2p 0.15 deg, rms 0.03 deg
 
 Result in one paragraph: with MIT plus gravity feed-forward joint 4 did not swing (p2p 0.39 deg, standard deviation 0.023 deg from the CSV, no swing frequency found) while the position-velocity hold swung at 0.8 Hz with p2p 1.11 deg; joints 2 and 3 were also much calmer (p2p 0.26/0.17 vs 1.31/1.20 deg). The human watched both runs: MIT hold looked steady, posvel swung again. Cost: MIT has a steady offset because the gripper is heavier than the SDK model (no integral term): joint 3 +1.10 deg, the tip about 5 mm lower (z 95.1 vs 99.6 mm). Next step: per-joint torque scale to remove the offset before MIT is used for picking. CSV files: recordings/hold_mit-ff_20261030_001308.csv and recordings/hold_posvel_20261030_001520.csv (not in the repo).
 
+`--tau-scale S1 S2 S3 S4 S5 S6` sets the per-joint gravity torque
+scale for `--hold-mode mit-ff` (six values, each 0.0 to 2.0,
+default all 1.0, so `tau = scale * g(q)` per joint). Anything else
+is refused before anything is enabled, and `--tau-scale` with
+`--hold-mode posvel` is an argparse error (exit 2). The dry run
+prints the scale (`tau scale: 1.00 ...`) and the scaled torque per
+joint (`joint 3 gravity torque: -5.564 N*m, scaled -7.790 N*m`),
+and every run prints `hold tip z offset: ... mm` (measured minus
+commanded tip z) next to the tip line. First candidate against the
+joint 3 offset above:
+
+```bash
+uv run python -m muse_qc.hold_test --table-mm 506.4 338.1 --hold-s 20 --gains vel2 --hold-mode mit-ff --tau-scale 1.0 1.0 1.4 1.0 1.0 1.0
+```
+
+Not yet run: no hardware run with `--tau-scale` has happened, so
+start with the dry run above, check the printed torques and signs,
+then run it with `--execute` and compare the joint 3 mean error
+and the tip z offset with the 1.0 run before using MIT for picking.
+
 ## 31. Sorting into the good and bad box
 
 Two open boxes (100 x 100 mm, 70 mm high, open on top) stand on the

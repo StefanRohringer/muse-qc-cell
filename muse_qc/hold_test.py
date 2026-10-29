@@ -149,11 +149,23 @@ def main(argv=None, sdk_factory=None, **kwargs) -> int:
                         default="posvel",
                         help="arm control mode: POS_VEL loop or MIT"
                         " with gravity feed-forward")
+    parser.add_argument("--tau-scale", nargs=6, type=float, default=None,
+                        metavar=("S1", "S2", "S3", "S4", "S5", "S6"),
+                        help="per-joint gravity torque scale for mit-ff"
+                        " (six values, each 0.0 to 2.0)")
     parser.add_argument("--execute", action="store_true",
                         help="move the arm after confirmation")
     args = parser.parse_args(argv)
     if not HOLD_S[0] <= args.hold_s <= HOLD_S[1]:
         parser.error("--hold-s must be within 5.0 to 60.0 seconds")
+    if args.tau_scale is not None and args.hold_mode != "mit-ff":
+        parser.error("--tau-scale needs --hold-mode mit-ff")
+    tau_scale = (tuple(args.tau_scale) if args.tau_scale is not None
+                 else mit_hold.TAU_SCALE)
+    try:
+        mit_hold.validate_tau_scale(tau_scale)
+    except ValueError as exc:
+        parser.error(str(exc))
     out = kwargs.get("out", print)
     for line in describe(args.gains):
         out(line)
@@ -179,11 +191,12 @@ def main(argv=None, sdk_factory=None, **kwargs) -> int:
     if args.execute:
         if args.hold_mode == "mit-ff":
             kwargs["begin_fn"] = mit_hold.make_begin_fn(
-                gravity_fn=gravity_fn)
+                gravity_fn=gravity_fn, tau_scale=tau_scale)
             kwargs["stream_factory"] = mit_hold.make_stream_factory(
                 captured, gravity_fn=gravity_fn,
                 on_tracking_error=lambda joint: out(
                     f"tracking error on joint {joint}, holding"),
+                tau_scale=tau_scale,
             )
         else:
             kwargs["stream_factory"] = _stream_factory(captured)
@@ -192,11 +205,12 @@ def main(argv=None, sdk_factory=None, **kwargs) -> int:
         return code
     code = first_dry_run(sdk, **kwargs)
     if args.hold_mode == "mit-ff":
-        for line in mit_hold.describe_mit():
+        for line in mit_hold.describe_mit(tau_scale):
             out(line)
         if captured.get("hover_goal") is not None:
             for line in mit_hold.gravity_lines(
-                    captured["hover_goal"], gravity_fn=gravity_fn):
+                    captured["hover_goal"], gravity_fn=gravity_fn,
+                    tau_scale=tau_scale):
                 out(line)
     return code
 
