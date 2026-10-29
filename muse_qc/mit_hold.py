@@ -29,10 +29,11 @@ from muse_qc.waypoint_stream import WaypointStream
 MIT_KP = (120.0, 120.0, 120.0, 18.0, 18.0, 18.0)
 MIT_KD = (8.0, 8.0, 8.0, 2.0, 2.0, 2.0)
 # Gravity feed-forward scale per joint (--tau-scale on hold_test).
-# The gripper is heavier than the SDK model, so joints holding
-# against gravity may need more than 1.0 (joint 3 holds +1.10 deg
-# off at 1.0, see docs/DEVLOG.md 2026-10-30).
-TAU_SCALE = (1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
+# Tuned by the human runs of 2026-10-30 (see docs/DEVLOG.md):
+# the gripper is heavier than the SDK model, so joints 2 and 3
+# holding against gravity need more than 1.0. Joint 4 stays at
+# 1.0 because its model error depends on the pose.
+TAU_SCALE = (1.0, 1.05, 1.45, 1.0, 1.0, 1.0)
 TAU_SCALE_MIN = 0.0
 TAU_SCALE_MAX = 2.0
 

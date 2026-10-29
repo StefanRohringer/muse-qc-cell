@@ -1427,7 +1427,7 @@ Result in one paragraph: with MIT plus gravity feed-forward joint 4 did not swin
 
 `--tau-scale S1 S2 S3 S4 S5 S6` sets the per-joint gravity torque
 scale for `--hold-mode mit-ff` (six values, each 0.0 to 2.0,
-default all 1.0, so `tau = scale * g(q)` per joint). Anything else
+default 1.0 1.05 1.45 1.0 1.0 1.0, so `tau = scale * g(q)` per joint). Anything else
 is refused before anything is enabled, and `--tau-scale` with
 `--hold-mode posvel` is an argparse error (exit 2). The dry run
 prints the scale (`tau scale: 1.00 ...`) and the scaled torque per
@@ -1440,10 +1440,7 @@ joint 3 offset above:
 uv run python -m muse_qc.hold_test --table-mm 506.4 338.1 --hold-s 20 --gains vel2 --hold-mode mit-ff --tau-scale 1.0 1.0 1.4 1.0 1.0 1.0
 ```
 
-Not yet run: no hardware run with `--tau-scale` has happened, so
-start with the dry run above, check the printed torques and signs,
-then run it with `--execute` and compare the joint 3 mean error
-and the tip z offset with the 1.0 run before using MIT for picking.
+Recorded runs (2026-10-30, same point 506.4 338.1, `--gains vel2`, 20 s hold each; recorded output, never edited; see docs/DEVLOG.md for the full blocks): with `--tau-scale 1.0 1.0 1.4 1.0 1.0 1.0` the tip z offset was -2.0 mm (joint 3 mean err +0.23 deg); with `--tau-scale 1.0 1.05 1.45 0.25 1.0 1.0` the hold was close but joint 4 sagged on the way back and the tracking guard stopped the run after 5203 of 6229 cycles, so a joint 4 factor below 1.0 only fits the hover pose; with `--tau-scale 1.0 1.05 1.45 1.0 1.0 1.0` the tip z offset was +0.0 mm with no joint 4 swing and no guard stop. The last set is now the default `TAU_SCALE` in `muse_qc/mit_hold.py` (joint 4 stays at 1.0 because its model error depends on the pose), so the dry run prints the scaled lines by default.
 
 ## 31. Sorting into the good and bad box
 

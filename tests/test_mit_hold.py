@@ -132,7 +132,7 @@ def _sends(group, name):
 def test_mit_gains_match_dm_config():
     assert tuple(MIT_KP) == (120.0, 120.0, 120.0, 18.0, 18.0, 18.0)
     assert tuple(MIT_KD) == (8.0, 8.0, 8.0, 2.0, 2.0, 2.0)
-    assert tuple(TAU_SCALE) == (1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
+    assert tuple(TAU_SCALE) == (1.0, 1.05, 1.45, 1.0, 1.0, 1.0)
 
 
 def test_mit_execute_sends_only_mit_with_gains_and_tau(monkeypatch, tmp_path):
@@ -290,9 +290,11 @@ def test_mit_dry_run_prints_gains_and_gravity(monkeypatch):
     assert "hold mode: mit-ff" in text
     assert "mit kp: 120 120 120 18 18 18" in text
     assert "mit kd: 8 8 8 2 2 2" in text
-    assert "tau scale: 1.00 1.00 1.00 1.00 1.00 1.00" in text
-    for joint, value in enumerate([0.1, 0.2, 0.3, 0.4, 0.5, 0.6], start=1):
-        assert f"joint {joint} gravity torque: {value:+.3f} N*m" in text
+    assert "tau scale: 1.00 1.05 1.45 1.00 1.00 1.00" in text
+    for joint, (value, factor) in enumerate(
+            zip([0.1, 0.2, 0.3, 0.4, 0.5, 0.6], TAU_SCALE), start=1):
+        assert (f"joint {joint} gravity torque: {value:+.3f} N*m,"
+                f" scaled {value * factor:+.3f} N*m") in text
     assert "enable" not in arm.groups["arm"].calls
     assert _sends(arm.groups["arm"], "send_mit") == []
 
@@ -322,19 +324,36 @@ def test_gravity_torque_rejects_bad_input_without_sdk():
 
 
 def test_gravity_lines_format_with_fake_function():
-    lines = gravity_lines(GOAL_DEG, gravity_fn=lambda q: [0.5] * 6)
+    lines = gravity_lines(
+        GOAL_DEG, gravity_fn=lambda q: [0.5] * 6,
+        tau_scale=(1.0,) * 6)
     assert len(lines) == 6
     assert lines[0] == "joint 1 gravity torque: +0.500 N*m"
     assert lines[5] == "joint 6 gravity torque: +0.500 N*m"
 
 
-def test_default_scale_keeps_unscaled_lines():
-    lines = gravity_lines(GOAL_DEG, gravity_fn=lambda q: [0.5] * 6)
+def test_explicit_unit_scale_keeps_unscaled_lines():
+    lines = gravity_lines(
+        GOAL_DEG, gravity_fn=lambda q: [0.5] * 6,
+        tau_scale=(1.0,) * 6)
     assert all("scaled" not in line for line in lines)
-    assert mit_hold.describe_mit() == [
+    assert mit_hold.describe_mit((1.0,) * 6) == [
         "mit kp: 120 120 120 18 18 18",
         "mit kd: 8 8 8 2 2 2",
         "tau scale: 1.00 1.00 1.00 1.00 1.00 1.00",
+    ]
+
+
+def test_default_scale_prints_scaled_lines():
+    lines = gravity_lines(GOAL_DEG, gravity_fn=lambda q: [0.5] * 6)
+    assert len(lines) == 6
+    assert lines[0] == "joint 1 gravity torque: +0.500 N*m, scaled +0.500 N*m"
+    assert lines[1] == "joint 2 gravity torque: +0.500 N*m, scaled +0.525 N*m"
+    assert lines[2] == "joint 3 gravity torque: +0.500 N*m, scaled +0.725 N*m"
+    assert mit_hold.describe_mit() == [
+        "mit kp: 120 120 120 18 18 18",
+        "mit kd: 8 8 8 2 2 2",
+        "tau scale: 1.00 1.05 1.45 1.00 1.00 1.00",
     ]
 
 

@@ -894,3 +894,30 @@ joint 6: mean err -0.02 deg, p2p 0.15 deg, rms 0.03 deg
 ```
 Result in one paragraph: with MIT plus gravity feed-forward joint 4 did not swing (p2p 0.39 deg, standard deviation 0.023 deg from the CSV, no swing frequency found) while the position-velocity hold swung at 0.8 Hz with p2p 1.11 deg; joints 2 and 3 were also much calmer (p2p 0.26/0.17 vs 1.31/1.20 deg). The human watched both runs: MIT hold looked steady, posvel swung again. Cost: MIT has a steady offset because the gripper is heavier than the SDK model (no integral term): joint 3 +1.10 deg, the tip about 5 mm lower (z 95.1 vs 99.6 mm). Next step: per-joint torque scale to remove the offset before MIT is used for picking. CSV files: recordings/hold_mit-ff_20261030_001308.csv and recordings/hold_posvel_20261030_001520.csv (not in the repo).
 - Human work on the hold: the human asked for a fix of the joint 4 swing, chose to test the SDK gravity compensation, had the research answer and the code change reviewed before the commit (the review checked that the mode switch happens only before enable and that the gravity model is the DM URDF of the SDK config), ran the dry run first so the gravity torques were checked before anything moved, and ran both hardware runs with a hand on the power supply switch.
+- Human ran `hold_test --table-mm 506.4 338.1 --hold-s 20 --gains vel2 --hold-mode mit-ff --tau-scale 1.0 1.0 1.4 1.0 1.0 1.0` (2026-10-30 ~00:41, dry run then --execute, power supply on, hand on the switch). Dry run: joint 3 gravity torque -5.564 N*m, scaled -7.790 N*m. Run:
+```text
+hold commanded deg: -3.84 -102.77 -95.99 +83.23 -0.00 +0.01
+hold measured deg: -3.55 -102.96 -95.77 +82.67 +0.34 -0.32
+hold measured tip mm: x=+297.8 y=-19.8 z=+97.8
+hold tip z offset: -2.0 mm
+joint 2: mean err -0.19 deg, p2p 0.42 deg
+joint 3: mean err +0.23 deg, p2p 0.00 deg
+joint 4: mean err -0.56 deg, p2p 0.33 deg, swing n/a
+```
+- Human ran the same with `--tau-scale 1.0 1.05 1.45 0.25 1.0 1.0 --execute` (~00:44): the hold was close (joint 2 -0.02, joint 3 -0.10, joint 4 -0.08 deg mean err, joint 4 swing n/a), but on the way back to the rest pose joint 4 slowly sagged; the tracking guard stopped the run: "tracking error on joint 4, holding", REFUSED {"reason": "tracking-error", "value": "joint 4", "limit": "5.0 deg for 10 cycles"} after 5203 of 6229 cycles, then the motors were disabled as designed. Conclusion: the joint 4 model error depends on the pose (the gripper's centre of mass differs from the SDK model), so a single joint 4 factor below 1.0 only fits the hover pose.
+- Human ran the same with `--tau-scale 1.0 1.05 1.45 1.0 1.0 1.0 --execute` (~00:47):
+```text
+hold commanded deg: -3.84 -102.77 -95.99 +83.23 -0.00 +0.01
+hold measured deg: -3.55 -102.78 -96.09 +82.70 +0.34 -0.34
+hold measured tip mm: x=+299.4 y=-19.9 z=+99.8
+hold tip z offset: +0.0 mm
+motion finished, arm holds the settle pose
+joint 1: mean err +0.29 deg, p2p 0.11 deg, rms 0.29 deg
+joint 2: mean err -0.02 deg, p2p 0.42 deg, rms 0.02 deg
+joint 3: mean err -0.10 deg, p2p 0.24 deg, rms 0.10 deg
+joint 4: mean err -0.53 deg, p2p 0.33 deg, rms 0.54 deg, swing n/a
+joint 5: mean err +0.38 deg, p2p 0.44 deg, rms 0.40 deg, swing n/a
+joint 6: mean err -0.35 deg, p2p 0.04 deg, rms 0.35 deg
+```
+Result: tip z offset 0.0 mm at the hover pose, no joint 4 swing, whole path without a guard stop. These values become the default.
+- Human work on the torque scale: the human ran the dry run before every hardware run, kept a hand on the power supply switch, and had the per-joint factors computed from the measured offsets (AI-assisted) between the runs.
