@@ -1450,6 +1450,72 @@ walks back to rest. The same abort (with "inspect timeout") fires
 when no verdict arrives within 30 s. Only the human runs it,
 never CI and never an agent.
 
+## 33. Agent loop with Muse Spark (by hand only)
+
+`muse_qc/agent.py` runs the quality inspection cell on its own
+through Meta Muse Spark (model `muse-spark-1.3`, Responses API,
+tool calling): the model decides which tool to call next; our code
+only executes the tools and enforces safety. The model never sends
+coordinates and never moves the arm directly: positions always
+come from our own latest scan (the model only passes part ids),
+and every motion goes through the `pick_test --inspect --execute`
+path with its safety checks. The pick confirmation is passed
+through only after the human typed "yes" once for the whole run.
+
+Tools offered to the model:
+
+- `scan_table()` lists the SAM-confirmed, not skipped parts of the
+  latest table scan under fresh ids.
+- `inspect_and_sort(part_id)` picks the part with that id, counts
+  its levers and drops it into the good or bad box. Unknown or
+  stale ids are refused; after every sort the scan goes stale, so
+  the model must rescan before the next sort.
+- `write_report()` builds the HTML report from only this run's
+  records.
+- `finish(summary)` ends the run; the summary is printed and stored.
+
+Hard limits enforced by the code, not by the model: at most 40
+model calls, at most 10 sorts, at most 2 `inspect_and_sort` calls
+per part position (positions within 15 mm count as the same
+part), stop after 2 consecutive "error"/"inspect_failed"
+outcomes. Ctrl+C during a pick aborts the pick safely and stops
+the whole run ("agent: interrupted by human, stopping") instead of
+starting the next pick. Every step is printed (`agent: ...` model
+text, `agent -> ...` tool calls, one-line tool results, plus
+`agent: tokens in N out M` per model call when the API reports
+usage) and saved to `recordings/agent_<timestamp>.json` (model
+text, tool calls, tool results; no key, no reasoning blobs). An
+API error prints a short message without the key, stops the loop
+and still writes the transcript. The command exits 0 only when
+the agent called `finish`, else 1 (limit, failures, API error,
+interrupt); exit 2 means a missing key or a missing "yes" with
+nothing moved.
+
+Run the simulation first: the real Muse Spark API with fake tools
+(a fake table with 3 parts, two good and one bad, one missed grip
+on the first try of one part), so the tool calling can be checked
+without hardware:
+
+```bash
+uv run python -m muse_qc.agent
+```
+
+Then, with the hand on the power supply switch:
+
+```bash
+uv run python -m muse_qc.agent --execute
+```
+
+`--execute` asks once `Type yes to let the agent move the arm:`
+and only `yes` starts; anything else moves nothing. The Responses
+API function-calling format in `muse_qc/agent.py` is an assumption
+(see its module docstring); the --simulate run shows whether the
+real API answers in that shape. Every response item is converted
+to a plain dict and sent back for the next call, including
+reasoning items with their encrypted content (the transcript
+holds no reasoning blobs). Only the human runs it, never CI
+and never an agent.
+
 ## Safety notes
 
 Read-only review of the SDK file

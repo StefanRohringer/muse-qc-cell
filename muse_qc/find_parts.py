@@ -240,6 +240,68 @@ def save_empty():
     return 0
 
 
+def scan_table(frame, empty, phrase=DEFAULT_PHRASE, client=None,
+               recordings_dir="recordings"):
+    """Scan one frame for parts, return (results, annotated image path).
+
+    Runs the same steps as main: table mapping, empty-table diff,
+    skip zones, one SAM confirm per unskipped candidate, then the
+    annotated image save. Each result holds bbox, pixel, area_mm2,
+    table_mm, confirmed, confidence and skipped (the skip reason or
+    None). Raises RuntimeError with the user-facing message (the
+    same text main prints) instead of returning an exit code.
+    """
+    try:
+        markers = detect_table_markers(frame)
+        calibration = load_table_calibration()
+        homography = table_homography(markers, calibration)
+    except (RuntimeError, OSError, ValueError, KeyError) as exc:
+        raise RuntimeError(
+            f"table mapping: unavailable ({exc})") from exc
+    scale = scale_px_per_mm(markers)
+    to_table = lambda point: pixel_to_table_mm(  # noqa: E731
+        homography, point, calibration)
+    blobs = detect_changes(frame, empty, scale, to_table)
+    if len(blobs) > MAX_CANDIDATES:
+        raise RuntimeError(
+            "too many changes: light or arm moved?"
+            " take a new empty reference with --save-empty")
+    results = []
+    for blob in blobs:
+        blob_table = to_table(blob["center"])
+        reason = classify_skip(blob_table)
+        if reason is not None:
+            results.append({
+                "bbox": blob["bbox"], "pixel": blob["center"],
+                "area_mm2": blob["area_mm2"],
+                "table_mm": blob_table,
+                "confirmed": False, "confidence": None,
+                "skipped": reason,
+            })
+            continue
+        confirmed, sam_center, confidence = False, None, None
+        if client is not None:
+            try:
+                confirmed, sam_center, confidence = confirm_candidate(
+                    frame, blob, phrase, client)
+            except Exception as exc:  # noqa: BLE001 - mapped, no key
+                raise RuntimeError(_request_error(exc)) from exc
+        pixel = sam_center if confirmed else blob["center"]
+        results.append({
+            "bbox": blob["bbox"], "pixel": pixel,
+            "area_mm2": blob["area_mm2"],
+            "table_mm": to_table(pixel),
+            "confirmed": confirmed, "confidence": confidence,
+            "skipped": None,
+        })
+    results.sort(key=lambda item: item["table_mm"][0])
+    try:
+        path = save_annotated(annotate(frame, results), recordings_dir)
+    except (OSError, RuntimeError) as exc:
+        raise RuntimeError(f"request failed: {exc}") from exc
+    return results, path
+
+
 def main(argv=None):
     """Find table parts against the empty reference, confirm with SAM."""
     parser = argparse.ArgumentParser(
@@ -272,21 +334,6 @@ def main(argv=None):
     if empty.shape != frame.shape:
         print("size mismatch: take a new empty reference with --save-empty")
         return 2
-    try:
-        markers = detect_table_markers(frame)
-        calibration = load_table_calibration()
-        homography = table_homography(markers, calibration)
-    except (RuntimeError, OSError, ValueError, KeyError) as exc:
-        print(f"table mapping: unavailable ({exc})")
-        return 1
-    scale = scale_px_per_mm(markers)
-    to_table = lambda point: pixel_to_table_mm(  # noqa: E731
-        homography, point, calibration)
-    blobs = detect_changes(frame, empty, scale, to_table)
-    if len(blobs) > MAX_CANDIDATES:
-        print("too many changes: light or arm moved?"
-              " take a new empty reference with --save-empty")
-        return 1
     client = None
     if not args.no_sam:
         api_key = read_api_key()
@@ -298,36 +345,11 @@ def main(argv=None):
         except Exception as exc:  # noqa: BLE001 - mapped, key never printed
             print(_request_error(exc))
             return 1
-    results = []
-    for blob in blobs:
-        blob_table = to_table(blob["center"])
-        reason = classify_skip(blob_table)
-        if reason is not None:
-            results.append({
-                "bbox": blob["bbox"], "pixel": blob["center"],
-                "area_mm2": blob["area_mm2"],
-                "table_mm": blob_table,
-                "confirmed": False, "confidence": None,
-                "skipped": reason,
-            })
-            continue
-        confirmed, sam_center, confidence = False, None, None
-        if client is not None:
-            try:
-                confirmed, sam_center, confidence = confirm_candidate(
-                    frame, blob, args.phrase, client)
-            except Exception as exc:  # noqa: BLE001 - mapped, no key
-                print(_request_error(exc))
-                return 1
-        pixel = sam_center if confirmed else blob["center"]
-        results.append({
-            "bbox": blob["bbox"], "pixel": pixel,
-            "area_mm2": blob["area_mm2"],
-            "table_mm": to_table(pixel),
-            "confirmed": confirmed, "confidence": confidence,
-            "skipped": None,
-        })
-    results.sort(key=lambda item: item["table_mm"][0])
+    try:
+        results, path = scan_table(frame, empty, args.phrase, client)
+    except RuntimeError as exc:
+        print(exc)
+        return 1
     for index, item in enumerate(results):
         pixel_x, pixel_y = item["pixel"]
         table_x, table_y = item["table_mm"]
@@ -356,11 +378,6 @@ def main(argv=None):
         done = sum(1 for item in results if item["confirmed"])
         print(f"parts: {done} confirmed of {len(results)}"
               f" candidates{skipped_text}")
-    try:
-        path = save_annotated(annotate(frame, results))
-    except (OSError, RuntimeError) as exc:
-        print(f"request failed: {exc}")
-        return 1
     print(path)
     return 0
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import html
+import json
 import os
 import sys
 from datetime import datetime, timezone
@@ -130,6 +131,48 @@ def write_report(
     page = build_html(load_records(target_dir), generated, out_path.parent)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(page, encoding="utf-8")
+    return out_path
+
+
+def write_report_from_records(
+    record_paths: list[str | Path],
+    out: str | Path | None = None,
+    recordings_dir: str | Path = "recordings",
+) -> Path:
+    """Write the report HTML for exactly the given record files.
+
+    Only the listed records appear in the report, so one agent run
+    reports only its own inspections. Each path must hold one JSON
+    record dict as written by record.write_record. The default
+    output is recordings/report_<timestamp>.html (the CLI default
+    recordings/report.html is unchanged). Raises RuntimeError when
+    a record cannot be read or the page cannot be written.
+    """
+    records: list[dict] = []
+    for candidate in record_paths:
+        path = Path(candidate)
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise RuntimeError(
+                f"cannot read record {path}: {exc}") from exc
+        if not isinstance(record, dict):
+            raise RuntimeError(f"cannot read record {path}: not a dict")
+        records.append(record)
+    target_dir = Path(recordings_dir)
+    if out is None:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        out_path = target_dir / f"report_{stamp}.html"
+    else:
+        out_path = Path(out)
+    generated = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    page = build_html(records, generated, out_path.parent)
+    try:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(page, encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeError(
+            f"failed to write report to {out_path}: {exc}") from exc
     return out_path
 
 
