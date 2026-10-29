@@ -8,6 +8,9 @@ rest and settle, disable in finally), reads all six joints every
 cycle while holding, and reports per-joint statistics plus the
 dominant swing frequency of joints 4 and 5. The human runs it by
 hand, twice: once with --gains default, once with --gains soft.
+With --hold-mode mit-ff the whole run uses MIT with gravity
+feed-forward (muse_qc/mit_hold.py) instead of the POS_VEL loop;
+posvel is the default and behaves as before.
 """
 
 from __future__ import annotations
@@ -19,7 +22,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from muse_qc import hover_move
+from muse_qc import hover_move, mit_hold
 from muse_qc.arm_gains import GAIN_PROFILES, describe, make_arm
 from muse_qc.first_move import dry_run as first_dry_run
 from muse_qc.first_move import execute as first_execute
@@ -66,12 +69,13 @@ def hold_lines(samples, goal) -> list[str]:
     return lines
 
 
-def save_hold_csv(samples, recordings_dir="recordings") -> Path:
+def save_hold_csv(samples, hold_mode="posvel",
+                  recordings_dir="recordings") -> Path:
     """Save the hold samples (100 Hz joint degrees) as CSV."""
     target = Path(recordings_dir)
     target.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    path = target / f"hold_{stamp}.csv"
+    path = target / f"hold_{hold_mode}_{stamp}.csv"
     step = 1.0 / LOOP_RATE_HZ
     with open(path, "w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
@@ -116,7 +120,7 @@ def _stream_factory(captured: dict):
     return build
 
 
-def report_hold(captured: dict, out=print) -> None:
+def report_hold(captured: dict, out=print, hold_mode="posvel") -> None:
     """Print hold statistics and save the CSV (or "hold: no samples")."""
     stream = captured.get("stream")
     samples = stream.hold_samples if stream is not None else []
@@ -126,7 +130,7 @@ def report_hold(captured: dict, out=print) -> None:
     for line in hold_lines(samples, stream.hold_goal):
         out(line)
     try:
-        out(save_hold_csv(samples))
+        out(save_hold_csv(samples, hold_mode))
     except OSError as exc:
         out(f"request failed: {exc}")
 
@@ -141,6 +145,10 @@ def main(argv=None, sdk_factory=None, **kwargs) -> int:
     parser.add_argument("--gains", choices=tuple(GAIN_PROFILES),
                         default="default",
                         help="motor gain profile for joints 4/5")
+    parser.add_argument("--hold-mode", choices=("posvel", "mit-ff"),
+                        default="posvel",
+                        help="arm control mode: POS_VEL loop or MIT"
+                        " with gravity feed-forward")
     parser.add_argument("--execute", action="store_true",
                         help="move the arm after confirmation")
     args = parser.parse_args(argv)
@@ -149,6 +157,7 @@ def main(argv=None, sdk_factory=None, **kwargs) -> int:
     out = kwargs.get("out", print)
     for line in describe(args.gains):
         out(line)
+    out(f"hold mode: {args.hold_mode}")
     sdk = make_arm(args.gains, factory=sdk_factory)
     hold_cycles = round(args.hold_s * LOOP_RATE_HZ)
     captured: dict = {}
@@ -158,16 +167,38 @@ def main(argv=None, sdk_factory=None, **kwargs) -> int:
             (args.table_mm[0], args.table_mm[1]), HOVER_MM,
             kwargs.get("joint_limits"), out, hold_cycles)(start_deg)
         captured["segments"] = [segment for segment, _ in plan]
+        holds = [point for segment, point in plan
+                 if segment == hover_move.SEG_HOLD]
+        if holds:
+            captured["hover_goal"] = holds[0]
         return plan
 
+    gravity_fn = kwargs.pop("gravity_fn", None)
     kwargs = dict(kwargs)
     kwargs["plan_fn"] = plan_fn
     if args.execute:
-        kwargs["stream_factory"] = _stream_factory(captured)
+        if args.hold_mode == "mit-ff":
+            kwargs["begin_fn"] = mit_hold.make_begin_fn(
+                gravity_fn=gravity_fn)
+            kwargs["stream_factory"] = mit_hold.make_stream_factory(
+                captured, gravity_fn=gravity_fn,
+                on_tracking_error=lambda joint: out(
+                    f"tracking error on joint {joint}, holding"),
+            )
+        else:
+            kwargs["stream_factory"] = _stream_factory(captured)
         code = first_execute(sdk, **kwargs)
-        report_hold(captured, out)
+        report_hold(captured, out, hold_mode=args.hold_mode)
         return code
-    return first_dry_run(sdk, **kwargs)
+    code = first_dry_run(sdk, **kwargs)
+    if args.hold_mode == "mit-ff":
+        for line in mit_hold.describe_mit():
+            out(line)
+        if captured.get("hover_goal") is not None:
+            for line in mit_hold.gravity_lines(
+                    captured["hover_goal"], gravity_fn=gravity_fn):
+                out(line)
+    return code
 
 
 if __name__ == "__main__":

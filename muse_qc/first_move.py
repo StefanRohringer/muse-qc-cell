@@ -94,8 +94,17 @@ def execute(
     out: object = print,
     plan_fn: object = None,
     stream_factory: object = None,
+    begin_fn: object = None,
 ) -> int:
-    """Validate the plan, ask for confirmation, then move at 10 % speed."""
+    """Validate the plan, ask for confirmation, then move at 10 % speed.
+
+    Without begin_fn the arm group runs mode_pos_vel with the first
+    command at the measured start pose, as before. A begin_fn takes
+    (group, slow_vlim) and returns the first command in radians; it
+    runs after confirmation where mode_pos_vel ran, so callers can
+    switch the arm group to another mode (the gripper group is never
+    touched here either way).
+    """
     sdk.connect()
     try:
         group = _group(sdk)
@@ -131,9 +140,12 @@ def execute(
             if answer != CONFIRM_WORD:
                 out("confirmation missing, nothing was enabled")
                 return 2
-            group.mode_pos_vel(vlim=slow)
-            first_rad = [math.radians(v) for v in read_current_deg(group)]
-            group.send_pos_vel(first_rad, vlim=slow)
+            if begin_fn is None:
+                group.mode_pos_vel(vlim=slow)
+                first_rad = [math.radians(v) for v in read_current_deg(group)]
+                group.send_pos_vel(first_rad, vlim=slow)
+            else:
+                first_rad = begin_fn(group, slow)
             group.enable()
             waypoints = [point for _, point in plan]
             snapshot_index: int | None = None

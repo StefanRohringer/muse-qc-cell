@@ -1360,6 +1360,41 @@ and a normal run restores the default gains by itself: the SDK
 writes vel_kp/vel_ki/pos_kp/pos_ki into the Damiao registers 25
 to 28 on every `mode_pos_vel` call from the loaded yaml values.
 
+`--hold-mode mit-ff` is the second A/B candidate after vel2: the
+whole run (start, hover, hold, return, settle) uses the SDK MIT
+interface with gravity feed-forward instead of the POS_VEL loop
+(`muse_qc/mit_hold.py`). Every arm command is `send_mit(q, vel=0,
+kp, kd, tau)` with the DM config gains (joints 1-3 kp 120 kd 8,
+joints 4-6 kp 18 kd 2, from `config/rebotarm_dm.yaml` in the SDK
+checkout) and `tau = 1.0 * g(q)` from the SDK
+`compute_generalized_gravity` on the cached robot model. The
+mode switch happens once before enable, never mid-run; the
+first command is the measured start pose; the gripper group is
+never touched. A tracking guard aborts like Ctrl+C (hold, then
+settle and disable in `finally`) when any arm joint stays more
+than 5 deg from its commanded position for 10 cycles in a row,
+printing `tracking error on joint N, holding`. Header and CSV
+name carry the mode (`hold mode: mit-ff`, `hold_mit-ff_*.csv`),
+all other printouts are unchanged so both modes compare
+directly. The dry run (default, no `--execute`) prints the MIT
+gains, the torque scale and the gravity torque at the hover pose
+per joint in N*m, so the human checks values and signs before
+moving. Check first without moving:
+
+```bash
+uv run python -m muse_qc.hold_test --table-mm 506.4 338.1 --hold-s 20 --gains vel2 --hold-mode mit-ff
+```
+
+The comparison run is one human hardware run per mode, same
+point, same gains, 20 s hold each:
+
+```bash
+uv run python -m muse_qc.hold_test --table-mm 506.4 338.1 --hold-s 20 --gains vel2 --hold-mode mit-ff --execute
+uv run python -m muse_qc.hold_test --table-mm 506.4 338.1 --hold-s 20 --gains vel2 --hold-mode posvel --execute
+```
+
+Both runs are not yet run (no output recorded here).
+
 ## 31. Sorting into the good and bad box
 
 Two open boxes (100 x 100 mm, 70 mm high, open on top) stand on the
