@@ -736,3 +736,53 @@ def test_vlims_run_at_ten_percent():
     assert grip_modes and grip_modes[0] == pytest.approx([3.0 * 0.1])
     assert sdk.loop_rate == LOOP_RATE_HZ == 100.0
 
+
+
+def test_gains_soft_passes_hw_yaml_to_factory():
+    from pathlib import Path
+
+    sdk = FakeSdk()
+    seen = []
+
+    def factory(**kwargs):
+        seen.append(kwargs)
+        return sdk
+
+    lines = []
+    code = pick_test.main(
+        ["--table-mm", "495.9", "322.7", "--gains", "soft"],
+        sdk_factory=factory,
+        check_fn=_always_ok, tip_fn=_fake_tip, solve_fn=_fake_solve,
+        joint_limits=TEST_LIMITS, find_port=lambda: "/dev/ttyFAKE",
+        sensor_factory=lambda: FakeSensor(lambda n: "-"),
+        out=lines.append,
+    )
+    assert code == 0
+    (kwargs,) = seen
+    runtime = Path(kwargs["hw_yaml"])
+    assert runtime.is_file()
+    text = "\n".join(lines)
+    assert "joint 4: pos_kp" in text
+    assert "joint 5: pos_kp" in text
+
+
+def test_gains_default_calls_factory_without_args():
+    sdk = FakeSdk()
+    seen = []
+
+    def factory(**kwargs):
+        seen.append(kwargs)
+        return sdk
+
+    lines = []
+    code = pick_test.main(
+        ["--table-mm", "495.9", "322.7"],
+        sdk_factory=factory,
+        check_fn=_always_ok, tip_fn=_fake_tip, solve_fn=_fake_solve,
+        joint_limits=TEST_LIMITS, find_port=lambda: "/dev/ttyFAKE",
+        sensor_factory=lambda: FakeSensor(lambda n: "-"),
+        out=lines.append,
+    )
+    assert code == 0
+    assert seen == [{}]
+    assert "joint 4:" not in "\n".join(lines)

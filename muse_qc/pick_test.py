@@ -11,6 +11,7 @@ import math
 import sys
 from muse_qc import safety
 from muse_qc.arm import Arm
+from muse_qc.arm_gains import describe, make_arm
 from muse_qc.first_move import CONFIRM_WORD
 from muse_qc.first_move_plan import LOOP_RATE_HZ, VLIM_FRACTION
 from muse_qc.first_move_plan import clamp_to_limits, read_sdk_vlims, real_tip_m, scale_vlim
@@ -201,11 +202,16 @@ def main(argv=None, sdk_factory=None, **kwargs):
                         help="only lower to --grip-z-mm and hold for a ruler check")
     parser.add_argument("--hold-s", type=_hold_s_type, default=HOLD_S[2],
                         help="hold time in s, 0.5 to 30 (default 3)")
+    parser.add_argument("--gains", choices=("default", "soft"), default="default",
+                        help="motor gain profile (default or soft joints 4/5)")
     parser.add_argument("--execute", action="store_true", help="fly the pick after confirmation")
     parser.add_argument("--no-xy-correction", action="store_true",
                         help="fly the uncorrected target (for A/B tests)")
     args = parser.parse_args(argv)
-    sdk = sdk_factory() if sdk_factory is not None else _create_sdk()
+    out = kwargs.get("out", print)
+    for line in describe(args.gains):
+        out(line)
+    sdk = make_arm(args.gains, factory=sdk_factory)
     run = execute if args.execute else dry_run
     return run(sdk, (args.table_mm[0], args.table_mm[1]), args.grip_z_mm,
                args.open_mm, args.no_grip, args.hold_s,

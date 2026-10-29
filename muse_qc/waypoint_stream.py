@@ -38,6 +38,9 @@ class WaypointStream:
         self.snapshot_index = snapshot_index
         self.snapshot_deg: list[float] | None = None
 
+    def on_sample(self, current_deg: list[float]) -> None:
+        """Hook with every cycle's joint reading; no-op by default."""
+
     def _send(self, joint_rad: list[float]) -> None:
         try:
             self.group.send_pos_vel([float(v) for v in joint_rad],
@@ -87,6 +90,10 @@ class WaypointStream:
             return
         age_ms = (time.monotonic() - read_start) * 1000.0
         current_deg = [math.degrees(v) for v in current_rad]
+        try:
+            self.on_sample(list(current_deg))
+        except Exception:
+            pass
         if (self.snapshot_deg is None and self.snapshot_index is not None
                 and self.index == self.snapshot_index):
             self.snapshot_deg = list(current_deg)

@@ -93,6 +93,7 @@ def execute(
     joint_limits: object = None,
     out: object = print,
     plan_fn: object = None,
+    stream_factory: object = None,
 ) -> int:
     """Validate the plan, ask for confirmation, then move at 10 % speed."""
     sdk.connect()
@@ -139,9 +140,10 @@ def execute(
             for pos, (segment, _point) in enumerate(plan):
                 if segment == "hold":
                     snapshot_index = pos
-            stream = WaypointStream(group, waypoints, target_tips, slow,
-                                    first_rad, check_fn, tip_fn,
-                                    snapshot_index=snapshot_index)
+            make_stream = stream_factory or WaypointStream
+            stream = make_stream(group, waypoints, target_tips, slow,
+                                 first_rad, check_fn, tip_fn,
+                                 snapshot_index=snapshot_index)
             sdk.start_control_loop(stream, rate=LOOP_RATE_HZ)
             timeout_s = len(waypoints) / LOOP_RATE_HZ + 120.0
             try:

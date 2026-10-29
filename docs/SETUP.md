@@ -1225,6 +1225,54 @@ camera changes (position, settings, white balance): the diff sees
 any illumination shift as new blobs. The reference image stays
 local: `recordings/` is git-ignored and never committed.
 
+## 30. Hold test and joint 4/5 gains
+
+While the arm holds a pose (hover, grip, hold), joints 4 and 5
+visibly swing back and forth a little (human observation 2026-10-28
+and 2026-10-29, also during the x/y measurements). The arm still
+reaches its commanded joints within about 0.2 deg on average, so
+this looks like a limit cycle of the motor position loop (integral
+term plus friction/backlash on the small 4310 motors), not a
+planning error. `muse_qc/hold_test.py` measures it: it flies the
+`hover_move` plan (100 mm over the corrected target, same safety
+checks per cycle, same 5 deg/s ramp, return to rest and settle,
+disable in finally), reads all six joints every cycle while
+holding, prints per-joint mean error, peak-to-peak and RMS plus
+the dominant swing frequency of joints 4 and 5 (zero crossings of
+the error around its mean, `n/a` below 4 crossings), and saves the
+samples as `recordings/hold_<YYYYmmdd_HHMMSS>.csv`. Only the human
+runs it, never CI and never an agent. From the project root:
+
+```bash
+uv run python -m muse_qc.hold_test --table-mm X Y --hold-s 20
+uv run python -m muse_qc.hold_test --table-mm X Y --hold-s 20 --gains soft --execute
+```
+
+`--hold-s` takes 5 to 60 s (default 20); anything else is an
+argparse error (exit 2) before anything connects. The dry run
+(default) connects, reads, checks every waypoint and moves
+nothing. With `--execute` the human confirms with `yes`, then the
+arm holds the hover pose for the given time.
+
+`--gains soft` is the A/B candidate: `muse_qc/arm_gains.py` keeps
+the position integral off (pos_ki 0.0) and lowers pos_kp by 30 %
+for joints 4 and 5 only (70 to 49, 60 to 42; velocity loop
+unchanged). The profile is printed joint by joint before the
+`yes` prompt. A/B order: same point, first `--gains default`,
+then `--gains soft`, and compare peak-to-peak and swing of joints
+4 and 5; watch the mean error for sagging (without the integral
+term the joint may rest slightly off target under load).
+
+The soft gains live only in a runtime copy:
+`write_runtime_yaml` copies the SDK hardware yaml into a
+temporary directory (never into the repo, never into the SDK
+package) and `make_arm` passes it as `RebotArm(hw_yaml=...)`;
+`--gains` exists on `muse_qc/pick_test.py` too (default
+`default`, same describe lines). The SDK file stays untouched,
+and a normal run restores the default gains by itself: the SDK
+writes vel_kp/vel_ki/pos_kp/pos_ki into the Damiao registers 25
+to 28 on every `mode_pos_vel` call from the loaded yaml values.
+
 ## Safety notes
 
 Read-only review of the SDK file
