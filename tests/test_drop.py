@@ -213,7 +213,7 @@ def _run_drop(sdk, script, open_mm=28.0, drop="good"):
     code = pick_test.execute(
         sdk, TABLE, 8.0, open_mm, False, 0.5, input_fn=lambda prompt: "yes",
         tip_fn=_fake_tip, solve_fn=_fake_solve, joint_limits=TEST_LIMITS,
-        arm_vlims=VLIMS, find_port=lambda: "/dev/ttyFAKE",
+        arm_vlims=VLIMS, find_port=lambda: "/dev/ttyFAKE", arm_mode="posvel",
         sensor_factory=lambda: FakeSensor(script),
         solve_drop_fn=_fake_drop_solve, drop=drop, out=lines.append)
     return code, "\n".join(lines)
@@ -358,7 +358,8 @@ def test_dry_run_drop_prints_pose_and_checks_all():
     sdk = FakeSdk()
     lines = []
     code = pick_test.main(
-        ["--table-mm", "495.9", "322.7", "--drop", "good"],
+        ["--table-mm", "495.9", "322.7", "--drop", "good",
+         "--arm-mode", "posvel"],
         sdk_factory=lambda **kwargs: sdk,
         check_fn=_always_ok, tip_fn=_fake_tip, solve_fn=_fake_solve,
         joint_limits=TEST_LIMITS, find_port=lambda: "/dev/ttyFAKE",
@@ -384,7 +385,8 @@ def test_dry_run_drop_real_safety_passes():
     sdk = FakeSdk()
     lines = []
     code = pick_test.main(
-        ["--table-mm", "495.9", "322.7", "--drop", "bad"],
+        ["--table-mm", "495.9", "322.7", "--drop", "bad",
+         "--arm-mode", "posvel"],
         sdk_factory=lambda **kwargs: sdk,
         tip_fn=_fake_tip, solve_fn=_fake_solve,
         joint_limits=TEST_LIMITS, find_port=lambda: "/dev/ttyFAKE",
@@ -405,7 +407,8 @@ def test_drop_waypoints_use_plain_safety_chain():
     sdk = FakeSdk()
     lines = []
     code = pick_test.main(
-        ["--table-mm", "495.9", "322.7", "--drop", "good"],
+        ["--table-mm", "495.9", "322.7", "--drop", "good",
+         "--arm-mode", "posvel"],
         sdk_factory=lambda **kwargs: sdk,
         check_fn=spy, tip_fn=_fake_tip, solve_fn=_fake_solve,
         joint_limits=TEST_LIMITS, find_port=lambda: "/dev/ttyFAKE",
@@ -413,7 +416,7 @@ def test_drop_waypoints_use_plain_safety_chain():
         solve_drop_fn=_fake_drop_solve, out=lines.append,
     )
     assert code == 0
-    built = _built_drop(5.0)  # main() defaults to --grip-z-mm 5
+    built = _built_drop(8.0)  # main() defaults to --grip-z-mm 8
     assert len(seen) == len(built["plan"])
     for seg in ("to-box", "release", "return"):
         low, high = built["ranges"][seg]
@@ -435,7 +438,7 @@ def test_drop_solve_failure_plans_nothing():
     code = pick_test.execute(
         sdk, TABLE, 8.0, 28.0, False, 0.5, input_fn=lambda prompt: "yes",
         tip_fn=_fake_tip, solve_fn=_fake_solve, joint_limits=TEST_LIMITS,
-        arm_vlims=VLIMS, find_port=lambda: "/dev/ttyFAKE",
+        arm_vlims=VLIMS, find_port=lambda: "/dev/ttyFAKE", arm_mode="posvel",
         sensor_factory=lambda: FakeSensor(lambda n: "-"),
         solve_drop_fn=failing, drop="good", out=lines.append)
     assert code == 1

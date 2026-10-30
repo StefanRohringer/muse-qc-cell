@@ -259,6 +259,7 @@ def _run(sdk, script, **kwargs):
 
     kwargs.setdefault("sensor_factory", factory)
     kwargs.setdefault("hold_s", 0.5)
+    kwargs.setdefault("arm_mode", "posvel")
     lines = []
     kwargs.setdefault("out", lines.append)
     result = pick_test.execute(sdk, TABLE, 8.0, 40.0, False, **kwargs)
@@ -442,7 +443,8 @@ def test_cli_no_xy_correction_dry_run():
     sdk = FakeSdk()
     lines = []
     code = pick_test.main(
-        ["--table-mm", "495.9", "322.7", "--no-xy-correction"],
+        ["--table-mm", "495.9", "322.7", "--no-xy-correction",
+         "--arm-mode", "posvel"],
         sdk_factory=lambda **kwargs: sdk,
         check_fn=_always_ok, tip_fn=_fake_tip, solve_fn=_fake_solve,
         joint_limits=TEST_LIMITS, find_port=lambda: "/dev/ttyFAKE",
@@ -482,7 +484,7 @@ def test_dry_run_never_enables_or_sends():
     sdk = FakeSdk()
     lines = []
     code = pick_test.main(
-        ["--table-mm", "495.9", "322.7"],
+        ["--table-mm", "495.9", "322.7", "--arm-mode", "posvel"],
         sdk_factory=lambda **kwargs: sdk,
         check_fn=_always_ok, tip_fn=_fake_tip, solve_fn=_fake_solve,
         joint_limits=TEST_LIMITS, find_port=lambda: "/dev/ttyFAKE",
@@ -492,7 +494,7 @@ def test_dry_run_never_enables_or_sends():
     assert code == 0
     text = "\n".join(lines)
     assert "segments at 100 Hz:" in text
-    assert "hover tip z: 100.0 mm" in text and "grip tip z: 5.0 mm" in text
+    assert "hover tip z: 100.0 mm" in text and "grip tip z: 8.0 mm" in text
     assert "corrected base target:" in text
     assert "xy correction: on" in text
     assert "dry run: moves nothing, motors never enabled" in text
@@ -509,7 +511,7 @@ def test_dry_run_real_safety_chained_passes():
     sdk = FakeSdk()
     lines = []
     code = pick_test.main(
-        ["--table-mm", "495.9", "322.7"],
+        ["--table-mm", "495.9", "322.7", "--arm-mode", "posvel"],
         sdk_factory=lambda **kwargs: sdk,
         tip_fn=_fake_tip, solve_fn=_fake_solve, joint_limits=TEST_LIMITS,
         find_port=lambda: "/dev/ttyFAKE",
@@ -523,7 +525,8 @@ def test_execute_without_yes_enables_nothing():
     sdk = FakeSdk()
     lines = []
     code = pick_test.main(
-        ["--table-mm", "495.9", "322.7", "--execute"],
+        ["--table-mm", "495.9", "322.7", "--execute",
+         "--arm-mode", "posvel"],
         sdk_factory=lambda **kwargs: sdk,
         input_fn=lambda prompt: "no",
         tip_fn=_fake_tip, solve_fn=_fake_solve, joint_limits=TEST_LIMITS,
@@ -550,7 +553,7 @@ def test_no_grip_holds_at_bottom_and_returns():
     code = pick_test.execute(
         sdk, TABLE, 8.0, 40.0, True, 0.5, input_fn=lambda prompt: "yes",
         tip_fn=_fake_tip, solve_fn=_fake_solve, joint_limits=TEST_LIMITS,
-        arm_vlims=VLIMS, find_port=lambda: "/dev/ttyFAKE",
+        arm_vlims=VLIMS, find_port=lambda: "/dev/ttyFAKE", arm_mode="posvel",
         sensor_factory=lambda: FakeSensor(lambda n: "-"), out=lines.append)
     text = "\n".join(lines)
     assert code == 0
@@ -718,7 +721,8 @@ def test_failing_loop_disables():
         sdk, TABLE, 8.0, 40.0, False, 0.5, input_fn=lambda prompt: "yes",
         check_fn=_always_ok, tip_fn=_fake_tip, solve_fn=_fake_solve,
         joint_limits=TEST_LIMITS, arm_vlims=VLIMS, find_port=lambda: "/dev/ttyFAKE",
-        sensor_factory=lambda: FakeSensor(lambda n: "-"), out=lines.append)
+        sensor_factory=lambda: FakeSensor(lambda n: "-"), out=lines.append,
+        arm_mode="posvel")
     assert code == 1
     assert "motion failed: bus down" in "\n".join(lines)
     assert "disable_all" in sdk.calls and "disconnect" in sdk.calls
@@ -760,7 +764,8 @@ def test_gains_soft_passes_hw_yaml_to_factory():
 
     lines = []
     code = pick_test.main(
-        ["--table-mm", "495.9", "322.7", "--gains", "soft"],
+        ["--table-mm", "495.9", "322.7", "--gains", "soft",
+         "--arm-mode", "posvel"],
         sdk_factory=factory,
         check_fn=_always_ok, tip_fn=_fake_tip, solve_fn=_fake_solve,
         joint_limits=TEST_LIMITS, find_port=lambda: "/dev/ttyFAKE",
@@ -788,7 +793,7 @@ def test_gains_default_is_vel2():
 
     lines = []
     code = pick_test.main(
-        ["--table-mm", "495.9", "322.7"],
+        ["--table-mm", "495.9", "322.7", "--arm-mode", "posvel"],
         sdk_factory=factory,
         check_fn=_always_ok, tip_fn=_fake_tip, solve_fn=_fake_solve,
         joint_limits=TEST_LIMITS, find_port=lambda: "/dev/ttyFAKE",
@@ -814,7 +819,8 @@ def test_gains_explicit_default_calls_factory_without_args():
 
     lines = []
     code = pick_test.main(
-        ["--table-mm", "495.9", "322.7", "--gains", "default"],
+        ["--table-mm", "495.9", "322.7", "--gains", "default",
+         "--arm-mode", "posvel"],
         sdk_factory=factory,
         check_fn=_always_ok, tip_fn=_fake_tip, solve_fn=_fake_solve,
         joint_limits=TEST_LIMITS, find_port=lambda: "/dev/ttyFAKE",
@@ -944,7 +950,8 @@ def test_speed_deg_s_scales_free_ramps():
     sdk = FakeSdk()
     lines = []
     code = pick_test.main(
-        ["--table-mm", "495.9", "322.7", "--speed-deg-s", "2"],
+        ["--table-mm", "495.9", "322.7", "--speed-deg-s", "2",
+         "--arm-mode", "posvel"],
         sdk_factory=lambda **kwargs: sdk,
         check_fn=_always_ok, tip_fn=_fake_tip, solve_fn=_fake_solve,
         joint_limits=TEST_LIMITS, find_port=lambda: "/dev/ttyFAKE",

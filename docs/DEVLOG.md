@@ -944,3 +944,38 @@ The record gave part_offset_px 4.6 (part in the gripper at the expected image po
 - Human ran the same without --arm-mode (posvel, ~08:51): "holding at tip z 4.7 mm", human measured 2 mm; end readings arm [-3.14 +0.14 -1.63 +2.02 +1.41 -1.93].
 - Human observation: in mit-ff joint 4 stands visibly too low at rest. Conclusion: MIT leaves a pose-dependent steady-state error (model mismatch of gripper and camera), so a slow position trim was added.
 - Human found after a PC restart that the arm port moved to /dev/ttyACM1 while the SDK channel stayed /dev/ttyACM0 (all joints read 0.0); `muse_qc.preflight` showed "sdk-port: FAIL"; plugging the arm in before the gripper Pico fixed it.
+- Human ran (2026-10-30 ~09:07, power supply on, hand on the switch, posvel) `uv run python -m muse_qc.pick_test --table-mm 511.2 348.4 --inspect --execute` on the bad part (2 levers) after `find_parts` found it at table_mm=(511.2, 348.4) sam=confirmed 0.71:
+```text
+contact: gripper commanded deg -43.42 measured deg -46.76 contacts L2 R2
+contacts L1 L2 R1 R2 (lifting)
+part lifted, holding
+inspect: levers 2 verdict bad
+dropped into the bad box
+end readings: arm [-3.16 +0.14 -1.72 +2.66 +1.48 -1.93] gripper -126.30 deg
+```
+First real bad-part sort with the in-gripper inspection.
+- Human ran (2026-10-30 ~09:15, power supply on, hand on the switch, part removed) `uv run python -m muse_qc.pick_test --table-mm 503.5 344.3 --no-grip --hold-s 15 --arm-mode mit-ff --execute` with the position trim (commit 2844f5d):
+```text
+holding at tip z 4.7 mm, measure the tip height now
+mit trim deg: +0.30 +0.49 +2.24 +0.04 +0.34 -0.06
+end readings: arm [-3.09 +0.19 -1.93 +2.83 +1.48 -1.80] gripper -87.46 deg
+```
+Human measured 1 mm tip to table (before the trim: 8 mm in mit-ff, 2 mm in posvel). Rest readings before the run: joint 4 +1.89 deg; after: +2.83 (before the trim the end reading was +5.17). Decision: mit-ff becomes the default arm mode.
+- Human ran (2026-10-30 ~09:18, same conditions) the same command with --grip-z-mm 8:
+```text
+holding at tip z 7.7 mm, measure the tip height now
+mit trim deg: +0.02 +0.45 +2.39 +0.34 +0.37 -0.04
+end readings: arm [-3.27 +0.27 -2.42 +4.08 +1.48 -1.56] gripper -87.46 deg
+```
+Human checked the tip height by eye and judged it right ("perfect", no ruler value). Decision: default grip z 8 mm for 3 mm more margin to the table.
+- Human ran (2026-10-30 ~09:30, power supply on, hand on the switch) `uv run python -m muse_qc.pick_test --table-mm 504.2 349.5 --inspect --execute` with the new defaults (mit-ff, grip z 8 mm, uncommitted working tree) after `find_parts` found the good part at table_mm=(504.2, 349.5) sam=confirmed 0.81:
+```text
+contact: gripper commanded deg -43.57 measured deg -46.94 contacts L2 R2
+contacts L1 L2 R1 R2 (lifting)
+part lifted, holding
+inspect: levers 3 verdict good
+dropped into the good box
+mit trim deg: -0.08 +0.31 +2.62 +0.30 +0.09 -0.04
+end readings: arm [-2.90 +0.01 -2.59 +4.49 +1.45 -1.54] gripper -126.28 deg
+```
+The record gave part_offset_px 4.1. The part held at grip z 8 mm in mit-ff (on 2026-10-29 a grip at 8 mm in posvel had slipped), so the 8 mm default stays.

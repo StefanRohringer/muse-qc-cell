@@ -284,9 +284,9 @@ def _command_step_check(arm, limit=1.0):
     return check
 
 
-def test_posvel_default_sends_and_output_unchanged():
+def test_posvel_explicit_sends_and_output_unchanged():
     sdk = FakeSdk()
-    code, text = _run(sdk, lambda n: "-")
+    code, text = _run(sdk, lambda n: "-", arm_mode="posvel")
     assert code == 0
     assert text.splitlines()[0] == "arm mode: posvel"
     assert "mode_mit" not in sdk.groups["arm"].calls
@@ -295,6 +295,24 @@ def test_posvel_default_sends_and_output_unchanged():
     grips = sdk.groups["gripper"].calls
     assert any(call[0] == "mode" for call in grips)
     assert any(call[0] == "send" for call in grips)
+
+
+def test_defaults_are_mitff_and_grip_z_8():
+    sdk = FakeSdk()
+    lines = []
+    code = pick_test.main(
+        ["--table-mm", "495.9", "322.7"],
+        sdk_factory=lambda **kwargs: sdk,
+        check_fn=_always_ok, tip_fn=_fake_tip, solve_fn=_fake_solve,
+        solve_drop_fn=_fake_drop_solve, joint_limits=TEST_LIMITS,
+        find_port=lambda: "/dev/ttyFAKE",
+        sensor_factory=lambda: FakeSensor(lambda n: "-"),
+        gravity_fn=_q_gravity, out=lines.append,
+    )
+    assert code == 0
+    text = "\n".join(str(line) for line in lines)
+    assert "arm mode: mit-ff" in text
+    assert "grip tip z: 8.0 mm" in text
 
 
 def test_mitff_sends_only_mit_with_scaled_tau():
@@ -418,7 +436,7 @@ def test_tau_scale_with_posvel_exits_2_before_connect():
 
     with pytest.raises(SystemExit) as info:
         pick_test.main(
-            ["--table-mm", "495.9", "322.7",
+            ["--table-mm", "495.9", "322.7", "--arm-mode", "posvel",
              "--tau-scale", "1.0", "1.0", "1.4", "1.0", "1.0", "1.0"],
             sdk_factory=factory,
             out=lambda line: None,
@@ -618,7 +636,7 @@ def test_observe_ignores_non_finite_readings():
 
 def test_trim_line_printed_only_in_mitff():
     sdk = FakeSdk()
-    _, text = _run(sdk, lambda n: "-")
+    _, text = _run(sdk, lambda n: "-", arm_mode="posvel")
     assert "mit trim" not in text
     sdk = FakeSdk()
     _, text = _run(sdk, lambda n: "-", arm_mode="mit-ff")

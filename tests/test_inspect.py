@@ -286,7 +286,7 @@ def _arm_frame():
 
 
 def _inspect_main_args(extra):
-    return ["--table-mm", "495.9", "322.7"] + extra
+    return ["--table-mm", "495.9", "322.7", "--arm-mode", "posvel"] + extra
 
 
 def _inspect_dry_kwargs(lines, **overrides):
@@ -907,6 +907,7 @@ def _run_execute_inspect(tmp_path, texts, **overrides):
         "make_client": lambda key: _SeqClient(texts),
         "count_frame": count_clips.count_frame,
         "inspect_recordings_dir": tmp_path,
+        "arm_mode": "posvel",
     }
     kwargs.update(overrides)
     old_timeout = pick_loop.INSPECT_TIMEOUT_S
@@ -960,7 +961,7 @@ def test_execute_inspect_checks_camera_and_key_before_prompt(tmp_path):
     code = pick_test.execute(
         sdk, TABLE, 8.0, 28.0, False, 0.5, input_fn=never_prompt,
         tip_fn=_fake_tip, solve_fn=_fake_solve, joint_limits=TEST_LIMITS,
-        arm_vlims=VLIMS, find_port=lambda: "/dev/ttyFAKE",
+        arm_vlims=VLIMS, find_port=lambda: "/dev/ttyFAKE", arm_mode="posvel",
         sensor_factory=lambda: FakeSensor(lambda n: "-"),
         solve_drop_fn=_fake_drop_solve, inspect=True, out=lines.append,
         find_arm_node=lambda: None, read_key=lambda: SECRET)
@@ -977,7 +978,7 @@ def test_execute_inspect_missing_key_exits_2_without_enabling(tmp_path):
         sdk, TABLE, 8.0, 28.0, False, 0.5,
         input_fn=lambda prompt: "yes",
         tip_fn=_fake_tip, solve_fn=_fake_solve, joint_limits=TEST_LIMITS,
-        arm_vlims=VLIMS, find_port=lambda: "/dev/ttyFAKE",
+        arm_vlims=VLIMS, find_port=lambda: "/dev/ttyFAKE", arm_mode="posvel",
         sensor_factory=lambda: FakeSensor(lambda n: "-"),
         solve_drop_fn=_fake_drop_solve, inspect=True, out=lines.append,
         find_arm_node=lambda: "/dev/videoFAKE", read_key=lambda: "  ")

@@ -11,7 +11,9 @@ With --inspect the arm grips the part, lifts it, holds the last
 lift waypoint while the arm camera grabs one frame of the part in
 the gripper, the levers are counted and the verdict picks the
 box; a failed inspection sorts the unverified part into the bad
-box with exit code 1.
+box with exit code 1. The default arm mode is mit-ff (MIT with
+gravity feed-forward); --arm-mode posvel selects the old POS_VEL
+loop. The default grip tip height is 8 mm.
 """
 from __future__ import annotations
 import argparse
@@ -40,7 +42,7 @@ from muse_qc.pick_plan import (
     plan_summary,
 )
 from muse_qc.target_pose import table_to_base_mm
-GRIP_Z_MM = (5.0, 60.0, 5.0)
+GRIP_Z_MM = (5.0, 60.0, 8.0)
 OPEN_MM = (25.0, 50.0, 28.0)
 HOLD_S = (0.5, 30.0, 1.0)
 SPEED_DEG_S = (2.0, 15.0, 15.0)
@@ -160,7 +162,7 @@ def dry_run(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, out=print,
             tip_fn=None, solve_fn=None, use_xy_correction=True,
             speed_deg_s=SPEED_DEG_S[2], drop=None, solve_drop_fn=None,
             inspect=False, find_arm_node=None, read_key=None,
-            arm_mode="posvel", tau_scale=None, gravity_fn=None):
+            arm_mode="mit-ff", tau_scale=None, gravity_fn=None):
     out(f"arm mode: {arm_mode}")
     if inspect and inspect_step.check_prereqs(
             out, find_arm_node, read_key) is None:
@@ -201,7 +203,7 @@ def execute(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, input_fn=input,
             drop=None, solve_drop_fn=None, inspect=False, find_arm_node=None,
             read_key=None, open_arm_camera=None, make_client=None,
             count_frame=None, inspect_recordings_dir="recordings",
-            arm_mode="posvel", tau_scale=None, gravity_fn=None):
+            arm_mode="mit-ff", tau_scale=None, gravity_fn=None):
     out(f"arm mode: {arm_mode}")
     reader, arm_start_deg, grip_start_deg = _read_start(sdk)
     stream, sensor, arm_sender = None, None, None
@@ -328,7 +330,7 @@ def main(argv=None, sdk_factory=None, **kwargs):
     parser.add_argument("--table-mm", nargs=2, type=float, required=True,
                         metavar=("X", "Y"), help="part position in table mm")
     parser.add_argument("--grip-z-mm", type=_grip_z_type, default=GRIP_Z_MM[2],
-                        help="grip tip height in mm, 5 to 60 (default 5)")
+                        help="grip tip height in mm, 5 to 60 (default 8)")
     parser.add_argument("--open-mm", type=_open_mm_type, default=OPEN_MM[2],
                         help="jaw opening in mm, 25 to 50 (default 28)")
     parser.add_argument("--no-grip", action="store_true",
@@ -341,9 +343,9 @@ def main(argv=None, sdk_factory=None, **kwargs):
                         default="vel2",
                         help="motor gain profile for joints 4/5")
     parser.add_argument("--arm-mode", choices=("posvel", "mit-ff"),
-                        default="posvel",
-                        help="arm control mode: POS_VEL loop or MIT"
-                        " with gravity feed-forward")
+                        default="mit-ff",
+                        help="arm control mode: MIT with gravity"
+                        " feed-forward (default) or the POS_VEL loop")
     parser.add_argument("--tau-scale", nargs=6, type=float, default=None,
                         metavar=("S1", "S2", "S3", "S4", "S5", "S6"),
                         help="per-joint gravity torque scale for mit-ff"

@@ -1150,7 +1150,7 @@ check was given up for the speedup. Any contact while lowering
 stops the descent at once, holds 0.5 s, climbs back up the same
 ladder and returns. `--no-grip` only lowers to `--grip-z-mm` and
 holds, so the human can check the real tip height with a ruler
-first. `--grip-z-mm` takes 5 to 60 mm (default 5), `--open-mm`
+first. `--grip-z-mm` takes 5 to 60 mm (default 8), `--open-mm`
 25 to 50 mm (default 28), `--hold-s` 0.5 to 30 s (default 1),
 `--speed-deg-s` 2 to 15 deg/s for the free ramps (default 15);
 anything else is an argparse error (exit 2) before anything
@@ -1175,9 +1175,11 @@ The height correction is verified only at 100 mm so far, hence the
 must lie 31 to 34.5 cm from the joint 1 axis (the verified x/y
 correction range).
 
-The default grip height is 5 mm: at 8 mm only the soft finger tips
-touched the 14.5 mm high part and it slipped out while lifting, at
-5 mm it held. The first pick used the default with the part placed
+The first pick used a grip height of 5 mm (the default then):
+at 8 mm only the soft finger tips had touched the 14.5 mm high
+part and it slipped out while lifting, at 5 mm it held. The
+default is 8 mm since 2026-10-30 (3 mm more margin to the table,
+see DEVLOG). The first pick ran with the part placed
 by hand under the finger tips (the table camera did not find it
 with SAM that day, see DEVLOG):
 
@@ -1194,10 +1196,11 @@ stopping: the motors will be disabled now
 end readings: arm [-2.79 +0.12 -2.04 +2.94 +2.55 -0.36] gripper -126.28 deg
 ```
 
-`--arm-mode mit-ff` flies the same plan through MIT with per-cycle
-gravity feed-forward (gains and torque scale shared with section 30,
-`--tau-scale` works the same way and is refused with posvel) instead
-of the POS_VEL loop; the gripper group stays on pos_vel. A tracking
+The default arm mode is mit-ff since 2026-10-30 (use
+`--arm-mode posvel` for the old POS_VEL loop): the same plan flies
+through MIT with per-cycle gravity feed-forward (gains and torque
+scale shared with section 30, `--tau-scale` works the same way and
+is refused with posvel); the gripper group stays on pos_vel. A tracking
 guard trips when any arm joint stays more than 5 deg from its command
 for 10 cycles in a row: the loop prints `tracking error on joint N,
 holding`, holds the measured pose (a disable would drop the arm in
@@ -1210,8 +1213,12 @@ hover pose, the grip pose and the drop pose:
 uv run python -m muse_qc.pick_test --table-mm 500 335 --inspect --arm-mode mit-ff
 ```
 
-Not yet run on hardware. The default stays posvel for now; it changes
-in a later doc commit after the human tests mit-ff first.
+Human result 2026-10-30: with the position trim a mit-ff hold at
+tip z 4.7 mm measured 1 mm tip to table by hand (before the trim:
+8 mm in mit-ff, 2 mm in posvel); joint 4 read +2.83 deg after the
+run (rest +1.89 before, +5.17 before the trim). Decision: mit-ff
+is the default since 2026-10-30; use --arm-mode posvel for the old
+mode.
 The arm sender adds a slow per-joint position trim (about 1/s of the
 remaining error, clamped at 4 deg per joint, frozen on a tracking
 trip) plus the target step times the loop rate as velocity
