@@ -637,3 +637,97 @@ def test_abort_in_release_goes_straight_to_return():
     grips = [math.degrees(call[1][0]) for call in grip.calls
              if call[0] == "send"]
     assert grips and all(v == pytest.approx(RELEASE40) for v in grips)
+
+
+def _zero_gravity(joint_rad):
+    return [0.0] * 6
+
+
+def _dry_run_drop(extra_args):
+    sdk = FakeSdk()
+    lines = []
+    code = pick_test.main(
+        ["--table-mm", "495.9", "322.7", "--drop", "good"] + extra_args,
+        sdk_factory=lambda **kwargs: sdk,
+        check_fn=_always_ok, tip_fn=_fake_tip, solve_fn=_fake_solve,
+        joint_limits=TEST_LIMITS, find_port=lambda: "/dev/ttyFAKE",
+        sensor_factory=lambda: FakeSensor(lambda n: "-"),
+        solve_drop_fn=_fake_drop_solve, gravity_fn=_zero_gravity,
+        out=lines.append,
+    )
+    assert code == 0
+    return "\n".join(lines)
+
+
+def _segment_line_counts(text):
+    line = next(item for item in text.splitlines()
+                if item.startswith("segments at 100 Hz:"))
+    counts = {}
+    bits = line.split(":")[1].split("(")[0].split()
+    for name, value in zip(bits[::2], bits[1::2]):
+        counts[name] = int(value)
+    return counts
+
+
+def test_fast_free_moves_shorten_drop_segments():
+    slow = _dry_run_drop([])
+    mid = _dry_run_drop(["--speed-deg-s", "30", "--accel-deg-s2", "60"])
+    fast = _dry_run_drop(["--speed-deg-s", "50", "--accel-deg-s2", "100"])
+    assert "speeds: free 15 deg/s, accel 30 deg/s2" in slow
+    assert "speeds: free 30 deg/s, accel 60 deg/s2" in mid
+    assert "speeds: free 50 deg/s, accel 100 deg/s2" in fast
+    for text in (slow, mid, fast):
+        assert "arm mode: mit-ff" in text
+        assert "all waypoints ok" in text
+    slow_counts = _segment_line_counts(slow)
+    mid_counts = _segment_line_counts(mid)
+    fast_counts = _segment_line_counts(fast)
+    for seg in ("hover", "to-box", "return"):
+        assert mid_counts[seg] < slow_counts[seg], seg
+        assert fast_counts[seg] < mid_counts[seg], seg
+
+
+def test_accel_reaches_the_drop_segments():
+    soft = _dry_run_drop(["--speed-deg-s", "50", "--accel-deg-s2", "30"])
+    hard = _dry_run_drop(["--speed-deg-s", "50", "--accel-deg-s2", "100"])
+    assert (_segment_line_counts(hard)["to-box"]
+            < _segment_line_counts(soft)["to-box"])
+
+
+def test_fast_plan_passes_real_safety():
+    built = pick_plan.build_pick_plan(
+        REST, TABLE, 8.0, TEST_LIMITS, solve_fn=_fake_solve,
+        free_speed_deg_s=50.0, accel_deg_s2=100.0,
+        drop_joints=DROP_OK, tip_fn=_fake_tip)
+    assert built["ok"] is True
+    peak = 0.0
+    previous = tuple(REST)
+    for _, waypoint, _ in built["plan"]:
+        peak = max(peak, max(abs(a - b)
+                             for a, b in zip(waypoint, previous)))
+        previous = tuple(waypoint)
+    assert peak <= 10.0  # MAX_STEP_JOINT_DEG per command at 100 Hz
+    safety.set_j6_ref(REST[5])  # as _plan_and_check does before checking
+    ok, at, _ = pick_plan.check_pick_plan(
+        built["plan"], REST, tip_fn=_fake_tip)
+    assert (ok, at) == (True, -1)
+
+
+def test_posvel_refuses_speed_above_15_before_connect():
+    def factory(**kwargs):
+        raise AssertionError("must not connect on a refused speed")
+
+    with pytest.raises(SystemExit) as info:
+        pick_test.main(
+            ["--table-mm", "495.9", "322.7", "--drop", "good",
+             "--arm-mode", "posvel", "--speed-deg-s", "20"],
+            sdk_factory=factory,
+            out=lambda line: None,
+        )
+    assert info.value.code == 2
+
+
+def test_posvel_accepts_speed_at_15():
+    text = _dry_run_drop(["--arm-mode", "posvel", "--speed-deg-s", "15"])
+    assert "arm mode: posvel" in text
+    assert "all waypoints ok" in text

@@ -255,6 +255,8 @@ def build_pick_plan(start_deg: object, table_xy: object, grip_z_mm: float,
         "use_xy_correction": bool(use_xy_correction),
         "hover_mm": hover,
         "grip_z_mm": grip_z,
+        "free_speed_deg_s": free_speed_deg_s,
+        "accel_deg_s2": accel_deg_s2,
         "hover_tip_mm": tuple(hover_solved.get("tip_table_mm", (0.0, 0.0, hover))),
         "grip_tip_mm": (0.0, 0.0, grip_z),
     }
@@ -382,8 +384,8 @@ def plan_summary(plan: list[tuple[str, tuple[float, ...], bool]],
     state = "on" if info.get("use_xy_correction", True) else "off"
     return [
         f"segments at 100 Hz: {order} (total {len(plan)})",
-        f"speeds: free {FREE_SPEED_DEG_S:g} deg/s,"
-        f" accel {ACCEL_DEG_S2:g} deg/s2,"
+        f"speeds: free {info.get('free_speed_deg_s', FREE_SPEED_DEG_S):g} deg/s,"
+        f" accel {info.get('accel_deg_s2', ACCEL_DEG_S2):g} deg/s2,"
         f" vertical {FAST_MM_S:g}/{LOWER_MM_S:g} mm/s",
         f"hover tip z: {hover_tip[2]:.1f} mm,"
         f" grip tip z: {info['grip_z_mm']:.1f} mm",

@@ -45,7 +45,9 @@ from muse_qc.target_pose import table_to_base_mm
 GRIP_Z_MM = (5.0, 60.0, 8.0)
 OPEN_MM = (25.0, 50.0, 28.0)
 HOLD_S = (0.5, 30.0, 1.0)
-SPEED_DEG_S = (2.0, 15.0, 15.0)
+SPEED_DEG_S = (2.0, 50.0, 15.0)
+ACCEL_DEG_S2 = (15.0, 100.0, 30.0)
+POSVEL_SPEED_MAX_DEG_S = 15.0
 def _ranged(text, name, low, high, unit):
     try:
         value = float(text)
@@ -59,6 +61,7 @@ def _grip_z_type(text): return _ranged(text, "--grip-z-mm", *GRIP_Z_MM[:2], "mm"
 def _open_mm_type(text): return _ranged(text, "--open-mm", *OPEN_MM[:2], "mm")
 def _hold_s_type(text): return _ranged(text, "--hold-s", *HOLD_S[:2], "s")
 def _speed_type(text): return _ranged(text, "--speed-deg-s", *SPEED_DEG_S[:2], "deg/s")
+def _accel_type(text): return _ranged(text, "--accel-deg-s2", *ACCEL_DEG_S2[:2], "deg/s2")
 def _read_start(sdk):
     reader = Arm(sdk_factory=lambda: sdk)
     reader.connect()
@@ -70,7 +73,8 @@ def _create_sdk():
 def _plan_and_check(arm_start_deg, grip_start_deg, table_xy, grip_z_mm, open_mm,
                     out, joint_limits, solve_fn, check_fn, tip_fn,
                     use_xy_correction=True, speed_deg_s=SPEED_DEG_S[2],
-                    drop=None, solve_drop_fn=None, inspect=False):
+                    accel_deg_s2=ACCEL_DEG_S2[2], drop=None,
+                    solve_drop_fn=None, inspect=False):
     open_deg = width_to_deg(open_mm)
     refused = validate_targets(grip_start_deg, open_deg)
     boxes = ("good", "bad") if inspect else ([drop] if drop is not None else [])
@@ -103,7 +107,7 @@ def _plan_and_check(arm_start_deg, grip_start_deg, table_xy, grip_z_mm, open_mm,
             built = build_inspect_plan(
                 arm_start_deg, table_xy, grip_z_mm, joint_limits,
                 solve_fn=solve_fn, use_xy_correction=use_xy_correction,
-                free_speed_deg_s=speed_deg_s,
+                free_speed_deg_s=speed_deg_s, accel_deg_s2=accel_deg_s2,
                 drop_joints_by_box={box: one["joints_deg"]
                                     for box, one in solved.items()},
                 tip_fn=tip_of)
@@ -119,7 +123,7 @@ def _plan_and_check(arm_start_deg, grip_start_deg, table_xy, grip_z_mm, open_mm,
             built = build_pick_plan(arm_start_deg, table_xy, grip_z_mm,
                                     joint_limits, solve_fn=solve_fn,
                                     use_xy_correction=use_xy_correction,
-                                    free_speed_deg_s=speed_deg_s,
+                                    free_speed_deg_s=speed_deg_s, accel_deg_s2=accel_deg_s2,
                                     drop_joints=drop_joints, tip_fn=tip_of)
         if not built.get("ok"):
             out(f"plan failed: {built.get('reason')}")
@@ -160,7 +164,8 @@ def _plan_and_check(arm_start_deg, grip_start_deg, table_xy, grip_z_mm, open_mm,
 def dry_run(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, out=print,
             find_port=None, sensor_factory=None, joint_limits=None, check_fn=None,
             tip_fn=None, solve_fn=None, use_xy_correction=True,
-            speed_deg_s=SPEED_DEG_S[2], drop=None, solve_drop_fn=None,
+            speed_deg_s=SPEED_DEG_S[2], accel_deg_s2=ACCEL_DEG_S2[2],
+            drop=None, solve_drop_fn=None,
             inspect=False, find_arm_node=None, read_key=None,
             arm_mode="mit-ff", tau_scale=None, gravity_fn=None):
     out(f"arm mode: {arm_mode}")
@@ -179,10 +184,9 @@ def dry_run(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, out=print,
             _, built = _plan_and_check(arm_start_deg, grip_start_deg, table_xy,
                                        grip_z_mm, open_mm, out, joint_limits,
                                        solve_fn, check_fn, tip_fn,
-                                       use_xy_correction,
-                                       speed_deg_s=speed_deg_s,
-                                       drop=drop, solve_drop_fn=solve_drop_fn,
-                                       inspect=inspect)
+                                       use_xy_correction, speed_deg_s=speed_deg_s,
+                                       accel_deg_s2=accel_deg_s2, drop=drop,
+                                       solve_drop_fn=solve_drop_fn, inspect=inspect)
             if built is None:
                 return 1
             if arm_mode == "mit-ff":
@@ -200,6 +204,7 @@ def execute(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, input_fn=input,
             out=print, find_port=None, sensor_factory=None, joint_limits=None,
             check_fn=None, tip_fn=None, arm_vlims=None, solve_fn=None,
             use_xy_correction=True, speed_deg_s=SPEED_DEG_S[2],
+            accel_deg_s2=ACCEL_DEG_S2[2],
             drop=None, solve_drop_fn=None, inspect=False, find_arm_node=None,
             read_key=None, open_arm_camera=None, make_client=None,
             count_frame=None, inspect_recordings_dir="recordings",
@@ -219,10 +224,9 @@ def execute(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, input_fn=input,
         open_deg, built = _plan_and_check(arm_start_deg, grip_start_deg, table_xy,
                                           grip_z_mm, open_mm, out, joint_limits,
                                           solve_fn, check_fn, tip_fn,
-                                          use_xy_correction,
-                                          speed_deg_s=speed_deg_s,
-                                          drop=drop, solve_drop_fn=solve_drop_fn,
-                                          inspect=inspect)
+                                          use_xy_correction, speed_deg_s=speed_deg_s,
+                                          accel_deg_s2=accel_deg_s2, drop=drop,
+                                          solve_drop_fn=solve_drop_fn, inspect=inspect)
         if built is None:
             return 1
         limits = safety.JOINT_LIMITS_DEG if joint_limits is None else joint_limits
@@ -338,7 +342,10 @@ def main(argv=None, sdk_factory=None, **kwargs):
     parser.add_argument("--hold-s", type=_hold_s_type, default=HOLD_S[2],
                         help="hold time in s, 0.5 to 30 (default 1)")
     parser.add_argument("--speed-deg-s", type=_speed_type, default=SPEED_DEG_S[2],
-                        help="free ramp speed in deg/s, 2 to 15 (default 15)")
+                        help="free ramp speed in deg/s, 2 to 50 (default 15;"
+                        " above 15 needs --arm-mode mit-ff)")
+    parser.add_argument("--accel-deg-s2", type=_accel_type, default=ACCEL_DEG_S2[2],
+                        help="free ramp accel in deg/s2, 15 to 100 (default 30)")
     parser.add_argument("--gains", choices=tuple(GAIN_PROFILES),
                         default="vel2",
                         help="motor gain profile for joints 4/5")
@@ -364,6 +371,9 @@ def main(argv=None, sdk_factory=None, **kwargs):
     args = parser.parse_args(argv)
     if args.tau_scale is not None and args.arm_mode != "mit-ff":
         parser.error("--tau-scale needs --arm-mode mit-ff")
+    if args.arm_mode != "mit-ff" and args.speed_deg_s > POSVEL_SPEED_MAX_DEG_S:
+        parser.error("--speed-deg-s above 15 needs --arm-mode mit-ff"
+                     " (the POS_VEL vlim would cap the motors)")
     tau_scale = (tuple(args.tau_scale) if args.tau_scale is not None
                  else mit_hold.TAU_SCALE)
     try:
@@ -382,6 +392,7 @@ def main(argv=None, sdk_factory=None, **kwargs):
     return run(sdk, (args.table_mm[0], args.table_mm[1]), args.grip_z_mm,
                args.open_mm, args.no_grip, args.hold_s,
                use_xy_correction=not args.no_xy_correction,
-               speed_deg_s=args.speed_deg_s, **kwargs)
+               speed_deg_s=args.speed_deg_s, accel_deg_s2=args.accel_deg_s2,
+               **kwargs)
 if __name__ == "__main__":
     sys.exit(main())

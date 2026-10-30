@@ -1152,14 +1152,25 @@ ladder and returns. `--no-grip` only lowers to `--grip-z-mm` and
 holds, so the human can check the real tip height with a ruler
 first. `--grip-z-mm` takes 5 to 60 mm (default 8), `--open-mm`
 25 to 50 mm (default 28), `--hold-s` 0.5 to 30 s (default 1),
-`--speed-deg-s` 2 to 15 deg/s for the free ramps (default 15);
-anything else is an argparse error (exit 2) before anything
-connects. `--no-xy-correction` flies the uncorrected target for A/B
-tests, to measure the uncorrected error near the part. No
+`--speed-deg-s` 2 to 50 deg/s for the free ramps (default 15);
+`--accel-deg-s2` 15 to 100 deg/s2 for the ramp accel (default 30,
+also used for the to-box and return ramps); anything else is an
+argparse error (exit 2) before anything connects. Above 15 deg/s
+needs `--arm-mode mit-ff` (the default): with posvel it is refused
+with exit 2 before connecting, because the POS_VEL vlim at 10 %
+would cap the motors. The dry run prints the real values in the
+`speeds:` line. `--no-xy-correction` flies the uncorrected target
+for A/B tests, to measure the uncorrected error near the part. No
 gripper-project code is used, only the serial line protocol and the
 SDK motor protocol. `--gains` defaults to `vel2` (the best
 profile so far, see section 30); `hold_test` keeps `default` so
 A/B runs stay explicit.
+
+Faster free moves are not yet run on hardware. Planned human test,
+with the hand on the power supply switch: first `--no-grip` ruler
+stops at 30/60 (`--speed-deg-s 30 --accel-deg-s2 60`), then at
+50/100, watching for smooth ramps and no tracking trip; then one
+`--inspect` sort at the faster setting that ran clean.
 
 Order, with the hand on the power supply switch:
 

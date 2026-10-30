@@ -460,7 +460,10 @@ def test_cli_no_xy_correction_dry_run():
                                         ("--open-mm", "24.9"), ("--open-mm", "50.1"),
                                         ("--hold-s", "0.49"), ("--hold-s", "30.1"),
                                         ("--speed-deg-s", "1.9"),
-                                        ("--speed-deg-s", "15.1")])
+                                        ("--speed-deg-s", "50.1"),
+                                        ("--accel-deg-s2", "14.9"),
+                                        ("--accel-deg-s2", "100.1"),
+                                        ("--accel-deg-s2", "abc")])
 def test_arg_ranges_exit_2_before_connect(flag, value):
     def factory():
         raise AssertionError("nothing may connect on a bad argument")
