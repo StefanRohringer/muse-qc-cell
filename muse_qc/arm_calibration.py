@@ -239,6 +239,7 @@ def solve_corrected(
     *,
     tol_mm: float = TOL_MM,
     max_iterations: int = MAX_ITER,
+    yaw_offset_deg: float = 0.0,
 ) -> dict:
     """Iterate the nominal IK so the corrected tip lands on the target.
 
@@ -272,7 +273,9 @@ def solve_corrected(
     current_seed: object = seed
     while iterations < limit:
         table_x, table_y = base_to_table_mm(nominal[0], nominal[1])
-        solved = _solve_nominal((table_x, table_y), nominal[2], current_seed)
+        solved = _solve_nominal((table_x, table_y), nominal[2],
+                                current_seed,
+                                yaw_offset_deg=yaw_offset_deg)
         if not solved.get("ok"):
             return {"ok": False, "reason": str(solved.get("reason"))}
         joints = solved["joints_deg"]

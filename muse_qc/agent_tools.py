@@ -23,9 +23,10 @@ the --simulate run.
 from __future__ import annotations
 
 import math
-import re
 from datetime import datetime
 from pathlib import Path
+
+from muse_qc.agent_parse import parse_pick_lines as parse_pick_lines
 
 SAME_PART_MM = 15.0
 
@@ -48,7 +49,9 @@ TOOL_DEFINITIONS = [
         "description": (
             "Pick the part with this scan id, count its levers and "
             "drop it into the good or bad box. Ids come from the "
-            "latest scan_table result and expire after every sort."
+            "latest scan_table result; a sorted id expires but the "
+            "other ids stay valid, a failed or missed sort expires "
+            "the whole scan."
         ),
         "parameters": {
             "type": "object",
@@ -94,10 +97,6 @@ TOOL_DEFINITIONS = [
     },
 ]
 
-_INSPECT_RE = re.compile(r"inspect: levers (\d+) verdict (good|bad)")
-_BOX_RE = re.compile(r"dropped into the (good|bad) box")
-
-
 def _dist(first, second) -> float:
     """Return the table-mm distance of two [x, y] positions."""
     return math.dist((float(first[0]), float(first[1])),
@@ -109,17 +108,27 @@ class RunState:
 
     def __init__(self) -> None:
         self.parts: dict[int, list[float]] = {}
+        self.levers: dict[int, float | None] = {}
         self.fresh = False
         self.attempts: list[list[float]] = []
         self.sorted_positions: list[list[float]] = []
         self.records: list[str] = []
         self.sort_count = 0
 
-    def new_scan(self, positions) -> dict[int, list[float]]:
-        """Store the scan positions under fresh ids, return the mapping."""
+    def new_scan(self, positions, levers=None) -> dict[int, list[float]]:
+        """Store the scan positions under fresh ids, return the mapping.
+
+        levers holds the find_parts lever_deg per part (or None);
+        lever_of returns it for real_sort's --lever-deg.
+        """
         self.parts = {
             index: [float(pos[0]), float(pos[1])]
             for index, pos in enumerate(positions)
+        }
+        by_id = list(levers) if levers is not None else [None] * len(positions)
+        self.levers = {
+            index: (None if value is None else float(value))
+            for index, value in enumerate(by_id)
         }
         self.fresh = True
         return dict(self.parts)
@@ -137,6 +146,25 @@ class RunState:
             return None
         found = self.parts.get(part_id)
         return [found[0], found[1]] if found is not None else None
+
+    def lever_of(self, part_id) -> float | None:
+        """Return the stored lever_deg for part_id, or None.
+
+        None means unknown, stale or no lever direction; the sort
+        then runs without --lever-deg.
+        """
+        if isinstance(part_id, bool) or not isinstance(part_id, int):
+            return None
+        if not self.fresh:
+            return None
+        return self.levers.get(part_id)
+
+    def remove_sorted(self, part_id) -> None:
+        """Drop one sorted id; the other ids of the scan stay valid."""
+        self.parts.pop(part_id, None)
+        self.levers.pop(part_id, None)
+        if not self.parts:
+            self.fresh = False
 
     def mark_stale(self) -> None:
         """Expire the latest scan; the table changed after a sort."""
@@ -162,65 +190,6 @@ class RunState:
             [float(position[0]), float(position[1])])
 
 
-def parse_pick_lines(lines: list[str]) -> dict:
-    """Parse collected pick_test output lines into a result dict.
-
-    interrupted wins over everything (Ctrl+C aborts the pick, the
-    agent run must stop), then sorted over missed_grip (the part
-    still landed in a box), missed_grip over inspect_failed.
-    An unverified part sorted into the bad box after "inspect
-    failed" is sorted too, with the failed line kept as the
-    reason; "inspect skipped" alone never counts as sorted.
-    record is the last count_*.json path in the lines, or None.
-    """
-    levers = None
-    verdict = None
-    box = None
-    record = None
-    missed = False
-    failed = None
-    halted = None
-    err_reason = None
-    for line in lines:
-        match = _INSPECT_RE.search(line)
-        if match is not None:
-            levers, verdict = int(match.group(1)), match.group(2)
-        match = _BOX_RE.search(line)
-        if match is not None:
-            box = match.group(1)
-        if "missed grip" in line:
-            missed = True
-        if line.startswith(("inspect failed", "inspect skipped:",
-                            "inspect timeout")):
-            failed = line
-        if "interrupted by human, holding position" in line:
-            halted = line
-        if line.startswith(("request failed:", "motion failed:",
-                            "sort timed out")):
-            err_reason = line
-        stripped = line.strip()
-        if stripped.endswith(".json") and "count_" in Path(stripped).name:
-            record = stripped
-    if halted is not None:
-        outcome = "interrupted"
-    elif box is not None:
-        outcome = "sorted"
-    elif missed:
-        outcome = "missed_grip"
-    elif failed is not None:
-        outcome = "inspect_failed"
-    else:
-        outcome = "error"
-    return {
-        "outcome": outcome,
-        "levers": levers,
-        "verdict": verdict,
-        "box": box,
-        "record": record,
-        "reason": err_reason if outcome == "error" else halted or failed,
-    }
-
-
 class FakeTable:
     """Fake table for --simulate: 3 parts, two good, one bad.
 
@@ -232,27 +201,33 @@ class FakeTable:
 
     def __init__(self) -> None:
         self.parts = [
-            {"table_mm": [500.0, 360.0], "levers": 3, "verdict": "good"},
-            {"table_mm": [540.0, 330.0], "levers": 3, "verdict": "good"},
-            {"table_mm": [560.0, 300.0], "levers": 2, "verdict": "bad"},
+            {"table_mm": [500.0, 360.0], "levers": 3, "verdict": "good",
+             "lever_deg": 89.8},
+            {"table_mm": [540.0, 330.0], "levers": 3, "verdict": "good",
+             "lever_deg": 31.9},
+            {"table_mm": [560.0, 300.0], "levers": 2, "verdict": "bad",
+             "lever_deg": None},
         ]
         self._missed_key = tuple(self.parts[1]["table_mm"])
         self._tried: set[tuple[float, float]] = set()
         self._records = 0
+        self.seen_levers: list = []
 
     def scan(self) -> dict:
         """Return the parts still on the fake table."""
         return {
             "parts": [
-                {"table_mm": list(part["table_mm"])}
+                {"table_mm": list(part["table_mm"]),
+                 "lever_deg": part["lever_deg"]}
                 for part in self.parts
             ],
             "skipped": 0,
             "image": "recordings/fake_table.png",
         }
 
-    def sort(self, table_mm) -> dict:
+    def sort(self, table_mm, lever_deg=None) -> dict:
         """Sort the fake part at table_mm, with one missed grip."""
+        self.seen_levers.append(lever_deg)
         key = (float(table_mm[0]), float(table_mm[1]))
         for part in self.parts:
             if _dist(table_mm, part["table_mm"]) <= SAME_PART_MM:
@@ -351,7 +326,8 @@ def real_scan() -> dict:
     parts = [
         {"table_mm": [float(item["table_mm"][0]),
                       float(item["table_mm"][1])],
-         "confidence": item["confidence"]}
+         "confidence": item["confidence"],
+         "lever_deg": item["lever_deg"]}
         for item in results
         if item["skipped"] is None and item["confirmed"]
     ]
@@ -359,13 +335,14 @@ def real_scan() -> dict:
     return {"parts": parts, "skipped": skipped, "image": str(path)}
 
 
-def real_sort(table_mm, popen_factory=None, timeout_s=None,
-              clock=None) -> dict:
+def real_sort(table_mm, lever_deg=None, popen_factory=None,
+              timeout_s=None, clock=None) -> dict:
     """Run one real pick_test inspect sort as a child. --execute only.
 
     Each sort is its own process so the operating system frees the
     serial port when the child exits. The child's yes prompt is
     answered on stdin (the human confirmed once for the whole run).
+    lever_deg adds --lever-deg to the child command when not None.
     Returns the parsed result with the last lines and exit_code.
     """
     import sys
@@ -378,6 +355,8 @@ def real_sort(table_mm, popen_factory=None, timeout_s=None,
     cmd = [sys.executable, "-m", "muse_qc.pick_test",
            "--table-mm", f"{float(table_mm[0])}",
            f"{float(table_mm[1])}", "--inspect", "--execute"]
+    if lever_deg is not None:
+        cmd += ["--lever-deg", f"{float(lever_deg)}"]
     try:
         lines, exit_code, timed_out = run_child(
             cmd, factory, limit, clock)

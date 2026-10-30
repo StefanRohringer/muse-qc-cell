@@ -13,162 +13,73 @@ the gripper, the levers are counted and the verdict picks the
 box; a failed inspection sorts the unverified part into the bad
 box with exit code 1. The default arm mode is mit-ff (MIT with
 gravity feed-forward); --arm-mode posvel selects the old POS_VEL
-loop. The default grip tip height is 8 mm.
+loop. The default grip tip height is 8 mm. With --lever-deg the
+gripper turns about the vertical axis so the part is gripped like
+a straight part.
 """
 from __future__ import annotations
 import argparse
 import math
 import sys
 from muse_qc import mit_hold, pick_mit, safety
-from muse_qc.arm import Arm
 from muse_qc.arm_gains import GAIN_PROFILES, describe, make_arm
-from muse_qc.drop_plan import (
-    BOXES_TABLE_MM,
-    RELEASE_OPEN_MM,
-    solve_drop,
+from muse_qc.grip_yaw import grip_yaw_offset_deg
+from muse_qc.pick_args import (
+    ACCEL_DEG_S2,
+    GRIP_Z_MM,
+    HOLD_S,
+    OPEN_MM,
+    POSVEL_SPEED_MAX_DEG_S,
+    SPEED_DEG_S,
+    _accel_type,
+    _create_sdk,
+    _grip_z_type,
+    _hold_s_type,
+    _lever_deg_type,
+    _open_mm_type,
+    _read_start,
+    _speed_type,
 )
+from muse_qc.drop_plan import RELEASE_OPEN_MM
 from muse_qc.first_move import CONFIRM_WORD
 from muse_qc.first_move_plan import LOOP_RATE_HZ
 from muse_qc.first_move_plan import clamp_to_limits, read_sdk_vlims, real_tip_m, scale_vlim
-from muse_qc.gripper_grip import deg_to_width, validate_targets, width_to_deg
+from muse_qc.gripper_grip import deg_to_width, width_to_deg
 from muse_qc.grip_speed import GRIPPER_VLIM_FRACTION
 from muse_qc.gripper_motor import CONFIRM_PROMPT, GRIPPER_CONFIG_VLIM
 from muse_qc.gripper_stream import open_touch_sensor
 from muse_qc import inspect_step
 from muse_qc.pick_loop import PickLoop
-from muse_qc.pick_plan import (
-    build_inspect_plan,
-    build_pick_plan,
-    check_pick_plan,
-    plan_summary,
-)
-from muse_qc.target_pose import table_to_base_mm
-GRIP_Z_MM = (5.0, 60.0, 8.0)
-OPEN_MM = (25.0, 50.0, 28.0)
-HOLD_S = (0.5, 30.0, 1.0)
-SPEED_DEG_S = (2.0, 80.0, 50.0)
-ACCEL_DEG_S2 = (15.0, 160.0, 100.0)
-POSVEL_SPEED_MAX_DEG_S = 15.0
-def _ranged(text, name, low, high, unit):
-    try:
-        value = float(text)
-    except ValueError:
-        raise argparse.ArgumentTypeError(f"{name} must be a number, got {text!r}.")
-    if not low <= value <= high:
-        raise argparse.ArgumentTypeError(
-            f"{name} must be between {low:g} and {high:g} {unit}, got {text!r}.")
-    return value
-def _grip_z_type(text): return _ranged(text, "--grip-z-mm", *GRIP_Z_MM[:2], "mm")
-def _open_mm_type(text): return _ranged(text, "--open-mm", *OPEN_MM[:2], "mm")
-def _hold_s_type(text): return _ranged(text, "--hold-s", *HOLD_S[:2], "s")
-def _speed_type(text): return _ranged(text, "--speed-deg-s", *SPEED_DEG_S[:2], "deg/s")
-def _accel_type(text): return _ranged(text, "--accel-deg-s2", *ACCEL_DEG_S2[:2], "deg/s2")
-def _read_start(sdk):
-    reader = Arm(sdk_factory=lambda: sdk)
-    reader.connect()
-    joints = reader.read_joints()
-    return reader, [j.degrees for j in joints], reader.read_gripper().degrees
-def _create_sdk():
-    from reBotArm_control_py.actuator import RebotArm
-    return RebotArm()
-def _plan_and_check(arm_start_deg, grip_start_deg, table_xy, grip_z_mm, open_mm,
-                    out, joint_limits, solve_fn, check_fn, tip_fn,
-                    use_xy_correction=True, speed_deg_s=SPEED_DEG_S[2],
-                    accel_deg_s2=ACCEL_DEG_S2[2], drop=None,
-                    solve_drop_fn=None, inspect=False):
-    open_deg = width_to_deg(open_mm)
-    refused = validate_targets(grip_start_deg, open_deg)
-    boxes = ("good", "bad") if inspect else ([drop] if drop is not None else [])
-    release_open_deg = None
-    if boxes:
-        release_open_deg = width_to_deg(RELEASE_OPEN_MM)
-        refused = refused or validate_targets(grip_start_deg, release_open_deg)
-    if refused is not None:
-        out(refused)
-        return None, None
-    out(f"open width: {open_mm:.0f} mm -> gripper {open_deg:+.2f} deg")
-    if drop is not None:
-        out(f"release width: {RELEASE_OPEN_MM:.0f} mm"
-            f" -> gripper {release_open_deg:+.2f} deg")
-    check = safety.check_target if check_fn is None else check_fn
-    tip_of = real_tip_m if tip_fn is None else tip_fn
-    old_ref = safety.J6_REF
-    safety.set_j6_ref(arm_start_deg[5])
-    try:
-        solved = None
-        if inspect:
-            solver = solve_drop if solve_drop_fn is None else solve_drop_fn
-            solved = {}
-            for box in boxes:
-                one = solver(BOXES_TABLE_MM[box], arm_start_deg)
-                if not one.get("ok"):
-                    out(f"drop solve failed: {one.get('reason')}")
-                    return None, None
-                solved[box] = one
-            built = build_inspect_plan(
-                arm_start_deg, table_xy, grip_z_mm, joint_limits,
-                solve_fn=solve_fn, use_xy_correction=use_xy_correction,
-                free_speed_deg_s=speed_deg_s, accel_deg_s2=accel_deg_s2,
-                drop_joints_by_box={box: one["joints_deg"]
-                                    for box, one in solved.items()},
-                tip_fn=tip_of)
-        else:
-            drop_joints = None
-            if drop is not None:
-                solver = solve_drop if solve_drop_fn is None else solve_drop_fn
-                solved = solver(BOXES_TABLE_MM[drop], arm_start_deg)
-                if not solved.get("ok"):
-                    out(f"drop solve failed: {solved.get('reason')}")
-                    return None, None
-                drop_joints = solved["joints_deg"]
-            built = build_pick_plan(arm_start_deg, table_xy, grip_z_mm,
-                                    joint_limits, solve_fn=solve_fn,
-                                    use_xy_correction=use_xy_correction,
-                                    free_speed_deg_s=speed_deg_s, accel_deg_s2=accel_deg_s2,
-                                    drop_joints=drop_joints, tip_fn=tip_of)
-        if not built.get("ok"):
-            out(f"plan failed: {built.get('reason')}")
-            return None, None
-        for line in plan_summary(built["plan"], built):
-            out(line)
-        for box in boxes:
-            one = solved[box] if inspect else solved
-            box_xy = BOXES_TABLE_MM[box]
-            base_x, base_y = table_to_base_mm(box_xy[0], box_xy[1])
-            radius = math.hypot(base_x, base_y)
-            joints = one["joints_deg"]
-            tip = one["tip_base_mm"]
-            out(f"drop box: {box} at table mm ({box_xy[0]:+.1f},"
-                f" {box_xy[1]:+.1f}), r={radius:.1f} mm")
-            out("drop joints deg: " + " ".join(f"{v:+.2f}" for v in joints))
-            out(f"drop tilt: {one['tilt_deg']:.1f} deg,"
-                f" fk tip base mm ({tip[0]:+.1f}, {tip[1]:+.1f}, {tip[2]:+.1f}),"
-                f" real tip z {one['real_tip_z_mm']:.1f} mm")
-            branch = built.get("ranges_by_box", {}).get(box, built["ranges"])
-            low, high = branch["to-box"]
-            lowest = min(tip_of(list(wp))[2]
-                         for _, wp, _ in built["plan"][low:high]) * 1000.0
-            out(f"to-box lowest tip z: {lowest:.1f} mm")
-        if inspect:
-            ok, bad, res = inspect_step.check_inspect_plan(
-                built, arm_start_deg, check, tip_of)
-        else:
-            ok, bad, res = check_pick_plan(
-                built["plan"], arm_start_deg, check, tip_of)
-    finally:
-        safety.set_j6_ref(old_ref)
-    if not ok:
-        out(f"waypoint {bad + 1}/{len(built['plan'])} REFUSED {res.get('reason')}")
-        return None, None
-    out("all waypoints ok")
-    return open_deg, built
+from muse_qc.pick_plan_check import _plan_and_check
+
+
+def _lever_solve(table_xy, lever_deg, solve_fn, out):
+    """Wrap solve_fn with the grip yaw offset; print the grip yaw line.
+
+    Without lever_deg the solve_fn is used unchanged. With it the
+    offset from grip_yaw_offset_deg is applied through
+    solve_hover's yaw_offset_deg (or passed to a fake solver that
+    takes the same keyword) for hover, lower, lift and put-down,
+    which all go through the same solve_fn in pick_plan.
+    """
+    if lever_deg is None:
+        return solve_fn
+    offset, clamped = grip_yaw_offset_deg(table_xy, lever_deg)
+    out(f"grip yaw: lever {float(lever_deg):.1f} deg,"
+        f" offset {offset:+.1f} deg" + (" (clamped)" if clamped else ""))
+    from muse_qc.target_pose import solve_hover as real_solve
+    base = real_solve if solve_fn is None else solve_fn
+    return lambda t, h, s: base(t, h, s, yaw_offset_deg=offset)
+
+
 def dry_run(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, out=print,
             find_port=None, sensor_factory=None, joint_limits=None, check_fn=None,
             tip_fn=None, solve_fn=None, use_xy_correction=True,
             speed_deg_s=SPEED_DEG_S[2], accel_deg_s2=ACCEL_DEG_S2[2],
             drop=None, solve_drop_fn=None,
             inspect=False, find_arm_node=None, read_key=None,
-            arm_mode="mit-ff", tau_scale=None, gravity_fn=None):
+            arm_mode="mit-ff", tau_scale=None, gravity_fn=None,
+            lever_deg=None):
     out(f"arm mode: {arm_mode}")
     if inspect and inspect_step.check_prereqs(
             out, find_arm_node, read_key) is None:
@@ -181,6 +92,7 @@ def dry_run(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, out=print,
         sensor = open_touch_sensor(find_port, sensor_factory, out)
         if sensor is None:
             return 2
+        solve_fn = _lever_solve(table_xy, lever_deg, solve_fn, out)
         try:
             _, built = _plan_and_check(arm_start_deg, grip_start_deg, table_xy,
                                        grip_z_mm, open_mm, out, joint_limits,
@@ -209,7 +121,8 @@ def execute(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, input_fn=input,
             drop=None, solve_drop_fn=None, inspect=False, find_arm_node=None,
             read_key=None, open_arm_camera=None, make_client=None,
             count_frame=None, inspect_recordings_dir="recordings",
-            arm_mode="mit-ff", tau_scale=None, gravity_fn=None):
+            arm_mode="mit-ff", tau_scale=None, gravity_fn=None,
+            lever_deg=None):
     out(f"arm mode: {arm_mode}")
     reader, arm_start_deg, grip_start_deg = _read_start(sdk)
     stream, sensor, arm_sender = None, None, None
@@ -222,6 +135,7 @@ def execute(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, input_fn=input,
         if inspect and inspect_step.check_prereqs(
                 out, find_arm_node, read_key) is None:
             return 2
+        solve_fn = _lever_solve(table_xy, lever_deg, solve_fn, out)
         open_deg, built = _plan_and_check(arm_start_deg, grip_start_deg, table_xy,
                                           grip_z_mm, open_mm, out, joint_limits,
                                           solve_fn, check_fn, tip_fn,
@@ -355,6 +269,10 @@ def main(argv=None, sdk_factory=None, **kwargs):
     parser.add_argument("--tau-scale", nargs=6, type=float, default=None,
                         metavar=("S1", "S2", "S3", "S4", "S5", "S6"),
                         help="per-joint gravity torque scale for mit-ff (six values, 0.0 to 2.0)")
+    parser.add_argument("--lever-deg", type=_lever_deg_type, default=None,
+                        help="lever direction in deg, 0 to 180 (from find_parts;"
+                        " turns the gripper so every part is gripped"
+                        " like a straight part)")
     parser.add_argument("--execute", action="store_true", help="fly the pick after confirmation")
     parser.add_argument("--no-xy-correction", action="store_true",
                         help="fly the uncorrected target (for A/B tests)")
@@ -391,6 +309,7 @@ def main(argv=None, sdk_factory=None, **kwargs):
     kwargs.setdefault("inspect", args.inspect)
     kwargs.setdefault("arm_mode", args.arm_mode)
     kwargs.setdefault("tau_scale", tau_scale)
+    kwargs.setdefault("lever_deg", args.lever_deg)
     return run(sdk, (args.table_mm[0], args.table_mm[1]), args.grip_z_mm,
                args.open_mm, args.no_grip, args.hold_s,
                use_xy_correction=not args.no_xy_correction,

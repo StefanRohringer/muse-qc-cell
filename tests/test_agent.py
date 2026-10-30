@@ -78,10 +78,12 @@ def _scan_fn_factory(scans, seen_images=None):
 def _sort_fn_factory(outcomes):
     """Fake sort_fn returning queued outcome dicts, logging positions."""
     seen = []
+    levers = []
     queue = list(outcomes)
 
-    def sort(position):
+    def sort(position, lever_deg=None):
         seen.append(list(position))
+        levers.append(lever_deg)
         if not queue:
             raise AssertionError("sort called more often than scripted")
         result = dict(queue.pop(0))
@@ -89,6 +91,7 @@ def _sort_fn_factory(outcomes):
         return result
 
     sort.seen = seen  # type: ignore[attr-defined]
+    sort.levers = levers  # type: ignore[attr-defined]
     return sort
 
 
@@ -821,8 +824,8 @@ def test_two_child_sorts_in_one_run(tmp_path):
             f"recordings/count_child_{number:06d}.json",
         ])
 
-    sort = lambda pos: agent_tools.real_sort(  # noqa: E731
-        pos, popen_factory=factory)
+    sort = lambda pos, lever=None: agent_tools.real_sort(  # noqa: E731
+        pos, lever, popen_factory=factory)
     scan = _scan_fn_factory([[[P0[0], P0[1]], [P1[0], P1[1]]], [P1]])
     report = _report_fn_factory(tmp_path)
     script = [
@@ -842,3 +845,113 @@ def test_two_child_sorts_in_one_run(tmp_path):
     assert len(made) == 2
     assert report.seen == [["recordings/count_child_000001.json",
                             "recordings/count_child_000002.json"]]
+
+
+def _scan_with_levers(parts):
+    calls = []
+
+    def scan():
+        calls.append(True)
+        return {"parts": [dict(part) for part in parts],
+                "skipped": 0, "image": "recordings/fake.png"}
+
+    scan.calls = calls  # type: ignore[attr-defined]
+    return scan
+
+
+def test_two_sorts_from_one_scan_without_rescan(tmp_path):
+    scan = _scan_with_levers([
+        {"table_mm": list(P0), "lever_deg": 89.8},
+        {"table_mm": list(P1), "lever_deg": None},
+    ])
+    sort = _sort_fn_factory([
+        _sorted_outcome(3, "good", "a.json"),
+        _sorted_outcome(2, "bad", "b.json"),
+    ])
+    report = _report_fn_factory(tmp_path)
+    script = [
+        [_call("c1", "scan_table", {})],
+        [_call("c2", "inspect_and_sort", {"part_id": 0})],
+        [_call("c3", "inspect_and_sort", {"part_id": 1})],
+        [_call("c4", "inspect_and_sort", {"part_id": 0})],
+        [_call("c5", "finish", {"summary": "2 sorted"})],
+    ]
+    result, lines, _ = _run(script, scan, sort, report, tmp_path)
+    assert result["finished"] is True
+    assert result["good"] == 1 and result["bad"] == 1
+    assert len(scan.calls) == 1
+    assert sort.seen == [P0, P1]
+    assert sort.levers == [89.8, None]
+    text = "\n".join(lines)
+    assert "unknown part id, call scan_table first" in text
+
+
+def test_missed_grip_expires_whole_scan(tmp_path):
+    scan = _scan_fn_factory([[P0], [P0]])
+    missed = {"outcome": "missed_grip", "levers": None,
+              "verdict": None, "box": None, "record": None,
+              "reason": None, "lines": ["missed grip"]}
+    sort = _sort_fn_factory([dict(missed),
+                             _sorted_outcome(3, "good", "a.json")])
+    report = _report_fn_factory(tmp_path)
+    script = [
+        [_call("c1", "scan_table", {})],
+        [_call("c2", "inspect_and_sort", {"part_id": 0})],
+        [_call("c3", "inspect_and_sort", {"part_id": 0})],
+        [_call("c4", "scan_table", {})],
+        [_call("c5", "inspect_and_sort", {"part_id": 0})],
+        [_call("c6", "finish", {"summary": "done"})],
+    ]
+    result, lines, _ = _run(script, scan, sort, report, tmp_path)
+    assert result["finished"] is True
+    assert len(scan.calls) == 2
+    assert sort.seen == [P0, P0]
+    assert "unknown part id, call scan_table first" in "\n".join(lines)
+
+
+def test_fake_table_run_ends_with_expected_counts(tmp_path):
+    from muse_qc.agent_tools import FakeTable
+
+    fake = FakeTable()
+    script = [
+        [_message("scan"), _call("c1", "scan_table", {})],
+        [_message("sort"), _call("c2", "inspect_and_sort",
+                                 {"part_id": 0})],
+        [_message("sort"), _call("c3", "inspect_and_sort",
+                                 {"part_id": 1})],
+        [_message("scan"), _call("c4", "scan_table", {})],
+        [_message("sort"), _call("c5", "inspect_and_sort",
+                                 {"part_id": 0})],
+        [_message("sort"), _call("c6", "inspect_and_sort",
+                                 {"part_id": 1})],
+        [_message("scan"), _call("c7", "scan_table", {})],
+        [_message("report"), _call("c8", "write_report", {})],
+        [_message("end"), _call("c9", "finish", {
+            "summary": "sorted 3 parts: 2 good, 1 bad"})],
+    ]
+    result, _, _ = _run(script, fake.scan, fake.sort,
+                        _report_fn_factory(tmp_path), tmp_path)
+    assert result["finished"] is True
+    assert result["good"] == 2 and result["bad"] == 1
+    assert fake.seen_levers[0] == 89.8
+
+
+def test_scan_result_shows_lever_deg(tmp_path):
+    scan = _scan_with_levers([
+        {"table_mm": list(P0), "lever_deg": 89.84, "confidence": 0.9},
+        {"table_mm": list(P1), "lever_deg": None, "confidence": None},
+    ])
+    script = [
+        [_call("c1", "scan_table", {})],
+        [_call("c2", "finish", {"summary": "ok"})],
+    ]
+    result, _, _ = _run(script, scan, _sort_fn_factory([]),
+                         _report_fn_factory(tmp_path), tmp_path)
+    assert result["finished"] is True
+    transcripts = list(tmp_path.glob("agent_*.json"))
+    assert len(transcripts) == 1
+    loaded = json.loads(transcripts[0].read_text(encoding="utf-8"))
+    parts = loaded["steps"][0]["results"][0]["parts"]
+    assert parts[0]["lever_deg"] == 89.8
+    assert parts[0]["confidence"] == 0.9
+    assert parts[1]["lever_deg"] is None

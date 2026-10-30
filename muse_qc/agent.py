@@ -47,11 +47,13 @@ FAIL_STOP = 2
 SYSTEM_PROMPT = (
     "You control a robot quality inspection cell. Parts are "
     "connectors with 3 orange levers: good means 3 levers, bad "
-    "means fewer. Always scan before sorting, sort one part at a "
-    "time, rescan after every sort, retry a missed grip at most "
-    "once per part, never sort a part twice, stop when a scan "
-    "finds no parts, then write the report and finish with a "
-    "short summary (parts sorted good/bad, failures)."
+    "means fewer. Scan once, then sort the listed parts one "
+    "after another without rescanning, retry a missed grip at "
+    "most once per part, never sort a part twice, rescan after "
+    "a failed or missed sort and once the list is done, stop "
+    "when a scan finds no parts, then write the report and "
+    "finish with a short summary (parts sorted good/bad, "
+    "failures)."
 )
 START_TEXT = (
     "Start the inspection: scan the table, then sort every part."
@@ -161,7 +163,7 @@ def run_agent(client, scan_fn, sort_fn, report_fn, out=print,
                 elif outcome is not None:
                     # A successful scan (no outcome) between two
                     # failed sorts keeps the count: rescanning is
-                    # mandatory after every sort.
+                    # mandatory after a failed or missed sort.
                     fails = 0
             for item in output:
                 history.append(plain_item(item))
@@ -204,13 +206,16 @@ def _run_tool(name, args, state, scan_fn, sort_fn, report_fn,
             return result, False
         items = found.get("parts", [])
         positions = [part["table_mm"] for part in items]
-        state.new_scan(positions)
+        levers = [part.get("lever_deg") for part in items]
+        state.new_scan(positions, levers)
         count = len(positions)
         skipped = int(found.get("skipped", 0) or 0)
         result = {"parts": [
             {"id": index,
              "table_mm": [float(pos[0]), float(pos[1])],
-             "confidence": part.get("confidence")}
+             "confidence": part.get("confidence"),
+             "lever_deg": (None if part.get("lever_deg") is None
+                           else round(float(part["lever_deg"]), 1))}
             for index, (pos, part) in enumerate(zip(positions, items))
         ], "skipped": skipped, "image": found.get("image")}
         if count == 0:
@@ -246,32 +251,38 @@ def _run_tool(name, args, state, scan_fn, sort_fn, report_fn,
                     "reason": "sort limit reached"}, True
         state.note_attempt(position)
         state.sort_count += 1
+        lever = state.lever_of(part_id)
         try:
-            result = dict(sort_fn(position))
+            result = dict(sort_fn(position, lever))
         except Exception as exc:  # noqa: BLE001 - short, no key
             result = {"outcome": "error", "levers": None,
                       "verdict": None, "box": None, "record": None,
                       "reason": f"sort failed: {exc}"}
         result["lines"] = list(result.get("lines") or [])[-12:]
-        state.mark_stale()
         outcome = result.get("outcome")
         if outcome == "sorted":
             if result.get("record"):
                 state.records.append(str(result["record"]))
             state.note_sorted(position)
+            state.remove_sorted(part_id)
             out(f"tool: part {part_id} levers {result.get('levers')}"
                 f" {result.get('verdict')}, sorted")
-        elif outcome == "interrupted":
+        else:
+            # Any other outcome (missed grip, error, inspect_failed,
+            # interrupted, refused): the table may have changed, so
+            # the whole scan expires and the model must rescan.
+            state.mark_stale()
+        if outcome == "interrupted":
             out(f"tool: part {part_id} interrupted")
             return result, True
-        elif outcome == "missed_grip":
+        if outcome == "missed_grip":
             out(f"tool: part {part_id} missed grip")
         elif outcome == "inspect_failed":
             out(f"tool: part {part_id} inspect failed")
         elif outcome == "refused":
             out(f"tool: part {part_id} refused:"
                 f" {result.get('reason')}")
-        else:
+        elif outcome != "sorted":
             out(f"tool: part {part_id} error: {result.get('reason')}")
         return result, False
     if name == "write_report":

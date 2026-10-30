@@ -64,10 +64,14 @@ def _solve_nominal(
     table_xy: tuple[float, float],
     hover_mm: float,
     seed_joints_deg: object,
+    *,
+    yaw_offset_deg: float = 0.0,
 ) -> dict:
     """Nominal (uncorrected) hover joints via the SDK IK. No bus.
 
     Used by arm_calibration.solve_corrected for each iteration.
+    yaw_offset_deg turns the tool about z past the radial yaw
+    (grip yaw from the lever direction); 0 keeps the old heading.
     """
     import numpy as np
 
@@ -80,7 +84,11 @@ def _solve_nominal(
     seed = [float(value) for value in seed_joints_deg]
     if len(seed) != 6 or not all(math.isfinite(v) for v in seed):
         return {"ok": False, "reason": "unreachable: bad seed joints"}
-    if not all(math.isfinite(v) for v in (table_x, table_y, hover)):
+    try:
+        offset = float(yaw_offset_deg)
+    except (TypeError, ValueError):
+        return {"ok": False, "reason": "unreachable: bad yaw offset"}
+    if not all(math.isfinite(v) for v in (table_x, table_y, hover, offset)):
         return {"ok": False, "reason": "unreachable: bad table target"}
     base_x, base_y = table_to_base_mm(table_x, table_y)
     tip_m = (base_x / 1000.0, base_y / 1000.0, hover / 1000.0)
@@ -90,7 +98,7 @@ def _solve_nominal(
         (hover + fk_check.TIP_OFFSET_MM) / 1000.0,
     )
     # Turn tool-down about z by the joint 1 direction (joint 6 cable).
-    yaw = math.atan2(base_y, base_x)
+    yaw = math.atan2(base_y, base_x) + math.radians(offset)
     cos_yaw, sin_yaw = math.cos(yaw), math.sin(yaw)
     turn = (
         (cos_yaw, -sin_yaw, 0.0),
@@ -137,12 +145,15 @@ def solve_hover(
     table_xy: tuple[float, float],
     hover_mm: float,
     seed_joints_deg: object,
+    *,
+    yaw_offset_deg: float = 0.0,
 ) -> dict:
     """Hover joints so the corrected tip lands on the target.
 
     Iterates the nominal IK (arm_calibration.solve_corrected).
     tip_base_mm stays the nominal FK tip; tip_table_mm is the
     corrected tip (base x/y, table z), plus the iteration count.
+    yaw_offset_deg turns the tool about z past the radial yaw.
     """
     try:
         table = (float(table_xy[0]), float(table_xy[1]))
@@ -150,7 +161,8 @@ def solve_hover(
         return {"ok": False, "reason": "unreachable: bad table target"}
     base_x, base_y = table_to_base_mm(table[0], table[1])
     solved = arm_calibration.solve_corrected(
-        (base_x, base_y), hover_mm, seed_joints_deg)
+        (base_x, base_y), hover_mm, seed_joints_deg,
+        yaw_offset_deg=yaw_offset_deg)
     if not solved.get("ok"):
         return {"ok": False, "reason": str(solved.get("reason"))}
     joints = solved["joints_deg"]

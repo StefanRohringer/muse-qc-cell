@@ -1670,8 +1670,11 @@ Tools offered to the model:
   latest table scan under fresh ids.
 - `inspect_and_sort(part_id)` picks the part with that id, counts
   its levers and drops it into the good or bad box. Unknown or
-  stale ids are refused; after every sort the scan goes stale, so
-  the model must rescan before the next sort.
+  stale ids are refused; one scan covers the whole list (human
+  decision 2026-10-30): after a sorted part only that id expires
+  and the model sorts the next id without rescanning, while a
+  failed or missed sort expires the whole scan, so the model
+  rescans then and once the list is done.
 - `write_report()` builds the HTML report from only this run's
   records.
 - `finish(summary)` ends the run; the summary is printed and stored.
@@ -1762,6 +1765,30 @@ First hardware run 2026-10-30 (see docs/DEVLOG.md): the old
 crop-based lever cue was decided or blocked by wood pixels and
 no real part got source "levers"; fixed by the inside-the-part
 stripe cue above.
+
+## 35. Grip yaw from the lever direction (not yet run on hardware)
+
+`muse_qc/grip_yaw.py` turns the `lever_deg` of section 34 into a
+grip yaw offset: the lever direction is mapped into the arm base
+frame (`table_to_base_mm` on the part centre and centre plus the
+unit lever direction), compared with the radial yaw
+`atan2(base_y, base_x)` of the part, and wrapped modulo 180 into
+[-90, 90), so a 180 deg turn of the part does not matter. The
+offset is clamped to +/- `MAX_GRIP_YAW_DEG` = 70 (joint 6 camera
+cable; `safety.check_target` still checks every waypoint against
+the 75 deg J6 limit). `muse_qc/pick_test.py` takes it as
+`--lever-deg DEG` (0 to 180, optional; without it nothing
+changes): the dry run prints
+`grip yaw: lever NN.N deg, offset +NN.N deg` (plus ` (clamped)`
+when clamped) before the plan summary, and the same offset runs
+through `solve_hover`'s `yaw_offset_deg` for hover, lower, lift
+and put-down. The agent passes each part's `lever_deg` from the
+scan to `real_sort`, which adds `--lever-deg` to the `pick_test`
+child command only when it is known. Dry run for the human:
+
+```bash
+uv run python -m muse_qc.pick_test --table-mm 643.9 297.2 --lever-deg 31.9 --inspect
+```
 
 ## Safety notes
 
