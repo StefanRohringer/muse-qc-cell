@@ -12,8 +12,12 @@ the normal prompt, scale and margin and saved as a new
 armcam_<timestamp>.png; only then come the crop and prompt
 variants in RETRY_VARIANTS. Without two 3s the first result
 stands (verdict bad), so an unconfirmed single 3 never turns
-into good. A failed first count (no part, request error) is
-returned unchanged, never retried.
+into good. A first count that misses the part (stage no-part)
+is retried on up to PART_MISS_RETRIES fresh frames when
+grab_frame is given; the first successful fresh count
+continues with the rules above, and when every fresh frame
+also misses the original failure stands. Other failures
+(request errors) are returned unchanged, never retried.
 
 Run by the human only (it contacts the Meta Model API):
 
@@ -41,6 +45,7 @@ RETRY_VARIANTS = (
     ("orange bar", 8, 15),
     ("orange bar", 6, 15),
 )
+PART_MISS_RETRIES = 2
 
 
 def _save_fresh_frame(
@@ -67,23 +72,30 @@ def count_with_retry(
     count_fn: Callable = count_clips.count_frame,
     grab_frame: Callable[[], numpy.ndarray | None] | None = None,
 ) -> dict:
-    """Count levers, retrying a first count of 0 or more than 3.
+    """Count levers, retrying a missed part and a count of 0 or more than 3.
 
-    Runs the normal count first: a failed count is returned
-    unchanged, exactly 3 levers are returned as good, and 1 or
-    2 levers are returned at once as bad, all without retry.
-    Otherwise retries follow in order: first a
-    fresh frame from grab_frame (when given) with the normal
-    prompt, scale and margin, then RETRY_VARIANTS on the
-    original frame. The part is good only when two retry counts
-    each give exactly 3 levers; returns that second 3 on
-    arrival, and stops early when the remaining retries can no
-    longer reach two 3s. Otherwise the first result stands
-    (verdict bad), so an unconfirmed single 3 never turns into
-    good. Failed retry counts simply count as not 3. The
-    returned dict gains "attempts", one (prompt, scale, margin,
-    levers) tuple per executed count, starting with the normal
-    count. Prints nothing and never includes any key.
+    Runs the normal count first. A first count that misses the
+    part (stage no-part) is retried on up to PART_MISS_RETRIES
+    fresh frames from grab_frame (when given) with the normal
+    prompt, scale and margin; the first successful fresh count
+    becomes the first result below, and when every fresh frame
+    also misses the original failure stands (same object, same
+    outcome, with the executed counts in "attempts"). Other
+    failures are returned unchanged, never retried. Exactly 3
+    levers are returned as good, and 1 or 2 levers are returned
+    at once as bad, all without retry. Otherwise retries follow
+    in order: first a fresh frame from grab_frame (when given)
+    with the normal prompt, scale and margin, then
+    RETRY_VARIANTS on the frame where the part was found. The part is good only
+    when two retry counts each give exactly 3 levers; returns
+    that second 3 on arrival, and stops early when the
+    remaining retries can no longer reach two 3s. Otherwise the
+    first result stands (verdict bad), so an unconfirmed single
+    3 never turns into good. Failed retry counts simply count
+    as not 3. The returned dict gains "attempts", one (prompt,
+    scale, margin, levers) tuple per executed count (levers
+    None for a miss), starting with the normal count. Prints
+    nothing and never includes any key.
     """
     first = count_fn(
         client, frame, prompt, recordings_dir, source_image,
@@ -95,6 +107,34 @@ def count_with_retry(
         count_clips.CROP_MARGIN_PX,
         first.get("levers"),
     )]
+    variant_frame, variant_source = frame, source_image
+    if (not first.get("ok") and first.get("stage") == "no-part"
+            and grab_frame is not None):
+        for _ in range(PART_MISS_RETRIES):
+            try:
+                fresh = grab_frame()
+            except Exception:  # noqa: BLE001 - no frame, stop missing
+                break
+            if fresh is None:
+                break
+            fresh_source = _save_fresh_frame(fresh, recordings_dir)
+            miss = count_fn(
+                client, fresh, prompt, recordings_dir, fresh_source,
+                expected_px=expected_px,
+            )
+            attempts.append((
+                prompt,
+                count_clips.CROP_SCALE,
+                count_clips.CROP_MARGIN_PX,
+                miss.get("levers"),
+            ))
+            if miss.get("ok"):
+                first = miss
+                variant_frame, variant_source = fresh, fresh_source
+                break
+        if not first.get("ok"):
+            first["attempts"] = attempts
+            return first
     if (not first.get("ok") or first.get("levers") == 3
             or first.get("levers") in (1, 2)):
         if first.get("ok"):
@@ -116,7 +156,7 @@ def count_with_retry(
             ))
     for variant_prompt, scale, margin in RETRY_VARIANTS:
         specs.append(
-            (variant_prompt, scale, margin, frame, source_image))
+            (variant_prompt, scale, margin, variant_frame, variant_source))
     threes = 0
     for index, (retry_prompt, scale, margin, retry_frame,
                 retry_source) in enumerate(specs):

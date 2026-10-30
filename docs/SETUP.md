@@ -1646,7 +1646,10 @@ frame. The part is good only when two retry counts each give
 exactly 3; the run stops at the second 3, and also stops early
 when the remaining retries can no longer reach two 3s.
 Otherwise the first result stands (verdict bad), so an
-unconfirmed single 3 never turns a bad part into good. A retry
+unconfirmed single 3 never turns a bad part into good. A first
+count that misses the part ("part: target not in view") is
+retried first on up to `PART_MISS_RETRIES` = 2 fresh frames
+before those lever retries. A retry
 prints "inspect retry: N attempts" before the "inspect: levers
 ..." line. The worst case is 6 counts (12 SAM calls) plus a
 second camera open, so the inspect timeout is 60 s; the arm

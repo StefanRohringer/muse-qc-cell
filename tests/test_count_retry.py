@@ -197,11 +197,11 @@ def test_4_first_is_retried():
     assert len(counter.calls) == 3
 
 
-def test_failed_first_count_is_not_retried():
+def test_request_error_is_not_retried():
     failed = {
         "ok": False,
-        "reason": "part: target not in view",
-        "stage": "no-part",
+        "reason": "request failed: boom",
+        "stage": "part-request",
         "levers": None,
         "verdict": None,
     }
@@ -217,6 +217,137 @@ def test_failed_first_count_is_not_retried():
     assert result is failed
     assert "attempts" not in result
     assert len(calls) == 1
+
+
+class _MissThenCounter:
+    """count_fn stand-in returning one scripted result dict per call."""
+
+    def __init__(self, results):
+        self._results = list(results)
+        self.calls: list[tuple] = []
+        self.sources: list = []
+
+    def __call__(self, client, frame, prompt, recordings_dir="",
+                 source_image="", expected_px=None,
+                 crop_scale=8, crop_margin_px=15):
+        self.calls.append(
+            (frame, prompt, crop_scale, crop_margin_px))
+        self.sources.append(source_image)
+        return self._results[min(len(self.calls) - 1,
+                                 len(self._results) - 1)]
+
+
+def _miss():
+    return {
+        "ok": False,
+        "reason": "part: target not in view",
+        "stage": "no-part",
+        "levers": None,
+        "verdict": None,
+    }
+
+
+def _counted(levers):
+    return {
+        "ok": True,
+        "reason": "",
+        "stage": "done",
+        "levers": levers,
+        "verdict": "good" if levers == 3 else "bad",
+    }
+
+
+def test_miss_then_fresh_three_is_good(tmp_path):
+    assert count_retry.PART_MISS_RETRIES == 2
+    frame, fresh = _frame(), _frame() + 1
+    grabs: list = []
+
+    def grab():
+        grabs.append(True)
+        return fresh
+
+    counter = _MissThenCounter([_miss(), _counted(3)])
+    result = count_retry.count_with_retry(
+        object(), frame, "brown bar", recordings_dir=tmp_path,
+        count_fn=counter, grab_frame=grab)
+    assert result["levers"] == 3
+    assert result["verdict"] == "good"
+    assert len(grabs) == 1
+    assert len(counter.calls) == 2
+    assert counter.calls[0][0] is frame
+    assert counter.calls[1][0] is fresh
+    assert counter.calls[1][1:] == ("brown bar", 8, 15)
+    assert result["attempts"] == [
+        ("brown bar", 8, 15, None),
+        ("brown bar", 8, 15, 3),
+    ]
+    assert len(list(Path(tmp_path).glob("armcam_*.png"))) == 1
+
+
+def test_miss_three_times_returns_original_failure(tmp_path):
+    failed = _miss()
+    grabs: list = []
+
+    def grab():
+        grabs.append(True)
+        return _frame()
+
+    counter = _MissThenCounter([failed, _miss(), _miss()])
+    result = count_retry.count_with_retry(
+        object(), _frame(), "brown bar", recordings_dir=tmp_path,
+        count_fn=counter, grab_frame=grab)
+    assert result is failed
+    assert result["levers"] is None
+    assert result["verdict"] is None
+    assert len(counter.calls) == 3
+    assert len(grabs) == 2
+    assert result["attempts"] == [("brown bar", 8, 15, None)] * 3
+
+
+def test_miss_without_grab_is_unchanged():
+    failed = _miss()
+    calls: list = []
+
+    def counter(*args, **kwargs):
+        calls.append(args)
+        return failed
+
+    result = count_retry.count_with_retry(
+        object(), _frame(), "brown bar", count_fn=counter)
+    assert result is failed
+    assert "attempts" not in result
+    assert len(calls) == 1
+
+
+def test_miss_then_zero_runs_existing_retries(tmp_path):
+    frame, fresh = _frame(), _frame() + 1
+    grabs: list = []
+
+    def grab():
+        grabs.append(True)
+        return fresh
+
+    counter = _MissThenCounter(
+        [_miss(), _counted(0), _counted(0), _counted(0),
+         _counted(0), _counted(0), _counted(0)])
+    result = count_retry.count_with_retry(
+        object(), frame, "brown bar", recordings_dir=tmp_path,
+        count_fn=counter, grab_frame=grab)
+    assert result["levers"] == 0
+    assert result["verdict"] == "bad"
+    assert len(counter.calls) == 6
+    assert len(grabs) == 2
+    assert [entry[3] for entry in result["attempts"]] == [
+        None, 0, 0, 0, 0, 0]
+    assert counter.calls[0][0] is frame
+    for call in counter.calls[1:]:
+        assert call[0] is fresh
+        assert call[0] is not frame
+    assert counter.sources[0] == ""
+    fresh_source = counter.sources[1]
+    assert Path(fresh_source).name.startswith("armcam_")
+    for source in counter.sources[3:]:
+        assert source == fresh_source
 
 
 def test_crop_default_unchanged_and_honours_scale_margin():
