@@ -61,6 +61,15 @@ ARM_ZONE_TABLE_MM = (380.0, 610.0, 0.0, 300.0)  # x_min, x_max, y_min, y_max
 REACH_MAX_MM = 345.0
 
 
+class TooManyChanges(RuntimeError):
+    """Unskipped blob limit tripped; carries results and image path."""
+
+    def __init__(self, results, path):
+        super().__init__("too many changes: light or arm moved? take a new"
+                         " empty reference with --save-empty")
+        self.results, self.path = results, path
+
+
 def classify_skip(table_mm):
     """Return the skip reason for a candidate table position, or None.
 
@@ -262,38 +271,35 @@ def scan_table(frame, empty, phrase=DEFAULT_PHRASE, client=None,
     to_table = lambda point: pixel_to_table_mm(  # noqa: E731
         homography, point, calibration)
     blobs = detect_changes(frame, empty, scale, to_table)
-    if len(blobs) > MAX_CANDIDATES:
-        raise RuntimeError(
-            "too many changes: light or arm moved?"
-            " take a new empty reference with --save-empty")
     results = []
     for blob in blobs:
         blob_table = to_table(blob["center"])
-        reason = classify_skip(blob_table)
-        if reason is not None:
-            results.append({
-                "bbox": blob["bbox"], "pixel": blob["center"],
-                "area_mm2": blob["area_mm2"],
-                "table_mm": blob_table,
-                "confirmed": False, "confidence": None,
-                "skipped": reason,
-            })
-            continue
+        results.append({
+            "bbox": blob["bbox"], "pixel": blob["center"],
+            "area_mm2": blob["area_mm2"], "table_mm": blob_table,
+            "confirmed": False, "confidence": None,
+            "skipped": classify_skip(blob_table),
+        })
+    unskipped = [item for item in results if item["skipped"] is None]
+    if len(unskipped) > MAX_CANDIDATES:
+        results.sort(key=lambda item: item["table_mm"][0])
+        try:
+            path = save_annotated(annotate(frame, results), recordings_dir)
+        except (OSError, RuntimeError) as exc:
+            raise RuntimeError(f"request failed: {exc}") from exc
+        raise TooManyChanges(results, path)
+    for item in unskipped:
         confirmed, sam_center, confidence = False, None, None
         if client is not None:
             try:
                 confirmed, sam_center, confidence = confirm_candidate(
-                    frame, blob, phrase, client)
+                    frame, {"center": item["pixel"], "bbox": item["bbox"]},
+                    phrase, client)
             except Exception as exc:  # noqa: BLE001 - mapped, no key
                 raise RuntimeError(_request_error(exc)) from exc
-        pixel = sam_center if confirmed else blob["center"]
-        results.append({
-            "bbox": blob["bbox"], "pixel": pixel,
-            "area_mm2": blob["area_mm2"],
-            "table_mm": to_table(pixel),
-            "confirmed": confirmed, "confidence": confidence,
-            "skipped": None,
-        })
+        pixel = sam_center if confirmed else item["pixel"]
+        item.update(pixel=pixel, table_mm=to_table(pixel),
+                    confirmed=confirmed, confidence=confidence)
     results.sort(key=lambda item: item["table_mm"][0])
     try:
         path = save_annotated(annotate(frame, results), recordings_dir)
@@ -347,6 +353,13 @@ def main(argv=None):
             return 1
     try:
         results, path = scan_table(frame, empty, args.phrase, client)
+    except TooManyChanges as exc:
+        skipped = sum(1 for item in exc.results if item["skipped"] is not None)
+        print(f"blobs: {len(exc.results)} total, {skipped} skipped,"
+              f" {len(exc.results) - skipped} unskipped")
+        print(exc.path)
+        print(exc)
+        return 1
     except RuntimeError as exc:
         print(exc)
         return 1

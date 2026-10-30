@@ -1291,8 +1291,14 @@ or `skipped`), sorted by table x; the last lines give the
 annotated copy at `recordings/parts_<YYYYmmdd_HHMMSS>.png` (blob
 rectangles, green when confirmed, yellow otherwise, with id and
 table mm). A missing reference or a size mismatch prints a short
-message with exit 2; more than 12 blobs prints `too many changes`
-with exit 1.
+message with exit 2; more than 12 blobs outside the skip zones
+prints `too many changes` with exit 1. Skipped blobs never count
+against the limit, so gripper and arm motion in the arm zone or a
+small light change there cannot trip it; a real light change in
+the feed area still does. When the limit trips, the annotated
+image is still saved and one extra line prints before the error
+(`blobs: N total, S skipped, U unskipped` plus the image path),
+so the changes can be seen.
 
 Before SAM, every candidate is checked against three skip zones and
 skipped ones cost no SAM call: within 70 mm (max of |dx|, |dy|) of

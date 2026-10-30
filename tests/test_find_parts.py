@@ -140,12 +140,59 @@ def test_tiny_noise_and_huge_change_filtered(monkeypatch, tmp_path, capsys):
     assert "candidates: 2" in capsys.readouterr().out
 
 
+def _unskipped_grid_13():
+    """13 small rects on verified unskipped table spots (5 + 5 + 3)."""
+    grey = (110, 110, 110)
+    rects = []
+    for py in (280, 300):
+        for px in (296, 318, 340, 362, 384):
+            rects.append((px - 8, py - 6, px + 8, py + 6, grey))
+    for px in (300, 326, 348):
+        rects.append((px - 8, 320 - 6, px + 8, 320 + 6, grey))
+    return rects
+
+
 def test_too_many_blobs_exit_1(monkeypatch, tmp_path, capsys):
     _setup(monkeypatch)
-    parts = [
-        (20 + i * 45, 100, 40 + i * 45, 120, (110, 110, 110))
-        for i in range(13)
-    ]
+    _write(tmp_path / "empty.png", _background())
+    _write(tmp_path / "frame.png", _frame_with(_unskipped_grid_13()))
+    code = _run_main(monkeypatch, tmp_path, [
+        "--image", str(tmp_path / "frame.png"),
+        "--empty", str(tmp_path / "empty.png"), "--no-sam",
+    ])
+    assert code == 1
+    out = capsys.readouterr().out
+    assert "too many changes" in out
+    assert "blobs: 13 total, 0 skipped, 13 unskipped" in out
+    files = sorted((tmp_path / "recordings").glob("parts_*.png"))
+    assert len(files) == 1
+    assert files[0].name in out
+    assert out.index("blobs: 13 total") < out.index("too many changes")
+
+
+def test_skipped_blobs_do_not_count_against_limit(monkeypatch, tmp_path,
+                                                 capsys):
+    seen: list = []
+    texts = ["0<|box;x1=270;y1=270;x2=370;y2=370;w=100;h=100;c=0.88|>"]
+    arm = [(x, y) for x in (420, 495, 570) for y in (90, 160, 230)]
+    arm.append((495, 270))
+    good = [(335, 385), (415, 385), (335, 425), (415, 425),
+            (335, 465), (415, 465)]
+    bad = [(640, 390), (720, 390), (640, 430), (720, 430)]
+    parts = ([_rect_at((505.0, 360.0))]
+             + [_rect_at((float(x), float(y))) for x, y in arm]
+             + [_rect_at((float(x), float(y))) for x, y in good]
+             + [_rect_at((float(x), float(y))) for x, y in bad])
+    out = _run_frame(monkeypatch, tmp_path, capsys, parts,
+                     texts=texts, seen=seen)
+    assert len(seen) == 1
+    assert "parts: 1 confirmed of 21 candidates (20 skipped)" in out
+
+
+def test_limit_trip_lists_skipped_and_saves_image(monkeypatch, tmp_path,
+                                                 capsys):
+    _setup(monkeypatch)
+    parts = _unskipped_grid_13() + [_rect_at((500.0, 150.0))]
     _write(tmp_path / "empty.png", _background())
     _write(tmp_path / "frame.png", _frame_with(parts))
     code = _run_main(monkeypatch, tmp_path, [
@@ -153,7 +200,12 @@ def test_too_many_blobs_exit_1(monkeypatch, tmp_path, capsys):
         "--empty", str(tmp_path / "empty.png"), "--no-sam",
     ])
     assert code == 1
-    assert "too many changes" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "too many changes" in out
+    assert "blobs: 14 total, 1 skipped, 13 unskipped" in out
+    files = sorted((tmp_path / "recordings").glob("parts_*.png"))
+    assert len(files) == 1
+    assert files[0].name in out
 
 
 def test_missing_reference_exit_2(monkeypatch, tmp_path, capsys):
