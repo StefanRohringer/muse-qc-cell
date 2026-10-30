@@ -706,7 +706,13 @@ uv run python -m muse_qc.count_clips --image recordings/armcam_test.png --prompt
 always `PART_PROMPT`. With `--expect-target` only the part near
 `EXPECTED_PART_PX` = (342, 290) is accepted (up to
 `MAX_PART_OFFSET_PX` = 60 px away), as the gripper inspection
-does, so a saved gripper image can be re-checked the same way:
+does, so a saved gripper image can be re-checked the same way.
+The held part is tiny in the full frame, so the part search cuts
+a `PART_ZOOM_WINDOW_PX` = 160 px square around the expected
+position, enlarges it `PART_ZOOM_SCALE` = 4 times and sends that
+single zoomed image; the boxes are mapped back into frame pixels
+before the same target check, and the annotated full image also
+shows the window:
 
 ```bash
 uv run python -m muse_qc.count_clips --image recordings/armcam_test.png --expect-target
