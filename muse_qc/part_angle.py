@@ -15,11 +15,13 @@ the eroded part region, weighted where the pixel is lever-like
 or next to one (dilated lever mask, covering the dark gaps
 between merged bars). The dominant gradient runs across the
 bars, so the lever direction is the tensor direction + 90 deg,
-with strength = coherence ((l1 - l2) / (l1 + l2)). When the
-stripes are too weak, a small dark slot (V at most SLOT_V_MAX)
-at one end of the levers picks instead: the direction from the
-part centre to the slot centroid is parallel to the levers
-(modulo 180) and chooses the same outline vs outline + 90.
+with strength = coherence ((l1 - l2) / (l1 + l2)). A small dark
+slot (V at most SLOT_V_MAX) at one end of the levers is tried
+first: the direction from the part centre to the slot centroid
+is parallel to the levers (modulo 180) and chooses the same
+outline vs outline + 90. On small parts the lever-end and edge
+gradients can push the stripe cue the wrong way, so the slot
+wins whenever it is found.
 
 Angles are measured in image pixels (x right, y down) and then
 mapped into the table frame with to_table, so the result is
@@ -237,12 +239,12 @@ def lever_angle_deg(frame, bbox, contour, to_table):
     "source"}: lever_deg in [0, 180) in the table frame (None when
     not ok), strength in 0..1, source "levers", "slot" or
     "outline" (None when not ok). The precise angle comes from
-    the blob outline (minAreaRect long side); the gradient stripe
-    cue inside the part only chooses between that direction and
-    +90 deg. Without a clear stripe cue, the dark slot at one end
-    of the levers (centre to slot centroid, same choice) is read;
-    without either cue, the long side is used when the outline
-    aspect ratio reaches FALLBACK_ASPECT_MIN, else ok is False.
+    the blob outline (minAreaRect long side); each cue only
+    chooses between that direction and +90 deg. The dark slot at
+    one end of the levers (centre to slot centroid) is tried
+    first, then the gradient stripe cue inside the part, then the
+    long side when the outline aspect ratio reaches
+    FALLBACK_ASPECT_MIN, else ok is False.
     """
     if contour is None or len(contour) < 3:
         return {"ok": False, "lever_deg": None, "strength": 0.0,
@@ -268,6 +270,23 @@ def lever_angle_deg(frame, bbox, contour, to_table):
     if region is None or not region.any():
         return {"ok": False, "lever_deg": None, "strength": 0.0,
                 "reason": "no part region", "source": None}
+    filled = _filled_mask(contour, x0, y0, (y1 - y0, x1 - x0))
+    if filled is not None and filled.any():
+        slot_deg = _slot_direction(crop, filled)
+        if slot_deg is not None:
+            second = _angle_mod_180(outline_deg + 90.0)
+            if _angle_distance_mod_180(second, slot_deg) < \
+                    _angle_distance_mod_180(outline_deg, slot_deg):
+                outline_deg = second
+            table_deg = _to_table_deg(outline_deg, center, to_table)
+            if table_deg is None:
+                return {"ok": False, "lever_deg": None,
+                        "strength": 0.0,
+                        "reason": "table mapping degenerate",
+                        "source": None}
+            return {"ok": True, "lever_deg": table_deg,
+                    "strength": 0.5, "reason": "slot",
+                    "source": "slot"}
     lever_inside = _lever_mask(crop) & region
     lever_pixels = int(lever_inside.sum())
     if lever_pixels >= MIN_LEVER_PIXELS:
@@ -295,23 +314,6 @@ def lever_angle_deg(frame, bbox, contour, to_table):
         reason, strength = "bars unclear", coherence
     else:
         reason, strength = "too few lever pixels", 0.0
-    filled = _filled_mask(contour, x0, y0, (y1 - y0, x1 - x0))
-    if filled is not None and filled.any():
-        slot_deg = _slot_direction(crop, filled)
-        if slot_deg is not None:
-            second = _angle_mod_180(outline_deg + 90.0)
-            if _angle_distance_mod_180(second, slot_deg) < \
-                    _angle_distance_mod_180(outline_deg, slot_deg):
-                outline_deg = second
-            table_deg = _to_table_deg(outline_deg, center, to_table)
-            if table_deg is None:
-                return {"ok": False, "lever_deg": None,
-                        "strength": 0.0,
-                        "reason": "table mapping degenerate",
-                        "source": None}
-            return {"ok": True, "lever_deg": table_deg,
-                    "strength": 0.5, "reason": "slot",
-                    "source": "slot"}
     if aspect >= FALLBACK_ASPECT_MIN:
         table_deg = _to_table_deg(outline_deg, center, to_table)
         if table_deg is None:

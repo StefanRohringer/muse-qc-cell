@@ -1745,9 +1745,11 @@ into the lever hue (see docs/DEVLOG.md 2026-10-30): no wood
 pixel outside the contour may influence the direction.
 The result is mapped into the table frame and reported as
 `lever_deg` in [0, 180), where 0 means bars parallel to table
-+x and 90 parallel to table +y. A weak stripe cue falls back to
-the long outline side when its aspect ratio reaches
-`FALLBACK_ASPECT_MIN` = 1.1, else the direction is unknown.
++x and 90 parallel to table +y. The cue order is slot, levers,
+outline: a small dark slot at one end of the levers is tried
+first, then the stripe cue, then the long outline side when its
+aspect ratio reaches `FALLBACK_ASPECT_MIN` = 1.1, else the
+direction is unknown.
 
 `muse_qc/find_parts.py` prints the direction on each unskipped
 part line (`lever_deg=NN.N (levers|slot|outline)`, or
@@ -1764,9 +1766,12 @@ uv run python -m muse_qc.find_parts --image recordings/frame.png --no-sam
 First hardware run 2026-10-30 (see docs/DEVLOG.md): the old
 crop-based lever cue was decided or blocked by wood pixels and
 no real part got source "levers"; fixed by the inside-the-part
-stripe cue above. When the stripes stay too weak (coherence
-below 0.3), a small dark slot at one end of the levers picks
-outline vs outline + 90 instead (printed as `(slot)`).
+stripe cue above. A small dark slot at one end of the levers
+(V at most 70) is tried before the stripes and picks outline vs
+outline + 90 instead (printed as `(slot)`): on the small real
+parts the lever-end and edge gradients can push the stripe cue
+past `MIN_STRENGTH` in the wrong direction (see docs/DEVLOG.md
+2026-10-30 ~13:30), while the slot was right on all three parts.
 
 ## 35. Grip yaw from the lever direction (run on hardware 2026-10-30)
 

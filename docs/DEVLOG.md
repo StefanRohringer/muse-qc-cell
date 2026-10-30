@@ -1071,3 +1071,9 @@ dropped into the good box
 end readings: arm [-1.52 +0.05 -2.04 +2.94 +1.34 -4.45] gripper -126.30 deg
 ```
 First grip with the turned gripper: the rotated part was gripped and counted 3 levers on the first try (no retry), like a straight part.
+- Human ran (2026-10-30 ~13:30, power supply off, arm not moved) `uv run python -m muse_qc.find_parts --no-sam` after commit c43ea46:
+```text
+part 7 center=(1006, 382) area_mm2=398 table_mm=(507.2, 346.6) sam=skipped lever_deg=89.8 (slot)
+part 16 center=(1347, 545) area_mm2=577 table_mm=(716.5, 245.0) sam=skipped lever_deg=92.6 (levers)
+```
+Part 16 is the part turned 90 deg (levers along table +x, expected about 0): the stripe cue reached MIN_STRENGTH but picked the wrong direction (on these small parts the gradients of the lever ends and part edges dominate). The slot cue was right on all three real parts (AI-assisted check: about 80, 39 and 20 deg for the 90, 30 and 0 deg parts). Conclusion: try the slot cue first (source "slot"), then the stripe cue (source "levers"), then the outline fallback (source "outline").

@@ -277,6 +277,60 @@ def test_slot_picks_direction_when_stripes_are_weak():
         assert _distance_mod_180(result["lever_deg"], deg) <= 5.0, deg
 
 
+def _conflict_part_frame(true_deg, long_side=40.0, short_side=38.0,
+                         background=BACKGROUND):
+    """Strong stripes across the true axis, slot at its end.
+
+    Brownish bars run across true_deg (strong coherent stripes that
+    would pick the wrong outline side), while the dark slot sits at
+    one end of the true lever axis: the slot must win.
+    """
+    frame = numpy.full((HEIGHT, WIDTH, 3), background, numpy.uint8)
+    center = (WIDTH / 2.0, HEIGHT / 2.0)
+    rad = math.radians(true_deg)
+    direction = (math.cos(rad), math.sin(rad))
+    normal = (-direction[1], direction[0])
+    half_l, half_s = long_side / 2.0, short_side / 2.0
+    corners = []
+    for sign_x, sign_y in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+        corners.append((
+            center[0] + direction[0] * sign_x * half_l
+            + normal[0] * sign_y * half_s,
+            center[1] + direction[1] * sign_x * half_l
+            + normal[1] * sign_y * half_s,
+        ))
+    cv2.fillPoly(frame, [numpy.array(corners, dtype=numpy.int32)], GREY)
+    for bar in _bar_polygons(center, true_deg + 90):
+        cv2.fillPoly(frame, [bar], BROWNISH)
+    slot_center = (center[0] + direction[0] * (half_l - 6.0),
+                   center[1] + direction[1] * (half_l - 6.0))
+    cv2.rectangle(frame,
+                  (int(round(slot_center[0] - 2)),
+                   int(round(slot_center[1] - 2))),
+                  (int(round(slot_center[0] + 2)),
+                   int(round(slot_center[1] + 2))),
+                  SLOT, -1)
+    return frame
+
+
+def test_slot_wins_over_wrong_stripes():
+    """Stripes across the true axis must not beat the slot.
+
+    The bars are strong (coherent enough to decide on their own)
+    but run across the true lever axis; the dark slot at the end
+    of the true axis is tried first and must win.
+    """
+    for deg in (0, 30, 90):
+        frame = _conflict_part_frame(deg)
+        contour = _diff_contour(frame)
+        x, y, width, height = cv2.boundingRect(contour)
+        result = lever_angle_deg(frame, (x, y, width, height), contour,
+                                 IDENTITY)
+        assert result["ok"], deg
+        assert result["source"] == "slot", deg
+        assert _distance_mod_180(result["lever_deg"], deg) <= 5.0, deg
+
+
 def test_nearly_square_without_slot_or_stripes_not_ok():
     """Same aspect 1.05 geometry but no slot and no stripes."""
     frame = _rect_part_frame(30, 40.0, 38.0, bar_color=GREY)
