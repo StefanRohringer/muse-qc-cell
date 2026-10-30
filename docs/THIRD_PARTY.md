@@ -64,8 +64,11 @@ Official Seeed sources are used for the reBot Arm B601-DM. No third-party code i
 - Purpose: client for the Meta Model API in `muse_qc/model_check.py`
   (hand-run connection check: one `GET /v1/models` call against the
   base URL `https://api.meta.ai/v1`), `muse_qc/vision_sam.py` (SAM 3.1
-  box detection through one `POST /v1/responses` call), and
-  `muse_qc/count_clips.py` (through the `vision_sam.py` request code).
+  box detection through one `POST /v1/responses` call),
+  `muse_qc/count_clips.py` (through the `vision_sam.py` request code),
+  `muse_qc/agent.py` (Muse Spark agent through `POST /v1/responses`
+  with tool calling) and `muse_qc/find_parts.py` (SAM confirm through
+  the `vision_sam.py` request code).
 - Source (PyPI): `openai>=3.40.0` (resolved to 3.40.0).
 - License: Apache-2.0 (PyPI package metadata).
 - Installed with: `uv add openai`.
@@ -105,11 +108,12 @@ Official Seeed sources are used for the reBot Arm B601-DM. No third-party code i
 ## Meta models (used through the Meta Model API)
 
 - sam-3.1: box detection at run time in `muse_qc/vision_sam.py`
-  (table view) and `muse_qc/count_clips.py` (arm camera part and lever
-  boxes). No model code or weights are in this repository.
-- muse-spark-1.3: powers Muse Code, which wrote the code (see
-  docs/MUSE_CODE_LOG.md); its use as the decision maker in the agent
-  loop is planned.
+  (table view), `muse_qc/count_clips.py` (arm camera part and lever
+  boxes) and `muse_qc/find_parts.py` (table part confirm). No model
+  code or weights are in this repository.
+- muse-spark-1.3: the decision maker in the agent loop
+  (muse_qc/agent.py, Responses API with tool calling), and the model
+  behind Muse Code, which wrote the code (see docs/MUSE_CODE_LOG.md).
 - Use follows the Meta Model API terms of the hackathon. The
   meta-sam-parser package (SAM License) is not used; boxes are parsed
   by our own code in `muse_qc/vision_sam.py`.

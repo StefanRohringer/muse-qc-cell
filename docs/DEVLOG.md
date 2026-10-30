@@ -585,6 +585,9 @@ motion finished, gripper back at the open width
   P2 A=(505.0, 348.7) B=(491.6, 371.8); hover output not kept
   P3 A=(690.4, 307.6) B=(698.2, 333.4); hold measured tip mm: x=+285.6 y=-195.0 z=+99.7
   A first try for P2 at table (509.7, 383.2) = base (360.5, -13.8) was refused before moving: "plan failed: unreachable: IK did not converge". With the gripper pointing straight down at 100 mm hover the reach ends between 345 mm (P3 worked) and 360 mm from the joint 1 axis.
+
+## 2026-10-29
+
 - Human ran python -m muse_qc.pick_test --table-mm 495.9 330 (dry run, 2026-10-29, arm power supply on): the first try was refused at waypoint 7673 (invalid current reading: the clamped joint 2 read exactly 0.0 in the chained pre-check), fixed in b15bfd8. After the fix:
 ```text
 rest joints deg: ['-2.79', '+1.13', '-1.72', '+2.72', '+2.44', '-1.91']
@@ -864,6 +867,9 @@ Human work on the inspection (2026-10-29 evening): the human found by watching t
 - Human ran `uv run python -m muse_qc.agent --execute` (2026-10-29 ~22:41 to 22:44, power supply on, hand on the switch): child-process fix confirmed, three sorts in a row without a busy port, write_report, finish "Sorted 3 parts: 0 good, 3 bad, 0 failures. Table empty, report written.", exit 0. All three parts were good parts but were counted "levers 0 verdict bad" and dropped into the bad box. One part stayed on the table: the last scan listed it as an unconfirmed candidate at (713, 238) (SAM did not confirm it, it lay tilted), so the agent saw "no parts found". Contacts per sort: L2 R2 at -46.12/-49.56, -49.27/-52.64, -45.97/-49.43, all "dropped into the bad box".
 - The human had the saved images reviewed (AI-assisted review): two wrong-part picks (highest confidence instead of the target) and one prompt miss under the evening lamp. count_20261029_224139 and count_20261029_224236: find_part picked the highest-confidence box, another part further right (lying on its side); the gripped target sat top centre in front of the fingers. count_20261029_224330: the right part (box (325,186,355,217)), three levers visible in the crop, but SAM returned 0 boxes for "orange bar" (the levers look brown). Human prompt test on recordings/armcam_20261029_224328.png: "orange bar" 0, "orange lever" 0, "orange stripe" 0, "lever" 0, "brown bar" 3. Human re-count of every inspection image of the day with "brown bar" (orange -> brown): 134008 0->3, 134656 3->3, 204601 3->3, 211720 3->3, 212016 2->2 (the bad part), 222330 3->3, 224139 0->0 and 224236 0->0 (wrong part picked), 224330 0->3, 225250/225253/225255/225257 0->3 (the prompt test runs), 225300 3->3. "brown bar" was never lower than "orange bar" and kept the bad part at 2.
 - Human ran the arm-camera height test (2026-10-29 ~23:21 to 23:28, power supply on, hand on the switch): one good part flat at table (506.4, 338.1) (find_parts: confirmed 0.71). `hover_move --table-mm 506.4 338.1 --hover 100 --hold-s 30 --execute` with `camera_arm` during the hold, then the same with `--hover 80`, then `--table-mm 506.4 298.1 --hover 80` (40 mm towards the base). `count_clips` on the three images: part boxes (327,181,355,212) conf 0.80, (326,197,357,231) conf 0.81, (322,125,358,165) conf 0.82, all "levers: 3". Lowering the hover from 100 to 80 mm made the part only about 1 px larger, because the arm camera looks forward; the inspection height stays at 100 mm. The human saw joint 4 swing during hover_move (default gains).
+
+## 2026-10-30
+
 - Human ran `uv run python -m muse_qc.hold_test --table-mm 506.4 338.1 --hold-s 20 --gains vel2 --hold-mode mit-ff` (dry run, 2026-10-30 ~00:11): all waypoints pass, mit kp 120 120 120 18 18 18, kd 8 8 8 2 2 2, tau scale 1.0, gravity torque at hover J1 -0.000, J2 +7.474, J3 -5.564, J4 -0.236, J5 -0.000, J6 -0.000 N*m.
 - Human ran the same with `--execute` (2026-10-30 ~00:13, power supply on, hand on the switch), then `--hold-mode posvel --execute` at the same point (~00:15). Recorded output:
 ```text

@@ -1150,8 +1150,7 @@ the squeeze behave exactly as before (`muse_qc/grip_speed.py`;
 the 22.0 mm switch sits just above the 17 x 20.5 mm part). The
 gripper POS_VEL vlim runs at 25 % of the config value
 (0.75 rad/s, about 43 deg/s) so the fast rate fits; the arm vlim
-stays at 10 %. The faster gripper and the 20 mm/s approach are
-not yet run on hardware. Every arm
+stays at 10 %. The faster gripper and the 20 mm/s approach ran on hardware on 2026-10-30 (see DEVLOG). Every arm
 waypoint passes `safety.check_target` per cycle with the grasp floor
 `GRASP_Z_MIN_M` = 4 mm on the lower/lift/put-down/raise waypoints
 only; everywhere else the 30 mm floor is unchanged, and no safety
@@ -1724,9 +1723,7 @@ uv run python -m muse_qc.agent --execute
 
 `--execute` asks once `Type yes to let the agent move the arm:`
 and only `yes` starts; anything else moves nothing. The Responses
-API function-calling format in `muse_qc/agent.py` is an assumption
-(see its module docstring); the --simulate run shows whether the
-real API answers in that shape. Every response item is converted
+API function-calling format in `muse_qc/agent.py` was confirmed by the human runs on 2026-10-29 and 2026-10-30 (see DEVLOG). Every response item is converted
 to a plain dict and sent back for the next call, including
 reasoning items with their encrypted content (the transcript
 holds no reasoning blobs). Only the human runs it, never CI
