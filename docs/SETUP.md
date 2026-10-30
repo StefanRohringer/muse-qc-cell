@@ -1797,6 +1797,60 @@ child command only when it is known. Dry run for the human:
 uv run python -m muse_qc.pick_test --table-mm 643.9 297.2 --lever-deg 31.9 --inspect
 ```
 
+## 36. Live page (not yet run on hardware)
+
+`muse_qc/live_page.py` (`LivePage`, 256 lines) shows the agent
+run while it happens, for the human watching and for the demo
+video. It keeps the run state (status, counters, latest table
+image, part list, sorted part cards newest first, last 15
+console lines) and rewrites `recordings/live.html` after every
+update, atomically (temp file in the same folder plus
+`os.replace`), so the browser never shows a half-written page.
+The page is static HTML only (no server, no JavaScript, no
+external URLs) with `<meta http-equiv="refresh" content="2">`,
+large dark-on-light fonts for 1920x1080 next to the arm. All
+text is html-escaped and image paths are relative to the page
+folder (as in `report.py`); the GOOD/BAD badges reuse
+`report._badge`. A failed write prints one short
+`live page: <error>` line and the run goes on.
+`muse_qc/agent.py` (399 lines) takes `live=None`: when given,
+every printed line also goes to `live.line`, the status reads
+"scanning the table" / "sorting part N" / "writing the report"
+before each tool call, `live.scan` follows a successful scan,
+`live.sorted` follows every sort result (with the record crop
+image when its JSON is readable), and `live.finish` closes the
+run, also after a stop or failure (with the stop reason).
+`main` creates `LivePage()` for both `--execute` and the
+default simulate mode and prints
+`live page: recordings/live.html (open it in the browser)`
+once at the start. How to watch:
+
+```bash
+uv run python -m muse_qc.agent
+xdg-open recordings/live.html
+```
+
+The page reloads every 2 s on its own. Not yet run on hardware.
+
+Order by chat (human request 2026-10-30): `main` takes
+`--task "TEXT"` (optional) and `--chat`. The task text replaces
+`START_TEXT` as the first user message, so the human gives the
+order in plain words; with `--chat`, `main` asks
+`next order (empty line to quit): ` after each run and a
+non-empty line continues the same run with that line as a new
+user message (same history, same `RunState`, same limits and
+safety; the `yes` confirmation is asked only once at the start).
+The chat logic lives in `muse_qc/agent_chat.py` (the transcript
+writer moved there from `agent.py` to keep it within 400 lines).
+Each human order and the final summary go through the console
+output, hence onto the live page. The tools and their refusals
+are unchanged: the order can only change WHICH parts the model
+asks for, never bypass a tool check:
+
+```bash
+uv run python -m muse_qc.agent --execute --chat --task "sort all parts"
+```
+
 ## Safety notes
 
 Read-only review of the SDK file

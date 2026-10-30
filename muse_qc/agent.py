@@ -24,10 +24,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime
-from pathlib import Path
 
-from muse_qc import agent_tools
+from muse_qc import agent_chat, agent_tools
 from muse_qc.agent_io import (
     field,
     iter_calls,
@@ -36,6 +34,7 @@ from muse_qc.agent_io import (
     usage_text,
 )
 from muse_qc.agent_tools import TOOL_DEFINITIONS, RunState
+from muse_qc.live_page import LivePage
 from muse_qc.model_check import BASE_URL, KEY_NAME, read_api_key
 
 MODEL = "muse-spark-1.3"
@@ -82,8 +81,9 @@ def _model_call(client, history):
 
 
 def run_agent(client, scan_fn, sort_fn, report_fn, out=print,
-              recordings_dir="recordings",
-              max_steps=MAX_STEPS, max_sorts=MAX_SORTS) -> dict:
+              recordings_dir="recordings", max_steps=MAX_STEPS,
+              max_sorts=MAX_SORTS, live=None, first_text=None,
+              history=None, state=None) -> dict:
     """Run the tool-calling loop; return the run summary dict.
 
     scan_fn returns {"parts", "skipped", "image"}, sort_fn takes a
@@ -91,11 +91,18 @@ def run_agent(client, scan_fn, sort_fn, report_fn, out=print,
     takes this run's record paths and returns the report path. The
     key never appears here: only the client factory sees it.
     """
-    state = RunState()
-    history: list = [{"role": "user", "content": [
-        {"type": "input_text", "text": START_TEXT}]}]
+    if state is None:
+        state = RunState()
+    if history is None:
+        history = [{"role": "user", "content": [
+            {"type": "input_text",
+             "text": first_text or START_TEXT}]}]
     entries: list[dict] = []
-    summary = ""
+    summary = stop_reason = ""
+    if live is not None:
+        def out(text, _emit=out, _page=live):
+            _emit(text)
+            _page.line(text)
     finished = False
     good = bad = 0
     fails = 0
@@ -107,6 +114,7 @@ def run_agent(client, scan_fn, sort_fn, report_fn, out=print,
                 response = _model_call(client, history)
             except Exception as exc:  # noqa: BLE001 - short, no key
                 out(f"agent: model request failed: {exc}")
+                stop_reason = f"model request failed: {exc}"
                 break
             output = list(field(response, "output", []) or [])
             tokens = usage_text(response)
@@ -139,7 +147,9 @@ def run_agent(client, scan_fn, sort_fn, report_fn, out=print,
                 entry["calls"].append({"name": name, "arguments": args})
                 result, stop = _run_tool(
                     name, args, state, scan_fn, sort_fn, report_fn,
-                    max_sorts, out)
+                    max_sorts, out, live)
+                if live is not None:
+                    live.after_tool(name, result)
                 entry["results"].append(result)
                 outputs.append({
                     "type": "function_call_output",
@@ -173,28 +183,37 @@ def run_agent(client, scan_fn, sort_fn, report_fn, out=print,
                 if any(result.get("outcome") == "interrupted"
                        for result in entry["results"]):
                     out("agent: interrupted by human, stopping")
+                    stop_reason = "interrupted by human"
                 break
             if fails >= FAIL_STOP:
                 out("agent: 2 consecutive failures, stopping")
+                stop_reason = "2 consecutive failures"
                 break
         else:
             out(f"agent: step limit reached ({max_steps}), stopping")
+            stop_reason = f"step limit reached ({max_steps})"
     except KeyboardInterrupt:
         out("agent: interrupted by human, stopping")
-    path = _write_transcript(recordings_dir, entries, summary, out)
+        stop_reason = "interrupted by human"
+    path = agent_chat.write_transcript(
+        recordings_dir, entries, summary, out)
+    if live is not None:
+        live.finish(summary if finished else stop_reason or "stopped")
     return {
         "summary": summary,
         "finished": finished,
         "good": good,
         "bad": bad,
-        "steps": step,
-        "transcript": path,
+        "steps": step, "history": history,
+        "transcript": path, "state": state,
     }
 
 
 def _run_tool(name, args, state, scan_fn, sort_fn, report_fn,
-              max_sorts, out) -> tuple[dict, bool]:
+              max_sorts, out, live=None) -> tuple[dict, bool]:
     """Execute one model tool call; return (result, stop_loop)."""
+    if live is not None:
+        live.before_tool(name, args)
     if name == "scan_table":
         out("agent -> scan_table()")
         try:
@@ -309,25 +328,6 @@ def _run_tool(name, args, state, scan_fn, sort_fn, report_fn,
     return result, False
 
 
-def _write_transcript(recordings_dir, entries, summary, out) -> str:
-    """Write the run transcript JSON (no key, no reasoning blobs)."""
-    target = Path(recordings_dir)
-    target.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    path = target / f"agent_{stamp}.json"
-    try:
-        path.write_text(json.dumps({
-            "model": MODEL,
-            "summary": summary,
-            "steps": entries,
-        }, indent=2), encoding="utf-8")
-    except OSError as exc:
-        out(f"agent: transcript failed: {exc}")
-        return ""
-    out(f"agent: transcript {path}")
-    return str(path)
-
-
 def main(argv=None, client_factory=None, toolset=None, input_fn=None,
          out=print) -> int:
     """Entry point: --simulate by default, --execute moves the arm.
@@ -340,6 +340,10 @@ def main(argv=None, client_factory=None, toolset=None, input_fn=None,
         description="Agentic QC cell loop (Muse Spark, human-started).")
     parser.add_argument("--execute", action="store_true",
                         help="use the real tools and move the arm")
+    parser.add_argument("--task", default=None,
+                        help="first order in plain words")
+    parser.add_argument("--chat", action="store_true",
+                        help="keep asking for the next order")
     args = parser.parse_args(argv)
     ask = input_fn if input_fn is not None else input
     if args.execute:
@@ -373,7 +377,15 @@ def main(argv=None, client_factory=None, toolset=None, input_fn=None,
     except Exception as exc:  # noqa: BLE001 - mapped, key never printed
         out(f"request failed: {exc}")
         return 1
-    result = run_agent(client, *toolset, out=out)
+    page = LivePage()
+    out(f"live page: {page.path} (open it in the browser)")
+    if args.task or args.chat:
+        result = agent_chat.run_session(
+            client, *toolset, task=args.task, chat=args.chat,
+            ask=input_fn if input_fn is not None else input,
+            out=out, live=page)
+    else:
+        result = run_agent(client, *toolset, out=out, live=page)
     return 0 if result["finished"] else 1
 
 
