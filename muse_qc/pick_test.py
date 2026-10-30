@@ -13,7 +13,9 @@ the gripper, the levers are counted and the verdict picks the
 box; a failed inspection sorts the unverified part into the bad
 box with exit code 1. With --station the arm carries the part to
 the fixed inspection station first and inspects there; without
-it (default) the part is inspected at the lift pose. The default arm mode is mit-ff (MIT with
+it (default) the part is inspected at the lift pose. --station-j6
+DEG turns joint 6 to that angle at the station (needs --station).
+The default arm mode is mit-ff (MIT with
 gravity feed-forward); --arm-mode posvel selects the old POS_VEL
 loop. The default grip tip height is 8 mm. With --lever-deg the
 gripper turns about the vertical axis so the part is gripped like
@@ -82,7 +84,7 @@ def dry_run(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, out=print,
             drop=None, solve_drop_fn=None,
             inspect=False, find_arm_node=None, read_key=None,
             arm_mode="mit-ff", tau_scale=None, gravity_fn=None,
-            lever_deg=None, use_station=None):
+            lever_deg=None, use_station=None, station_j6_deg=None):
     out(f"arm mode: {arm_mode}")
     if inspect and inspect_step.check_prereqs(
             out, find_arm_node, read_key) is None:
@@ -103,7 +105,8 @@ def dry_run(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, out=print,
                                        use_xy_correction, speed_deg_s=speed_deg_s,
                                        accel_deg_s2=accel_deg_s2, drop=drop,
                                        solve_drop_fn=solve_drop_fn, inspect=inspect,
-                                       use_station=use_station)
+                                       use_station=use_station,
+                                       station_j6_deg=station_j6_deg)
             if built is None:
                 return 1
             if arm_mode == "mit-ff":
@@ -126,7 +129,7 @@ def execute(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, input_fn=input,
             read_key=None, open_arm_camera=None, make_client=None,
             count_frame=None, inspect_recordings_dir="recordings",
             arm_mode="mit-ff", tau_scale=None, gravity_fn=None,
-            lever_deg=None, use_station=None):
+            lever_deg=None, use_station=None, station_j6_deg=None):
     out(f"arm mode: {arm_mode}")
     reader, arm_start_deg, grip_start_deg = _read_start(sdk)
     stream, sensor, arm_sender = None, None, None
@@ -146,7 +149,8 @@ def execute(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, input_fn=input,
                                           use_xy_correction, speed_deg_s=speed_deg_s,
                                           accel_deg_s2=accel_deg_s2, drop=drop,
                                           solve_drop_fn=solve_drop_fn, inspect=inspect,
-                                          use_station=use_station)
+                                          use_station=use_station,
+                                          station_j6_deg=station_j6_deg)
         if built is None:
             return 1
         limits = safety.JOINT_LIMITS_DEG if joint_limits is None else joint_limits
@@ -294,7 +298,15 @@ def main(argv=None, sdk_factory=None, **kwargs):
                         " (needs --inspect)")
     parser.add_argument("--no-station", dest="station", action="store_false",
                         help="inspect at the lift pose, as today")
+    parser.add_argument("--station-j6", type=float, default=None,
+                        metavar="DEG",
+                        help="joint 6 angle at the station in deg"
+                        " (needs --station)")
     args = parser.parse_args(argv)
+    if args.station_j6 is not None and args.station is not True:
+        parser.error("--station-j6 needs --station")
+    if args.station_j6 is not None and not math.isfinite(args.station_j6):
+        parser.error("--station-j6 must be a finite angle in deg")
     if args.tau_scale is not None and args.arm_mode != "mit-ff":
         parser.error("--tau-scale needs --arm-mode mit-ff")
     speed_explicit = args.speed_deg_s is not None
@@ -325,6 +337,7 @@ def main(argv=None, sdk_factory=None, **kwargs):
     kwargs.setdefault("arm_mode", args.arm_mode)
     kwargs.setdefault("tau_scale", tau_scale)
     kwargs.setdefault("lever_deg", args.lever_deg)
+    kwargs.setdefault("station_j6_deg", args.station_j6)
     return run(sdk, (args.table_mm[0], args.table_mm[1]), args.grip_z_mm,
                args.open_mm, args.no_grip, args.hold_s,
                use_xy_correction=not args.no_xy_correction,

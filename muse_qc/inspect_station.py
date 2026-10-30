@@ -45,17 +45,25 @@ USE_STATION_DEFAULT = False
 
 def solve_station_joints(start_deg: object, joint_limits: object = None,
                          solve_fn: object = None,
-                         use_xy_correction: bool = True) -> dict:
+                         use_xy_correction: bool = True,
+                         station_j6_deg: float = STATION_J6_DEG) -> dict:
     """Station joints for the fixed inspection point. Pure, moves nothing.
 
     Same solve path as the hover: xy correction (unless off),
     solve_fn at STATION_TIP_Z_MM seeded with the start joints,
     gripper pointing straight down. Joint 6 is then set to the
-    absolute STATION_J6_DEG; the human tunes that angle later.
+    absolute station_j6_deg (default STATION_J6_DEG, tuned with
+    --station-j6); the human tunes that angle later.
     Refuses with "station unreachable" (bad target, no limits,
-    IK failure) or "joint 6 limit" (STATION_J6_DEG outside the
+    IK failure) or "joint 6 limit" (station_j6_deg outside the
     joint 6 limits).
     """
+    try:
+        j6 = float(station_j6_deg)
+    except (TypeError, ValueError):
+        return {"ok": False, "reason": "station unreachable: bad station joint 6"}
+    if not math.isfinite(j6):
+        return {"ok": False, "reason": "station unreachable: bad station joint 6"}
     try:
         start = tuple(float(v) for v in start_deg)
     except (TypeError, ValueError):
@@ -69,9 +77,9 @@ def solve_station_joints(start_deg: object, joint_limits: object = None,
         low, high = limits["joint6"]
     except (KeyError, TypeError):
         return {"ok": False, "reason": "station unreachable: joint limits unavailable"}
-    if not (float(low) <= STATION_J6_DEG <= float(high)):
+    if not (float(low) <= j6 <= float(high)):
         return {"ok": False,
-                "reason": f"joint 6 limit: station joint 6 {STATION_J6_DEG:.1f} deg"
+                "reason": f"joint 6 limit: station joint 6 {j6:.1f} deg"
                           f" outside [{float(low):.1f}, {float(high):.1f}]"}
     solve = solve_hover if solve_fn is None else solve_fn
     base_x, base_y = table_to_base_mm(STATION_TABLE_MM[0], STATION_TABLE_MM[1])
@@ -87,7 +95,7 @@ def solve_station_joints(start_deg: object, joint_limits: object = None,
     joints = tuple(float(v) for v in solved["joints_deg"])
     if len(joints) != 6 or not all(math.isfinite(v) for v in joints):
         return {"ok": False, "reason": "station unreachable: bad IK joints"}
-    joints = joints[:5] + (float(STATION_J6_DEG),)
+    joints = joints[:5] + (float(j6),)
     return {
         "ok": True,
         "joints_deg": joints,
@@ -152,7 +160,8 @@ def build_inspect_plan_with_station(
         hover_mm: float = HOVER_MM, use_xy_correction: bool = True,
         free_speed_deg_s: float = 15.0, accel_deg_s2: float = 30.0,
         drop_joints_by_box: object = None, tip_fn: object = None,
-        use_station: bool = USE_STATION_DEFAULT) -> dict:
+        use_station: bool = USE_STATION_DEFAULT,
+        station_j6_deg: float = STATION_J6_DEG) -> dict:
     """One inspect plan with both drop branches, station optional. Pure.
 
     With use_station off this is exactly build_inspect_plan.
@@ -180,7 +189,7 @@ def build_inspect_plan_with_station(
     if not base.get("ok"):
         return base
     station = solve_station_joints(start_deg, joint_limits, solve_fn,
-                                   use_xy_correction)
+                                   use_xy_correction, station_j6_deg)
     if not station.get("ok"):
         return {"ok": False, "reason": str(station.get("reason"))}
     station_joints = station["joints_deg"]

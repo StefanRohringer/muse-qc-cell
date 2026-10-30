@@ -38,7 +38,8 @@ def _plan_and_check(arm_start_deg, grip_start_deg, table_xy, grip_z_mm, open_mm,
                     out, joint_limits, solve_fn, check_fn, tip_fn,
                     use_xy_correction=True, speed_deg_s=SPEED_DEG_S[2],
                     accel_deg_s2=ACCEL_DEG_S2[2], drop=None,
-                    solve_drop_fn=None, inspect=False, use_station=None):
+                    solve_drop_fn=None, inspect=False, use_station=None,
+                    station_j6_deg=None):
     if use_station is None:
         use_station = USE_STATION_DEFAULT
     if use_station and not inspect:
@@ -73,13 +74,16 @@ def _plan_and_check(arm_start_deg, grip_start_deg, table_xy, grip_z_mm, open_mm,
                     out(f"drop solve failed: {one.get('reason')}")
                     return None, None
                 solved[box] = one
+            j6 = STATION_J6_DEG if station_j6_deg is None \
+                else float(station_j6_deg)
             built = build_inspect_plan_with_station(
                 arm_start_deg, table_xy, grip_z_mm, joint_limits,
                 solve_fn=solve_fn, use_xy_correction=use_xy_correction,
                 free_speed_deg_s=speed_deg_s, accel_deg_s2=accel_deg_s2,
                 drop_joints_by_box={box: one["joints_deg"]
                                     for box, one in solved.items()},
-                tip_fn=tip_of, use_station=use_station)
+                tip_fn=tip_of, use_station=use_station,
+                station_j6_deg=j6)
         else:
             drop_joints = None
             if drop is not None:
@@ -100,9 +104,11 @@ def _plan_and_check(arm_start_deg, grip_start_deg, table_xy, grip_z_mm, open_mm,
         for line in plan_summary(built["plan"], built):
             out(line)
         if use_station and built.get("use_station"):
+            shown = STATION_J6_DEG if station_j6_deg is None \
+                else float(station_j6_deg)
             out(f"station: table mm ({STATION_TABLE_MM[0]:.1f},"
                 f" {STATION_TABLE_MM[1]:.1f}), tip z {STATION_TIP_Z_MM:.1f} mm,"
-                f" joint 6 {STATION_J6_DEG:+.1f} deg")
+                f" joint 6 {shown:+.1f} deg")
         for box in boxes:
             one = solved[box] if inspect else solved
             box_xy = BOXES_TABLE_MM[box]

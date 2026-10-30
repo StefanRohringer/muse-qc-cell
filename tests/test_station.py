@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import math
 
+import pytest
+
 from muse_qc import inspect_station, pick_loop, pick_plan, pick_test
 from muse_qc.drop_plan import BOXES_TABLE_MM, DROP_TILT_DEG, RELEASE_OPEN_MM
 from muse_qc.first_move_plan import LOOP_RATE_HZ
@@ -416,3 +418,47 @@ def test_dry_run_unreachable_station_refuses_before_moving():
     assert code == 1
     assert "station unreachable" in "\n".join(lines)
     assert "enable_all" not in sdk.calls and "loop" not in sdk.calls
+
+
+def test_station_j6_option_sets_joint_and_prints():
+    solved = inspect_station.solve_station_joints(
+        REST, TEST_LIMITS, solve_fn=_fake_solve, station_j6_deg=15.0)
+    assert solved["ok"] is True
+    assert solved["joints_deg"][5] == 15.0
+    built = inspect_station.build_inspect_plan_with_station(
+        REST, TABLE, 8.0, TEST_LIMITS, solve_fn=_fake_solve,
+        use_station=True, station_j6_deg=15.0, **_station_kwargs())
+    assert built["ok"] is True
+    assert built["station_joints"][5] == 15.0
+    sdk, lines = FakeSdk(), []
+    code = pick_test.main(
+        _station_main_args(["--inspect", "--station", "--station-j6", "15"]),
+        sdk_factory=lambda **kwargs: sdk,
+        **_station_dry_kwargs(lines),
+    )
+    assert code == 0
+    assert "joint 6 +15.0 deg" in "\n".join(lines)
+    assert "enable_all" not in sdk.calls and "loop" not in sdk.calls
+
+
+def test_station_j6_outside_limits_refuses_before_moving():
+    sdk, lines = FakeSdk(), []
+    code = pick_test.main(
+        _station_main_args(["--inspect", "--station", "--station-j6", "200"]),
+        sdk_factory=lambda **kwargs: sdk,
+        **_station_dry_kwargs(lines),
+    )
+    assert code == 1
+    assert "joint 6 limit" in "\n".join(lines)
+    assert "enable_all" not in sdk.calls and "loop" not in sdk.calls
+
+
+def test_station_j6_without_station_is_refused():
+    sdk, lines = FakeSdk(), []
+    with pytest.raises(SystemExit) as exc:
+        pick_test.main(
+            _station_main_args(["--inspect", "--station-j6", "15"]),
+            sdk_factory=lambda **kwargs: sdk,
+            **_station_dry_kwargs(lines),
+        )
+    assert exc.value.code == 2

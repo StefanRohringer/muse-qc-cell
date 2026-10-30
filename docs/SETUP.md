@@ -1898,6 +1898,11 @@ The dry run prints
 `station: table mm (235.0, 150.0), tip z 100.0 mm, joint 6 +0.0 deg`
 plus the to-station length in the segments line. Only the
 human runs it, never CI and never an agent.
+To tune the joint 6 angle without editing code, pass `--station-j6 DEG` together with `--station` (refused without it); the dry run then prints the angle actually used, and the angle that looks best is written into `STATION_J6_DEG` in `muse_qc/inspect_station.py`:
+
+```bash
+uv run python -m muse_qc.pick_test --table-mm X Y --lever-deg L --inspect --station --station-j6 15 --execute
+```
 
 ## Safety notes
 
