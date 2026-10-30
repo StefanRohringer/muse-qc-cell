@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ast
-import base64
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,7 +12,6 @@ import pytest
 
 import muse_qc.count_clips as count_clips
 import muse_qc.vision_sam as vision_sam
-from muse_qc import part_zoom
 from muse_qc.count_clips import count_levers, drop_short_bars, find_part, verdict
 from muse_qc.vision_sam import parse_output_text, run_detection
 
@@ -195,15 +193,9 @@ def test_find_part_with_expected_px_rejects_far_part():
     assert find_part(boxes, count_clips.EXPECTED_PART_PX) is None
 
 
-# In the zoomed 640x640 window (origin (262, 210)): a box at the
-# window corner maps to frame (262, 210, 272, 222), far from the
-# target, so the same target check rejects it.
-FAR_PART_ZOOM = "3<|box;x1=0;y1=0;x2=40;y2=50;w=40;h=50;c=0.91|>"
-
-
 def test_count_frame_target_not_in_view(tmp_path):
     result = count_clips.count_frame(
-        _SeqClient([FAR_PART_ZOOM, THREE_BARS]),
+        _SeqClient([FAR_PART, THREE_BARS]),
         _arm_frame(), "brown bar", recordings_dir=tmp_path,
         expected_px=count_clips.EXPECTED_PART_PX)
     assert result["ok"] is False
@@ -215,7 +207,7 @@ def test_count_frame_target_not_in_view(tmp_path):
 def test_target_not_in_view_gives_exit_code_3(tmp_path, capsys):
     code = count_clips.run_count(
         SECRET, _arm_frame(), "brown bar",
-        lambda key: _SeqClient([FAR_PART_ZOOM, THREE_BARS]),
+        lambda key: _SeqClient([FAR_PART, THREE_BARS]),
         recordings_dir=tmp_path,
         expected_px=count_clips.EXPECTED_PART_PX,
     )
@@ -225,8 +217,6 @@ def test_target_not_in_view_gives_exit_code_3(tmp_path, capsys):
 
 # A part held between the fingertips, near EXPECTED_PART_PX (342, 290).
 HELD_PART = "7<|box;x1=320;y1=266;x2=360;y2=308;w=40;h=42;c=0.75|>"
-# The same frame box in zoom pixels (window origin (262, 210), scale 4).
-HELD_PART_ZOOM = "7<|box;x1=232;y1=224;x2=392;y2=392;w=160;h=168;c=0.75|>"
 
 
 def test_record_holds_part_offset_px(tmp_path):
@@ -234,7 +224,7 @@ def test_record_holds_part_offset_px(tmp_path):
     import math
 
     result = count_clips.count_frame(
-        _SeqClient([HELD_PART_ZOOM, THREE_BARS]),
+        _SeqClient([HELD_PART, THREE_BARS]),
         _arm_frame(), "brown bar", recordings_dir=tmp_path,
         expected_px=count_clips.EXPECTED_PART_PX)
     assert result["ok"] is True
@@ -256,7 +246,7 @@ def test_main_expect_target_rechecks_saved_image(tmp_path, capsys,
     monkeypatch.setattr(count_clips, "read_api_key", lambda: SECRET)
     monkeypatch.setattr(
         count_clips, "_default_client_factory",
-        lambda key: _SeqClient([FAR_PART_ZOOM, THREE_BARS]))
+        lambda key: _SeqClient([FAR_PART, THREE_BARS]))
     monkeypatch.chdir(tmp_path)
     code = count_clips.main(
         ["--image", str(image_path), "--expect-target"])
@@ -639,98 +629,6 @@ def test_vision_sam_default_still_maps_table(tmp_path, capsys):
     )
     assert code == 0
     assert "table mapping: unavailable" in capsys.readouterr().out
-
-
-class _ZoomClient:
-    """Fake client with one answer text per call, recording sent images."""
-
-    def __init__(self, texts):
-        self._texts = list(texts)
-        self.phrases: list[str] = []
-        self.sizes: list[tuple[int, int]] = []
-        self.responses = self
-
-    def create(self, **kwargs):
-        content = kwargs["input"][0]["content"]
-        self.phrases.append(content[0].get("text", ""))
-        url = content[1].get("image_url", "")
-        raw = base64.b64decode(url.split(",", 1)[1])
-        image = cv2.imdecode(
-            numpy.frombuffer(raw, numpy.uint8), cv2.IMREAD_COLOR)
-        self.sizes.append((image.shape[1], image.shape[0]))
-        index = min(len(self.phrases) - 1, len(self._texts) - 1)
-        return SimpleNamespace(output_text=self._texts[index])
-
-
-# Frame box (322, 270, 362, 310) around EXPECTED_PART_PX (342, 290)
-# in zoom pixels: window (262, 210) times PART_ZOOM_SCALE 4.
-ZOOMED_PART = "7<|box;x1=240;y1=240;x2=400;y2=400;w=160;h=160;c=0.75|>"
-
-
-def test_zoom_constants_match_spec():
-    assert count_clips.PART_ZOOM_WINDOW_PX == 160
-    assert count_clips.PART_ZOOM_SCALE == 4
-    assert part_zoom.PART_ZOOM_WINDOW_PX == 160
-    assert part_zoom.PART_ZOOM_SCALE == 4
-
-
-def test_expected_px_searches_zoomed_window(tmp_path):
-    client = _ZoomClient([ZOOMED_PART, THREE_BARS])
-    result = count_clips.count_frame(
-        client, _arm_frame(), "brown bar", recordings_dir=tmp_path,
-        expected_px=count_clips.EXPECTED_PART_PX)
-    assert result["ok"] is True
-    assert client.phrases == ["small part", "brown bar"]
-    assert client.sizes[0] == (640, 640)
-    part = result["part"]
-    assert (part["x1"], part["y1"], part["x2"], part["y2"]) == (
-        322.0, 270.0, 362.0, 310.0)
-    assert part["center"] == (342.0, 290.0)
-    assert result["levers"] == 3
-    assert result["verdict"] == "good"
-    assert client.sizes[1] == (560, 560)
-    saved_full = cv2.imread(str(Path(result["full_image"])))
-    assert saved_full[210, 262].tolist() == [255, 0, 0]
-
-
-def test_zoom_window_shifts_inside_frame():
-    frame = _arm_frame()
-    assert part_zoom.part_zoom_window(frame, (630, 470)) == (480, 320, 160)
-    assert part_zoom.part_zoom_window(frame, (10, 10)) == (0, 0, 160)
-    assert part_zoom.part_zoom_window(
-        frame, count_clips.EXPECTED_PART_PX) == (262, 210, 160)
-
-
-def test_zoom_box_maps_back_to_frame():
-    box = {"id": 7, "x1": 240, "y1": 240, "x2": 400, "y2": 400,
-           "center": (320.0, 320.0), "confidence": 0.75}
-    mapped = part_zoom.map_zoom_box_to_frame(box, (480, 320))
-    assert (mapped["x1"], mapped["y1"], mapped["x2"], mapped["y2"]) == (
-        540.0, 380.0, 580.0, 420.0)
-    assert mapped["center"] == (560.0, 400.0)
-    assert mapped["confidence"] == 0.75
-
-
-def test_zoomed_search_without_box_is_not_in_view(tmp_path):
-    client = _ZoomClient(["", THREE_BARS])
-    result = count_clips.count_frame(
-        client, _arm_frame(), "brown bar", recordings_dir=tmp_path,
-        expected_px=count_clips.EXPECTED_PART_PX)
-    assert result["ok"] is False
-    assert result["reason"] == "part: target not in view"
-    assert result["stage"] == "no-part"
-    assert client.phrases == ["small part"]
-    assert client.sizes == [(640, 640)]
-
-
-def test_no_expected_px_searches_full_frame(tmp_path):
-    client = _ZoomClient([PART_AND_GRIPPER, THREE_BARS])
-    result = count_clips.count_frame(
-        client, _arm_frame(), "brown bar", recordings_dir=tmp_path)
-    assert result["ok"] is True
-    assert client.phrases == ["small part", "brown bar"]
-    assert client.sizes[0] == (640, 480)
-    assert result["levers"] == 3
 
 
 def test_never_imports_arm_safety_or_sdk_code():

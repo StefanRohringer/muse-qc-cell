@@ -1,12 +1,9 @@
 """Count brown levers on an arm camera image with SAM 3.1 (hand-run).
 
-Two steps: SAM 3.1 first finds the part with PART_PROMPT, then
-SAM 3.1 counts the levers on the cropped and enlarged part with
-LEVER_PROMPT ("brown bar": the orange levers look brown under
-the evening lamp). With expected_px the part search runs on a
-160 x 160 px window around the expected position enlarged 4
-times (the held part is tiny in the full frame); without it the
-full image is searched as before. Boxes at or above MIN_CONFIDENCE
+Two steps: SAM 3.1 first finds the part on the full image with
+PART_PROMPT, then SAM 3.1 counts the levers on the cropped and
+enlarged part with LEVER_PROMPT ("brown bar": the orange levers
+look brown under the evening lamp). Boxes at or above MIN_CONFIDENCE
 are kept, overlapping duplicates are merged (IoU above
 IOU_THRESHOLD keeps the higher confidence), and boxes shorter than
 MIN_BAR_PART_FRAC of the enlarged part height or shorter than
@@ -38,17 +35,7 @@ import numpy
 
 from muse_qc.inspection.draw import draw_levers, draw_part, save_pair
 from muse_qc.inspection.record import build_record, write_record
-from muse_qc.lever_boxes import (
-    count_levers as _filter_levers,
-    drop_short_bars as _split_bars,
-)
 from muse_qc.model_check import KEY_NAME, read_api_key
-from muse_qc.part_zoom import (
-    PART_ZOOM_SCALE,
-    PART_ZOOM_WINDOW_PX,
-    map_zoom_box_to_frame,
-    zoom_part_window,
-)
 from muse_qc.vision_sam import (
     _default_client_factory,
     fetch_output_text,
@@ -72,13 +59,46 @@ EXPECTED_PART_PX = (342, 290)
 MAX_PART_OFFSET_PX = 60
 
 
+def _iou(first: dict, second: dict) -> float:
+    """Return the intersection-over-union of two box dicts."""
+    x1 = max(first["x1"], second["x1"])
+    y1 = max(first["y1"], second["y1"])
+    x2 = min(first["x2"], second["x2"])
+    y2 = min(first["y2"], second["y2"])
+    width = x2 - x1
+    height = y2 - y1
+    if width <= 0 or height <= 0:
+        return 0.0
+    inter = width * height
+    area_first = (first["x2"] - first["x1"]) * (first["y2"] - first["y1"])
+    area_second = (second["x2"] - second["x1"]) * (second["y2"] - second["y1"])
+    union = area_first + area_second - inter
+    if union <= 0:
+        return 0.0
+    return inter / union
+
+
 def count_levers(boxes: list[dict]) -> list[dict]:
     """Filter and de-duplicate boxes, return the kept lever boxes.
 
-    Same as muse_qc.lever_boxes.count_levers with MIN_CONFIDENCE
-    and IOU_THRESHOLD; kept here so existing imports keep working.
+    Drops boxes without confidence or below MIN_CONFIDENCE, then
+    merges overlapping duplicates: boxes are checked from high to
+    low confidence and a box is dropped when its IoU with any kept
+    box is above IOU_THRESHOLD. The kept boxes keep their input
+    order by confidence (highest first).
     """
-    return _filter_levers(boxes, MIN_CONFIDENCE, IOU_THRESHOLD)
+    confident = [
+        box
+        for box in boxes
+        if isinstance(box.get("confidence"), (int, float))
+        and box["confidence"] >= MIN_CONFIDENCE
+    ]
+    confident.sort(key=lambda box: box["confidence"], reverse=True)
+    kept: list[dict] = []
+    for box in confident:
+        if all(_iou(box, other) <= IOU_THRESHOLD for other in kept):
+            kept.append(box)
+    return kept
 
 
 def drop_short_bars(
@@ -86,12 +106,27 @@ def drop_short_bars(
 ) -> tuple[list[dict], list[dict]]:
     """Split lever boxes into bars and too-short remnants.
 
-    Same as muse_qc.lever_boxes.drop_short_bars with
-    MIN_BAR_PART_FRAC and MIN_BAR_TALLEST_FRAC; kept here so
-    existing imports keep working.
+    A bar must satisfy both rules: height at least
+    MIN_BAR_PART_FRAC of the enlarged part height
+    (part_height_px * crop_scale, without the crop margin) and
+    height at least MIN_BAR_TALLEST_FRAC of the tallest box in
+    the input. A box of exactly either limit is kept. An empty
+    input stays empty.
     """
-    return _split_bars(boxes, part_height_px, crop_scale,
-                       MIN_BAR_PART_FRAC, MIN_BAR_TALLEST_FRAC)
+    if not boxes:
+        return [], []
+    part_limit = MIN_BAR_PART_FRAC * part_height_px * crop_scale
+    tallest = max(box["y2"] - box["y1"] for box in boxes)
+    tallest_limit = MIN_BAR_TALLEST_FRAC * tallest
+    bars = []
+    short = []
+    for box in boxes:
+        height = box["y2"] - box["y1"]
+        if height >= part_limit and height >= tallest_limit:
+            bars.append(box)
+        else:
+            short.append(box)
+    return bars, short
 
 
 def verdict(count: int) -> str:
@@ -183,35 +218,21 @@ def count_frame(
 
     Runs the same two SAM calls as run_count (part, then levers on
     the enlarged crop) and saves the two annotated images plus the
-    JSON record exactly as run_count does. With expected_px the
-    part call searches a 160 x 160 px window around that position
-    enlarged 4 times (still one part request) and the boxes are
-    mapped back into frame pixels before the same target check;
-    the annotated full image also shows the window. Without
-    expected_px the full frame is searched as before. The crop
+    JSON record exactly as run_count does. With expected_px only
+    the target part near that image position is accepted. The crop
     uses crop_scale and crop_margin_px (defaults CROP_SCALE and
     CROP_MARGIN_PX). Returns {"ok", "reason", "levers", "verdict",
     "full_image", "crop_image", "record"} plus "stage" (which step
     failed), "part", "kept" and "dropped" for printing. Prints
     nothing and never includes any key.
     """
-    zoom_window = None
-    zoom_origin = None
-    if expected_px is None:
-        part_image = frame
-    else:
-        part_image, zoom_window, _ = zoom_part_window(frame, expected_px)
-        zoom_origin = zoom_window[:2]
     try:
         part_text = fetch_output_text(
-            client, PART_PROMPT, image_to_data_url(part_image)
+            client, PART_PROMPT, image_to_data_url(frame)
         )
     except Exception as exc:  # noqa: BLE001 - mapped to a short message
         return _fail(f"request failed: {exc}", "part-request")
-    boxes = parse_output_text(part_text)
-    if zoom_origin is not None:
-        boxes = [map_zoom_box_to_frame(box, zoom_origin) for box in boxes]
-    part = find_part(boxes, expected_px)
+    part = find_part(parse_output_text(part_text), expected_px)
     if part is None:
         if expected_px is not None:
             return _fail("part: target not in view", "no-part")
@@ -230,15 +251,9 @@ def count_frame(
         count_levers(parse_output_text(lever_text)),
         int(part["y2"]) - int(part["y1"]), crop_scale,
     )
-    full_annotated = draw_part(frame, part, len(kept))
-    if zoom_window is not None:
-        x0, y0, side = (int(zoom_window[0]), int(zoom_window[1]),
-                        int(zoom_window[2]))
-        cv2.rectangle(full_annotated, (x0, y0), (x0 + side, y0 + side),
-                      (255, 0, 0), 2)
     try:
         full_path, crop_path = save_pair(
-            full_annotated,
+            draw_part(frame, part, len(kept)),
             draw_levers(crop, kept, len(kept)),
             recordings_dir,
         )
