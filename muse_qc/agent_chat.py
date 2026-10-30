@@ -41,10 +41,13 @@ def run_session(client, scan_fn, sort_fn, report_fn, *, task=None,
     task replaces the default first order; with chat, ask (a
     drop-in for input) prompts "next order (empty line to quit): "
     after each run and a non-empty line continues the same run
-    (same history, same RunState, same limits and safety). Every
-    human order and every final summary goes through out, hence
-    onto the live page console when live is given. Returns the
-    last run summary dict.
+    (same history, same RunState, same limits and safety). Before
+    each new chat order (not the first) the scan expires
+    (state.fresh is set to False), so the model must call
+    scan_table again: the human may have moved parts between
+    orders. Every human order and every final summary goes
+    through out, hence onto the live page console when live is
+    given. Returns the last run summary dict.
     """
     from muse_qc.agent import (MAX_SORTS, MAX_STEPS, START_TEXT,
                                run_agent)
@@ -67,6 +70,8 @@ def run_session(client, scan_fn, sort_fn, report_fn, *, task=None,
         if history is not None:
             history.append({"role": "user", "content": [
                 {"type": "input_text", "text": pending}]})
+            if state is not None:
+                state.fresh = False
         result = run_agent(
             client, scan_fn, sort_fn, report_fn, out=emit,
             recordings_dir=recordings_dir, max_steps=max_steps,

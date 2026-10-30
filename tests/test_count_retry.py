@@ -92,18 +92,30 @@ def test_no_retry_on_3():
     assert result["attempts"] == [("brown bar", 8, 15, 3)]
 
 
-def test_1_first_is_retried():
-    counter = _ScriptedCounter([1, 0, 0, 0, 0, 0])
+def test_1_first_is_final():
+    counter = _ScriptedCounter([1, 3, 3, 3, 3, 3])
     result = count_retry.count_with_retry(
-        object(), _frame(), "brown bar", grab_frame=lambda: _frame(),
+        object(), _frame(), "brown bar", grab_frame=_no_grab,
         count_fn=counter)
-    assert len(counter.calls) > 1
+    assert len(counter.calls) == 1
     assert result["levers"] == 1
     assert result["verdict"] == "bad"
+    assert result["attempts"] == [("brown bar", 8, 15, 1)]
 
 
-def test_2_first_then_two_threes_is_good(tmp_path):
-    counter = _ScriptedCounter([2, 3, 3])
+def test_2_first_is_final():
+    counter = _ScriptedCounter([2, 3, 3, 3, 3, 3])
+    result = count_retry.count_with_retry(
+        object(), _frame(), "brown bar", grab_frame=_no_grab,
+        count_fn=counter)
+    assert len(counter.calls) == 1
+    assert result["levers"] == 2
+    assert result["verdict"] == "bad"
+    assert result["attempts"] == [("brown bar", 8, 15, 2)]
+
+
+def test_0_first_then_two_threes_is_good(tmp_path):
+    counter = _ScriptedCounter([0, 3, 3])
     frame = _frame()
     fresh = _frame() + 1
     grabs: list = []
@@ -125,7 +137,7 @@ def test_2_first_then_two_threes_is_good(tmp_path):
     assert counter.calls[1][1:] == ("brown bar", 8, 15)
     assert counter.calls[2][1:] == ("brown bar", 6, 15)
     assert result["attempts"] == [
-        ("brown bar", 8, 15, 2),
+        ("brown bar", 8, 15, 0),
         ("brown bar", 8, 15, 3),
         ("brown bar", 6, 15, 3),
     ]
@@ -133,7 +145,7 @@ def test_2_first_then_two_threes_is_good(tmp_path):
 
 
 def test_single_3_stays_bad_and_returns_first():
-    first = {"ok": True, "levers": 1, "verdict": "bad"}
+    first = {"ok": True, "levers": 0, "verdict": "bad"}
     third = {"ok": True, "levers": 3, "verdict": "good"}
     rest = {"ok": True, "levers": 0, "verdict": "bad"}
     results = [first, third, rest, rest, rest, rest]
@@ -147,9 +159,9 @@ def test_single_3_stays_bad_and_returns_first():
         object(), _frame(), "brown bar", grab_frame=lambda: _frame(),
         count_fn=counter)
     assert result is first
-    assert result["levers"] == 1
+    assert result["levers"] == 0
     assert result["verdict"] == "bad"
-    assert [entry[3] for entry in result["attempts"]] == [1, 3, 0, 0, 0, 0]
+    assert [entry[3] for entry in result["attempts"]] == [0, 3, 0, 0, 0, 0]
 
 
 def test_all_zero_stops_early(tmp_path):

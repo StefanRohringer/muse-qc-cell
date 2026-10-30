@@ -1,9 +1,12 @@
 """Retry the lever count when SAM misses the 3 levers of a good part.
 
 SAM is not fully deterministic: the same image gave 0 levers
-three times, then 1. So every first count other than exactly 3
-is retried, and the part is good only when two retry counts each
-give exactly 3. The first retry is a fresh camera frame (the arm
+three times, then 1. So a first count of 0 levers or more than
+3 (a likely SAM miss) is retried, and the part is good only
+when two retry counts each give exactly 3. A first count of 1
+or 2 levers (a plausible bad part) is final and returned at
+once as bad, without retry. The first retry is a fresh camera
+frame (the arm
 may still have moved slightly during the photo), counted with
 the normal prompt, scale and margin and saved as a new
 armcam_<timestamp>.png; only then come the crop and prompt
@@ -64,11 +67,12 @@ def count_with_retry(
     count_fn: Callable = count_clips.count_frame,
     grab_frame: Callable[[], numpy.ndarray | None] | None = None,
 ) -> dict:
-    """Count levers, retrying any first count other than exactly 3.
+    """Count levers, retrying a first count of 0 or more than 3.
 
     Runs the normal count first: a failed count is returned
-    unchanged, and exactly 3 levers are returned as good, both
-    without retry. Otherwise retries follow in order: first a
+    unchanged, exactly 3 levers are returned as good, and 1 or
+    2 levers are returned at once as bad, all without retry.
+    Otherwise retries follow in order: first a
     fresh frame from grab_frame (when given) with the normal
     prompt, scale and margin, then RETRY_VARIANTS on the
     original frame. The part is good only when two retry counts
@@ -91,7 +95,8 @@ def count_with_retry(
         count_clips.CROP_MARGIN_PX,
         first.get("levers"),
     )]
-    if not first.get("ok") or first.get("levers") == 3:
+    if (not first.get("ok") or first.get("levers") == 3
+            or first.get("levers") in (1, 2)):
         if first.get("ok"):
             first["attempts"] = attempts
         return first

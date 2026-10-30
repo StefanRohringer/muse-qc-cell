@@ -1628,7 +1628,8 @@ never CI and never an agent.
 
 Lever-count retry (run on hardware 2026-10-30): SAM is not fully
 deterministic (the same image gave 0 levers three times, then
-1), so every first count other than exactly 3 is retried. The
+1). A first count of 1 or 2 levers is final (no retry), only 0
+or more than 3 are retried. The
 first retry is one fresh arm camera frame with the normal
 prompt, then ("brown bar", 6, 15), ("brown bar", 10, 25),
 ("orange bar", 8, 15) and ("orange bar", 6, 15) on the original

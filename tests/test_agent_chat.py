@@ -124,6 +124,32 @@ def test_chat_execute_asks_yes_once(monkeypatch, tmp_path):
     assert _first_user_text(client.seen[0]) == "sort all parts"
 
 
+def test_second_order_needs_new_scan(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(agent_mod, "read_api_key", lambda: SECRET)
+    script = (_scan_and_finish("first done")
+              + [[_call("c3", "inspect_and_sort", {"part_id": 0}),
+                  _call("c4", "finish", {"summary": "rest done"})]])
+    client = FakeClient(script)
+    fake = agent_tools.FakeTable()
+    sorts_before = list(fake.parts)
+    answers = iter(["sort the rest", ""])
+    lines = []
+    code = main(
+        ["--chat"],
+        client_factory=lambda key: client,
+        toolset=(fake.scan, fake.sort,
+                 lambda records: agent_tools.fake_report(
+                     records, recordings_dir=str(tmp_path))),
+        input_fn=lambda prompt: next(answers),
+        out=lines.append)
+    assert code == 0
+    text = "\n".join(lines)
+    assert text.count("agent finished:") == 2
+    assert "call scan_table first" in text
+    assert fake.parts == sorts_before
+
+
 def test_no_task_no_chat_unchanged(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(agent_mod, "read_api_key", lambda: SECRET)
