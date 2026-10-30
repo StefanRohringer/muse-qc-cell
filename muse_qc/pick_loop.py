@@ -26,7 +26,7 @@ FAULT_HOLD_CYCLES = int(0.5 * LOOP_RATE_HZ)
 DROP_WALKS = ("to-box",)
 _WALKS = ("hover", "lower", "lift", "put-down", "raise", "return") + DROP_WALKS
 INSPECT_SETTLE_S = 1.0
-INSPECT_TIMEOUT_S = 30.0
+INSPECT_TIMEOUT_S = 60.0
 class PickLoop:
     """100 Hz pick callback: walk the plan with touch-aware phases."""
     def __init__(self, arm_group, gripper_group, arm_vlim, gripper_vlim,

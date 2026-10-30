@@ -102,20 +102,20 @@ def count_levers(boxes: list[dict]) -> list[dict]:
 
 
 def drop_short_bars(
-    boxes: list[dict], part_height_px: int
+    boxes: list[dict], part_height_px: int, crop_scale: int = CROP_SCALE
 ) -> tuple[list[dict], list[dict]]:
     """Split lever boxes into bars and too-short remnants.
 
     A bar must satisfy both rules: height at least
     MIN_BAR_PART_FRAC of the enlarged part height
-    (part_height_px * CROP_SCALE, without the crop margin) and
+    (part_height_px * crop_scale, without the crop margin) and
     height at least MIN_BAR_TALLEST_FRAC of the tallest box in
     the input. A box of exactly either limit is kept. An empty
     input stays empty.
     """
     if not boxes:
         return [], []
-    part_limit = MIN_BAR_PART_FRAC * part_height_px * CROP_SCALE
+    part_limit = MIN_BAR_PART_FRAC * part_height_px * crop_scale
     tallest = max(box["y2"] - box["y1"] for box in boxes)
     tallest_limit = MIN_BAR_TALLEST_FRAC * tallest
     bars = []
@@ -164,25 +164,25 @@ def find_part(boxes: list[dict], expected_px=None) -> dict | None:
     return nearest
 
 
-def crop_and_enlarge(frame: numpy.ndarray, box: dict) -> numpy.ndarray:
+def crop_and_enlarge(frame: numpy.ndarray, box: dict, crop_scale: int = CROP_SCALE, crop_margin_px: int = CROP_MARGIN_PX) -> numpy.ndarray:
     """Crop the box plus margin and enlarge it.
 
-    Adds CROP_MARGIN_PX on each side (clamped to the image) and
-    scales the crop by CROP_SCALE with cv2.INTER_CUBIC.
+    Adds crop_margin_px on each side (clamped to the image) and
+    scales the crop by crop_scale with cv2.INTER_CUBIC.
     """
     height, width = frame.shape[:2]
-    x1 = max(0, int(box["x1"]) - CROP_MARGIN_PX)
-    y1 = max(0, int(box["y1"]) - CROP_MARGIN_PX)
-    x2 = min(width, int(box["x2"]) + CROP_MARGIN_PX)
-    y2 = min(height, int(box["y2"]) + CROP_MARGIN_PX)
+    x1 = max(0, int(box["x1"]) - crop_margin_px)
+    y1 = max(0, int(box["y1"]) - crop_margin_px)
+    x2 = min(width, int(box["x2"]) + crop_margin_px)
+    y2 = min(height, int(box["y2"]) + crop_margin_px)
     if x2 <= x1 or y2 <= y1:
         raise RuntimeError("part box is outside the image")
     crop = frame[y1:y2, x1:x2]
     return cv2.resize(
         crop,
         None,
-        fx=CROP_SCALE,
-        fy=CROP_SCALE,
+        fx=crop_scale,
+        fy=crop_scale,
         interpolation=cv2.INTER_CUBIC,
     )
 
@@ -211,17 +211,20 @@ def count_frame(
     recordings_dir: str | Path = "recordings",
     source_image: str | Path = "",
     expected_px=None,
+    crop_scale: int = CROP_SCALE,
+    crop_margin_px: int = CROP_MARGIN_PX,
 ) -> dict:
     """Find the part on one frame and count its levers; return a dict.
 
     Runs the same two SAM calls as run_count (part, then levers on
     the enlarged crop) and saves the two annotated images plus the
     JSON record exactly as run_count does. With expected_px only
-    the target part near that image position is accepted. Returns
-    {"ok", "reason", "levers", "verdict", "full_image",
-    "crop_image", "record"} plus "stage" (which step failed),
-    "part", "kept" and "dropped" for printing. Prints nothing and
-    never includes any key.
+    the target part near that image position is accepted. The crop
+    uses crop_scale and crop_margin_px (defaults CROP_SCALE and
+    CROP_MARGIN_PX). Returns {"ok", "reason", "levers", "verdict",
+    "full_image", "crop_image", "record"} plus "stage" (which step
+    failed), "part", "kept" and "dropped" for printing. Prints
+    nothing and never includes any key.
     """
     try:
         part_text = fetch_output_text(
@@ -235,7 +238,7 @@ def count_frame(
             return _fail("part: target not in view", "no-part")
         return _fail("part: not found", "no-part")
     try:
-        crop = crop_and_enlarge(frame, part)
+        crop = crop_and_enlarge(frame, part, crop_scale, crop_margin_px)
     except Exception as exc:  # noqa: BLE001 - mapped to a short message
         return _fail(f"request failed: {exc}", "crop")
     try:
@@ -246,7 +249,7 @@ def count_frame(
         return _fail(f"request failed: {exc}", "lever-request")
     kept, dropped = drop_short_bars(
         count_levers(parse_output_text(lever_text)),
-        int(part["y2"]) - int(part["y1"]),
+        int(part["y2"]) - int(part["y1"]), crop_scale,
     )
     try:
         full_path, crop_path = save_pair(

@@ -1608,13 +1608,33 @@ Failure behaviour: no frame, no part found or an API error prints
 bad box with exit code 1 -- the loop prints "inspect failed,
 sorting into the bad box (unverified part)" and never opens the
 gripper above the table; an unverified part counts as reject. The
-same bad-box sort fires when no verdict arrives within 30 s, with
+same bad-box sort fires when no verdict arrives within 60 s, with
 "inspect timeout, sorting into the bad box (unverified part)".
 A missed grip, a part lost while lifting, a
 contact stop or any other abort before the lift ends skips the
 inspection ("inspect skipped: no part held") and returns as
 today. Only the human runs it,
 never CI and never an agent.
+
+Zero-lever retry (not yet run on hardware): 0 levers on a found
+part is implausible (good parts have 3, bad parts 1 or 2), so
+only that case is retried. The first retry is one fresh arm
+camera frame with the normal prompt, then ("brown bar", 6, 15),
+("brown bar", 10, 25), ("orange bar", 8, 15) and ("orange bar",
+6, 15) on the original frame; the first attempt with at least
+1 lever wins, and when all give 0 the part stays bad. Counts of
+1, 2 or 3 are never retried, so a bad part is never talked into
+good. A retry prints "inspect retry: N attempts" before the
+"inspect: levers ..." line. The worst case is 6 counts (12 SAM
+calls) plus a second camera open, so the inspect timeout is
+60 s; the arm keeps holding the part meanwhile.
+
+A saved image can be rechecked by hand with
+`uv run python -m muse_qc.count_retry --image <file>` (not yet
+run on hardware): it always uses --expect-target behaviour,
+never grabs a fresh frame, and prints one line per attempt
+("attempt N: prompt P scale S margin M levers L") plus
+"levers: N" and "verdict: ...".
 
 ## 33. Agent loop with Muse Spark (by hand only)
 

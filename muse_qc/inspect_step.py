@@ -21,6 +21,7 @@ import cv2
 
 from muse_qc import camera_arm
 from muse_qc import count_clips
+from muse_qc import count_retry
 from muse_qc.model_check import read_api_key as _read_api_key
 from muse_qc.pick_plan import check_pick_plan
 from muse_qc.vision_sam import _default_client_factory as _make_client
@@ -92,17 +93,23 @@ def run_inspection(
     """Grab one arm camera frame, count levers, return the box or None.
 
     Prints "inspect: levers N verdict good|bad" plus the two
-    annotated image paths and the record path on success. Any
-    failure (no camera node, no frame, missing key, API error, no
-    part found) prints "inspect failed: ..." and returns None.
-    The key is never printed. All hardware and API access is
-    injected (fakes in tests), the defaults are the real helpers.
+    annotated image paths and the record path on success. A
+    0-lever count on a found part is retried through
+    count_retry.count_with_retry (fresh frame first, then other
+    crop sizes and prompts), printing "inspect retry: N attempts"
+    before the levers line; 1, 2 or 3 levers are never retried.
+    Any failure (no camera node, no frame, missing key, API
+    error, no part found) prints "inspect failed: ..." and
+    returns None. The key is never printed. All hardware and API
+    access is injected (fakes in tests), the defaults are the
+    real helpers.
     """
     node_of = find_node or camera_arm.find_arm_color_node
     camera_of = open_camera or camera_arm.open_arm_camera
     key_of = read_key or _read_api_key
     client_of = make_client or _make_client
-    counter = count_frame_fn or count_clips.count_frame
+    use_retry = count_frame_fn is None
+    counter = count_frame_fn or count_retry.count_with_retry
     node = node_of()
     if node is None:
         out("inspect failed: arm camera not found")
@@ -126,15 +133,26 @@ def run_inspection(
         out("inspect failed: MODEL_API_KEY is missing")
         return None
     try:
-        result = counter(client_of(key), frame, count_clips.LEVER_PROMPT,
-                         recordings_dir, source,
-                         expected_px=count_clips.EXPECTED_PART_PX)
+        if use_retry:
+            result = counter(
+                client_of(key), frame, count_clips.LEVER_PROMPT,
+                recordings_dir, source,
+                expected_px=count_clips.EXPECTED_PART_PX,
+                grab_frame=lambda: camera_of(node))
+        else:
+            result = counter(
+                client_of(key), frame, count_clips.LEVER_PROMPT,
+                recordings_dir, source,
+                expected_px=count_clips.EXPECTED_PART_PX)
     except Exception as exc:  # noqa: BLE001 - mapped to a short message
         out(f"inspect failed: {exc}")
         return None
     if not result.get("ok"):
         out(f"inspect failed: {result.get('reason')}")
         return None
+    attempts = result.get("attempts") or []
+    if len(attempts) > 1:
+        out(f"inspect retry: {len(attempts)} attempts")
     out(f"inspect: levers {result['levers']} verdict {result['verdict']}")
     out(str(result["full_image"]))
     out(str(result["crop_image"]))

@@ -995,3 +995,14 @@ end readings: arm [-1.93 +0.80 -1.93 +2.74 +1.43 -4.40] gripper -126.30 deg
 ```
 The part held during the fast move. Human remarks: gripper slow, slow approach jerky. Decision: 50/100 default, faster gripper, 20 mm/s approach.
 - Human ran (~10:02) the --no-grip run at 508.9 340.4 once with --arm-mode posvel and once in mit-ff (15/30) to compare the slow approach; both ran to "holding at tip z 7.7 mm" without errors; human saw hardly any difference, so the jerk is not specific to MIT.
+- Human ran (2026-10-30 ~10:26, power supply on, hand on the switch) `uv run python -m muse_qc.pick_test --table-mm 503.2 346.6 --inspect --execute` with the new defaults (commit 39412b4) after `find_parts` found the good part at table_mm=(503.2, 346.6) sam=confirmed 0.75:
+segments at 100 Hz: hover 310 lower 259 lift 214 to-box 328 release 2 return 675 (total 1788)
+contact: gripper commanded deg -44.37 measured deg -47.94 contacts L2 R2
+contacts L1 L2 R1 R2 (lifting)
+part lifted, holding
+inspect: levers 0 verdict bad
+dropped into the bad box
+mit trim deg: +0.16 +0.54 +2.48 +0.32 +0.32 -0.09
+end readings: arm [-2.50 +0.10 -2.68 +4.64 +1.50 -4.43] gripper -126.30 deg
+Mechanics fine (faster gripper, 20 mm/s approach, part_offset_px 1.1), but the good part was judged bad: the crop shows 3 levers, SAM returned none.
+- Human ran `count_clips --image recordings/armcam_20261030_102620.png --expect-target` twice and once with --prompt "orange bar": each time "part: box=(323, 267, 362, 311) confidence=0.71", "levers: 0", "verdict: bad". Conclusion: deterministic miss on this image, so a retry (fresh camera frame first, then other crop sizes and prompts) was added for the 0-lever case only.
