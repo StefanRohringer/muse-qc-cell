@@ -322,7 +322,7 @@ def test_dry_run_inspect_prints_both_boxes_and_never_enables():
     sdk = FakeSdk()
     lines = []
     code = pick_test.main(
-        _inspect_main_args(["--inspect"]),
+        _inspect_main_args(["--inspect", "--no-station"]),
         sdk_factory=lambda **kwargs: sdk,
         **_inspect_dry_kwargs(lines),
     )
@@ -347,7 +347,7 @@ def test_dry_run_inspect_missing_camera_exits_2_without_enabling():
     sdk = FakeSdk()
     lines = []
     code = pick_test.main(
-        _inspect_main_args(["--inspect"]),
+        _inspect_main_args(["--inspect", "--no-station"]),
         sdk_factory=lambda **kwargs: sdk,
         **_inspect_dry_kwargs(lines, find_arm_node=lambda: None),
     )
@@ -361,7 +361,7 @@ def test_dry_run_inspect_missing_key_exits_2_without_enabling():
     sdk = FakeSdk()
     lines = []
     code = pick_test.main(
-        _inspect_main_args(["--inspect"]),
+        _inspect_main_args(["--inspect", "--no-station"]),
         sdk_factory=lambda **kwargs: sdk,
         **_inspect_dry_kwargs(lines, read_key=lambda: None),
     )
@@ -416,7 +416,7 @@ def test_bad_branch_refusal_refuses_whole_plan():
     sdk = FakeSdk()
     lines = []
     code = pick_test.main(
-        _inspect_main_args(["--inspect"]),
+        _inspect_main_args(["--inspect", "--no-station"]),
         sdk_factory=lambda **kwargs: sdk,
         **_inspect_dry_kwargs(lines, check_fn=refusing),
     )
@@ -900,6 +900,7 @@ def _run_execute_inspect(tmp_path, texts, **overrides):
         "sensor_factory": lambda: FakeSensor(_grip_script(holder)),
         "solve_drop_fn": _fake_drop_solve,
         "inspect": True,
+        "use_station": False,
         "out": lines.append,
         "find_arm_node": lambda: "/dev/videoFAKE",
         "read_key": lambda: SECRET,

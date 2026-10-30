@@ -40,7 +40,9 @@ from muse_qc.xy_correction import correct_base_target_mm
 STATION_TABLE_MM = (235.0, 150.0)
 STATION_TIP_Z_MM = HOVER_MM
 STATION_J6_DEG = 0.0
-USE_STATION_DEFAULT = False
+# Default since the human 2026-10-31 00:08 run: the agent sorts
+# with the station (its child always passes --inspect).
+USE_STATION_DEFAULT = True
 
 
 def solve_station_joints(start_deg: object, joint_limits: object = None,

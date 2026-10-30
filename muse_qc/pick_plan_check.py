@@ -41,7 +41,9 @@ def _plan_and_check(arm_start_deg, grip_start_deg, table_xy, grip_z_mm, open_mm,
                     solve_drop_fn=None, inspect=False, use_station=None,
                     station_j6_deg=None):
     if use_station is None:
-        use_station = USE_STATION_DEFAULT
+        # The station only inspects, so the default applies to
+        # inspect runs; plain picks behave exactly as before.
+        use_station = USE_STATION_DEFAULT and inspect
     if use_station and not inspect:
         out("station needs --inspect")
         return None, None

@@ -390,9 +390,9 @@ def test_dry_run_station_prints_line_and_segment():
     assert "enable_all" not in sdk.calls and "loop" not in sdk.calls
 
 
-def test_dry_run_station_off_matches_today():
-    off, on = [], []
+def test_dry_run_station_off_has_no_station_lines():
     sdk = FakeSdk()
+    off = []
     assert pick_test.main(
         _station_main_args(["--inspect", "--no-station"]),
         sdk_factory=lambda **kwargs: sdk,
@@ -400,11 +400,28 @@ def test_dry_run_station_off_matches_today():
     assert not any(line.startswith("station:") for line in off)
     assert not any("to-station" in line for line in off
                    if line.startswith("segments at 100 Hz:"))
+
+
+def test_dry_run_default_plans_with_station():
+    default, explicit = [], []
+    sdk = FakeSdk()
     assert pick_test.main(
         _station_main_args(["--inspect"]),
         sdk_factory=lambda **kwargs: sdk,
-        **_station_dry_kwargs(on)) == 0
-    assert off == on
+        **_station_dry_kwargs(default)) == 0
+    assert pick_test.main(
+        _station_main_args(["--inspect", "--station"]),
+        sdk_factory=lambda **kwargs: sdk,
+        **_station_dry_kwargs(explicit)) == 0
+    assert default == explicit
+    text = "\n".join(default)
+    assert ("station: table mm (235.0, 150.0), tip z 100.0 mm,"
+            " joint 6 +0.0 deg") in text
+    seg_line = next(line for line in default
+                    if line.startswith("segments at 100 Hz:"))
+    assert "to-station" in seg_line
+    assert "all waypoints ok" in text
+    assert "enable_all" not in sdk.calls and "loop" not in sdk.calls
 
 
 def test_dry_run_unreachable_station_refuses_before_moving():

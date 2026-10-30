@@ -53,7 +53,6 @@ from muse_qc.grip_speed import GRIPPER_VLIM_FRACTION
 from muse_qc.gripper_motor import CONFIRM_PROMPT, GRIPPER_CONFIG_VLIM
 from muse_qc.gripper_stream import open_touch_sensor
 from muse_qc import inspect_step
-from muse_qc.inspect_station import USE_STATION_DEFAULT
 from muse_qc.pick_loop import PickLoop
 from muse_qc.pick_plan_check import _plan_and_check
 
@@ -331,7 +330,9 @@ def main(argv=None, sdk_factory=None, **kwargs):
     kwargs.setdefault("drop", args.drop)
     kwargs.setdefault("inspect", args.inspect)
     if args.station is None:
-        kwargs.setdefault("use_station", USE_STATION_DEFAULT)
+        # Leave None: pick_plan_check resolves the default with
+        # the inspect context (station only inspects).
+        kwargs.setdefault("use_station", None)
     else:
         kwargs.setdefault("use_station", args.station)
     kwargs.setdefault("arm_mode", args.arm_mode)
