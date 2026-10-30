@@ -87,6 +87,48 @@ def _part_frame(deg, bar_color=ORANGE, square=34.0, background=BACKGROUND,
     return frame
 
 
+SLOT = (30, 30, 30)
+
+
+def _slot_part_frame(deg, long_side=40.0, short_side=38.0,
+                     background=BACKGROUND):
+    """Nearly square part with weak stripes and a dark end slot.
+
+    Brownish bars run along deg and across it, so the stripe
+    gradients cancel (coherence below MIN_STRENGTH although many
+    lever pixels are present); a small dark slot (V below 70) at
+    one end of the lever axis must then pick the direction.
+    """
+    frame = numpy.full((HEIGHT, WIDTH, 3), background, numpy.uint8)
+    center = (WIDTH / 2.0, HEIGHT / 2.0)
+    rad = math.radians(deg)
+    direction = (math.cos(rad), math.sin(rad))
+    normal = (-direction[1], direction[0])
+    half_l, half_s = long_side / 2.0, short_side / 2.0
+    corners = []
+    for sign_x, sign_y in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+        corners.append((
+            center[0] + direction[0] * sign_x * half_l
+            + normal[0] * sign_y * half_s,
+            center[1] + direction[1] * sign_x * half_l
+            + normal[1] * sign_y * half_s,
+        ))
+    cv2.fillPoly(frame, [numpy.array(corners, dtype=numpy.int32)], GREY)
+    for bar in _bar_polygons(center, deg):
+        cv2.fillPoly(frame, [bar], BROWNISH)
+    for bar in _bar_polygons(center, deg + 90):
+        cv2.fillPoly(frame, [bar], BROWNISH)
+    slot_center = (center[0] + direction[0] * (half_l - 8.0),
+                   center[1] + direction[1] * (half_l - 8.0))
+    cv2.rectangle(frame,
+                  (int(round(slot_center[0] - 2)),
+                   int(round(slot_center[1] - 2))),
+                  (int(round(slot_center[0] + 2)),
+                   int(round(slot_center[1] + 2))),
+                  SLOT, -1)
+    return frame
+
+
 def _rect_part_frame(deg, long_side, short_side, bar_color=ORANGE,
                      background=BACKGROUND):
     """Grey rectangle (long side along deg) with three bars at deg."""
@@ -215,6 +257,35 @@ def test_nearly_square_part_with_levers():
     assert result["ok"]
     assert result["source"] == "levers"
     assert _distance_mod_180(result["lever_deg"], 30) <= 5.0
+
+
+def test_slot_picks_direction_when_stripes_are_weak():
+    """Nearly square part (aspect 1.05, below the 1.1 fallback).
+
+    The stripe gradients cancel (bars both ways, coherence below
+    MIN_STRENGTH), so the dark slot at one end of the lever axis
+    must pick outline vs outline + 90 at 0, 30 and 90 deg.
+    """
+    for deg in (0, 30, 90):
+        frame = _slot_part_frame(deg)
+        contour = _diff_contour(frame)
+        x, y, width, height = cv2.boundingRect(contour)
+        result = lever_angle_deg(frame, (x, y, width, height), contour,
+                                 IDENTITY)
+        assert result["ok"], deg
+        assert result["source"] == "slot", deg
+        assert _distance_mod_180(result["lever_deg"], deg) <= 5.0, deg
+
+
+def test_nearly_square_without_slot_or_stripes_not_ok():
+    """Same aspect 1.05 geometry but no slot and no stripes."""
+    frame = _rect_part_frame(30, 40.0, 38.0, bar_color=GREY)
+    contour = _diff_contour(frame)
+    x, y, width, height = cv2.boundingRect(contour)
+    result = lever_angle_deg(frame, (x, y, width, height), contour,
+                             IDENTITY)
+    assert not result["ok"]
+    assert result["lever_deg"] is None
 
 
 def test_180_deg_rotation_same_direction():

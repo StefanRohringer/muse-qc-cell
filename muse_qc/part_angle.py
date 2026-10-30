@@ -15,7 +15,11 @@ the eroded part region, weighted where the pixel is lever-like
 or next to one (dilated lever mask, covering the dark gaps
 between merged bars). The dominant gradient runs across the
 bars, so the lever direction is the tensor direction + 90 deg,
-with strength = coherence ((l1 - l2) / (l1 + l2)).
+with strength = coherence ((l1 - l2) / (l1 + l2)). When the
+stripes are too weak, a small dark slot (V at most SLOT_V_MAX)
+at one end of the levers picks instead: the direction from the
+part centre to the slot centroid is parallel to the levers
+(modulo 180) and chooses the same outline vs outline + 90.
 
 Angles are measured in image pixels (x right, y down) and then
 mapped into the table frame with to_table, so the result is
@@ -62,6 +66,14 @@ MIN_STRENGTH = 0.3
 # Outline aspect ratio (long side over short side) at or above
 # which the long side is a usable fallback direction.
 FALLBACK_ASPECT_MIN = 1.1
+# Dark slot pixels in OpenCV HSV: V at most SLOT_V_MAX. Wood is
+# far brighter, so the filled part contour (not eroded) is read.
+SLOT_V_MAX = 70
+# Fewer dark pixels than this inside the filled contour: no slot.
+MIN_SLOT_PIXELS = 5
+# Slot centroid closer than this to the contour centroid: no slot
+# direction (centred dark area, not a slot at one end).
+MIN_SLOT_OFFSET_PX = 5
 
 
 def _angle_mod_180(deg):
@@ -145,6 +157,44 @@ def _stripe_direction(gray, weight):
     return _angle_mod_180(grad_deg + 90.0), min(1.0, max(0.0, coherence))
 
 
+def _slot_direction(crop_bgr, filled):
+    """Direction from the part centre to the dark slot, image frame.
+
+    crop_bgr is the BGR crop, filled the boolean filled-contour
+    mask (not eroded) in crop coordinates. Pixels with V at most
+    SLOT_V_MAX inside the filled contour are the slot; fewer than
+    MIN_SLOT_PIXELS or a slot centroid closer than
+    MIN_SLOT_OFFSET_PX to the filled centroid give no direction.
+    Returns the centre-to-slot angle in [0, 180) or None.
+    """
+    hsv = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2HSV)
+    dark = (hsv[:, :, 2] <= SLOT_V_MAX) & filled
+    count = int(dark.sum())
+    if count < MIN_SLOT_PIXELS:
+        return None
+    filled_ys, filled_xs = numpy.nonzero(filled)
+    slot_ys, slot_xs = numpy.nonzero(dark)
+    center = (float(filled_xs.mean()), float(filled_ys.mean()))
+    slot = (float(slot_xs.mean()), float(slot_ys.mean()))
+    if math.dist(center, slot) < MIN_SLOT_OFFSET_PX:
+        return None
+    return _angle_mod_180(math.degrees(
+        math.atan2(slot[1] - center[1], slot[0] - center[0])))
+
+
+def _filled_mask(contour, x0, y0, shape):
+    """Filled contour in crop coordinates (not eroded), or None."""
+    height, width = shape
+    mask = numpy.zeros((height, width), dtype=numpy.uint8)
+    shifted = contour.copy().astype(numpy.float64)
+    shifted[:, :, 0] -= float(x0)
+    shifted[:, :, 1] -= float(y0)
+    cv2.fillPoly(mask, [shifted.astype(numpy.int32)], 255)
+    if not mask.any():
+        return None
+    return mask > 0
+
+
 def _to_table_deg(image_deg, center, to_table):
     """Map an image direction at a pixel centre into table degrees."""
     rad = math.radians(float(image_deg))
@@ -185,11 +235,13 @@ def lever_angle_deg(frame, bbox, contour, to_table):
     contour the diff-mask blob contour, to_table a pixel to table
     mm mapping. Returns {"ok", "lever_deg", "strength", "reason",
     "source"}: lever_deg in [0, 180) in the table frame (None when
-    not ok), strength in 0..1, source "levers" or "outline" (None
-    when not ok). The precise angle comes from the blob outline
-    (minAreaRect long side); the gradient stripe cue inside the
-    part only chooses between that direction and +90 deg. Without
-    a clear stripe cue, the long side is used when the outline
+    not ok), strength in 0..1, source "levers", "slot" or
+    "outline" (None when not ok). The precise angle comes from
+    the blob outline (minAreaRect long side); the gradient stripe
+    cue inside the part only chooses between that direction and
+    +90 deg. Without a clear stripe cue, the dark slot at one end
+    of the levers (centre to slot centroid, same choice) is read;
+    without either cue, the long side is used when the outline
     aspect ratio reaches FALLBACK_ASPECT_MIN, else ok is False.
     """
     if contour is None or len(contour) < 3:
@@ -243,6 +295,23 @@ def lever_angle_deg(frame, bbox, contour, to_table):
         reason, strength = "bars unclear", coherence
     else:
         reason, strength = "too few lever pixels", 0.0
+    filled = _filled_mask(contour, x0, y0, (y1 - y0, x1 - x0))
+    if filled is not None and filled.any():
+        slot_deg = _slot_direction(crop, filled)
+        if slot_deg is not None:
+            second = _angle_mod_180(outline_deg + 90.0)
+            if _angle_distance_mod_180(second, slot_deg) < \
+                    _angle_distance_mod_180(outline_deg, slot_deg):
+                outline_deg = second
+            table_deg = _to_table_deg(outline_deg, center, to_table)
+            if table_deg is None:
+                return {"ok": False, "lever_deg": None,
+                        "strength": 0.0,
+                        "reason": "table mapping degenerate",
+                        "source": None}
+            return {"ok": True, "lever_deg": table_deg,
+                    "strength": 0.5, "reason": "slot",
+                    "source": "slot"}
     if aspect >= FALLBACK_ASPECT_MIN:
         table_deg = _to_table_deg(outline_deg, center, to_table)
         if table_deg is None:

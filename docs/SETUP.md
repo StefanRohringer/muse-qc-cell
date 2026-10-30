@@ -1750,7 +1750,7 @@ the long outline side when its aspect ratio reaches
 `FALLBACK_ASPECT_MIN` = 1.1, else the direction is unknown.
 
 `muse_qc/find_parts.py` prints the direction on each unskipped
-part line (`lever_deg=NN.N (levers|outline)`, or
+part line (`lever_deg=NN.N (levers|slot|outline)`, or
 `lever_deg=? (reason)` when unknown, for example
 `lever_deg=? (bars unclear)`), with `--no-sam` and `--image`
 too, so the human can test on saved images and live without
@@ -1764,9 +1764,11 @@ uv run python -m muse_qc.find_parts --image recordings/frame.png --no-sam
 First hardware run 2026-10-30 (see docs/DEVLOG.md): the old
 crop-based lever cue was decided or blocked by wood pixels and
 no real part got source "levers"; fixed by the inside-the-part
-stripe cue above.
+stripe cue above. When the stripes stay too weak (coherence
+below 0.3), a small dark slot at one end of the levers picks
+outline vs outline + 90 instead (printed as `(slot)`).
 
-## 35. Grip yaw from the lever direction (not yet run on hardware)
+## 35. Grip yaw from the lever direction (run on hardware 2026-10-30)
 
 `muse_qc/grip_yaw.py` turns the `lever_deg` of section 34 into a
 grip yaw offset: the lever direction is mapped into the arm base

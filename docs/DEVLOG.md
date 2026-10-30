@@ -1051,3 +1051,23 @@ part 0 center=(773, 828) area_mm2=1100 table_mm=(361.0, 70.4) sam=skipped lever_
 part 1 center=(794, 760) area_mm2=287 table_mm=(373.8, 112.8) sam=skipped lever_deg=169.8 (levers)   <- a cable, not a part
 ```
 No real part got source "levers"; only cables did. Cause (AI-assisted pixel check of the image): the wooden table itself is inside the lever HSV range (sampled OpenCV HSV: wood H 21-29, S 66-110, V 170-227; levers H 15-24, S 110-215, V 90-160; grey body S 45-90, V 120-150; the small dark slot at one end of the part V below 70). The crop (bbox plus margin) was full of wood, so wood blobs decided or blocked the lever cue, and part 17 (outline aspect just under 1.1) ended as "?". Fix: part_angle.py now reads gradients only inside the eroded part contour and uses a stripe structure tensor weighted by lever-like-or-gap pixels, with the lever HSV range tightened (S at least 110, V at most 165) so bright wood never counts.
+- Human ran (2026-10-30 ~13:20, power supply off, arm not moved, same parts as the 12:39 run) `uv run python -m muse_qc.find_parts --no-sam` after commit 6a0d062:
+```text
+part 6 center=(1004, 383) area_mm2=558 table_mm=(505.8, 346.2) sam=skipped lever_deg=89.8 (levers)
+part 17 center=(1228, 461) area_mm2=585 table_mm=(643.7, 297.2) sam=skipped lever_deg=31.9 (outline)
+part 18 center=(1347, 544) area_mm2=634 table_mm=(716.4, 245.3) sam=skipped lever_deg=? (bars unclear)
+```
+The straight part now reads from the levers (correct). The 30 deg part still relies on the outline fallback, and the 90 deg part (levers along table +x, expected about 0) is still unknown: at about 1.57 px/mm the stripes are too weak (AI-assisted check on the saved image: stripe coherence about 0.1 to 0.2 on those two parts). New cue (AI-assisted pixel check, human placed the parts): every part has a small dark slot (HSV V below about 70, about 10 to 20 px) at one end of the levers, i.e. on the lever axis; the direction from the part centre to the slot centroid gave about 80 deg (straight part, expected 90), 39 deg (30 deg part) and 20 deg (90 deg part, expected 0) on the saved image. Coarse, but enough to choose between outline and outline + 90.
+- Human ran (2026-10-30 ~13:24, power supply on, hand on the switch) `uv run python -m muse_qc.pick_test --table-mm 643.7 297.2 --lever-deg 31.9 --inspect --execute` (commit f1225ea) on the part turned about 30 deg:
+```text
+grip yaw: lever 31.9 deg, offset -29.8 deg
+segments at 100 Hz: hover 304 lower 259 lift 214 to-box 356 release 2 return 674 (total 1809)
+all waypoints ok
+contact: gripper commanded deg -44.22 measured deg -47.88 contacts L2 R2
+contacts L1 L2 R1 R2 (lifting)
+part lifted, holding
+inspect: levers 3 verdict good
+dropped into the good box
+end readings: arm [-1.52 +0.05 -2.04 +2.94 +1.34 -4.45] gripper -126.30 deg
+```
+First grip with the turned gripper: the rotated part was gripped and counted 3 levers on the first try (no retry), like a straight part.

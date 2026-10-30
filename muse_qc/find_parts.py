@@ -224,7 +224,7 @@ def scan_table(frame, empty, phrase=DEFAULT_PHRASE, client=None,
     table_mm, confirmed, confidence, skipped (the skip reason or
     None), contour (the diff-mask blob contour, never printed or
     saved), lever_deg (table-frame lever direction in deg, None
-    when unclear or skipped) and lever_source ("levers" or
+    when unclear or skipped) and lever_source ("levers", "slot" or
     "outline", None when unclear or skipped) plus lever_reason
     (the unclear reason, None otherwise). Raises RuntimeError
     with the user-facing message (the
