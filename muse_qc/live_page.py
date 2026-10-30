@@ -178,6 +178,9 @@ class LivePage:
                 self.scan(result.get("image"), result.get("parts") or [])
         elif name == "inspect_and_sort":
             self.sorted(result)
+            if isinstance(result.get("table after sort"), list):
+                self.scan(result.get("image after sort") or self._image,
+                          result["table after sort"])
 
     def _render(self) -> None:
         """Rebuild the page and swap it in atomically (warns once)."""

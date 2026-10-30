@@ -23,6 +23,7 @@ from muse_qc.detect_markers import detect_table_markers, scale_px_per_mm
 from muse_qc.find_skip import classify_skip
 from muse_qc.part_angle import lever_angle_deg
 from muse_qc.parts_image import annotate, crop_to_markers, save_annotated
+from muse_qc.known_match import match_known
 from muse_qc.model_check import (
     KEY_NAME,
     _is_auth_error,
@@ -197,15 +198,19 @@ def save_empty():
 
 
 def scan_table(frame, empty, phrase=DEFAULT_PHRASE, client=None,
-               recordings_dir="recordings"):
+               recordings_dir="recordings", known=None):
     """Scan one frame for parts, return (results, annotated image path).
 
     Runs the same steps as main: table mapping, empty-table diff,
     skip zones, one SAM confirm per unskipped candidate plus one
     retry with RETRY_PHRASE when "no box" meets RETRY_AREA_MM2,
-    then the annotated image save. Each result holds bbox, pixel,
-    area_mm2, table_mm, confirmed, confidence, skipped (the skip
-    reason or None), retried (True only for a retry confirmation),
+    then the annotated image save. With known (confirmed
+    table_mm points of the previous scan) a candidate within
+    KNOWN_MATCH_MM is confirmed without any SAM request
+    (confidence copied from that known part). Each result holds
+    bbox, pixel, area_mm2, table_mm, confirmed, confidence,
+    skipped (the skip reason or None), retried (True only for a
+    retry confirmation), known (True only for a known match),
     contour (the diff-mask blob contour, never printed or
     saved), lever_deg (table-frame lever direction in deg, None
     when unclear or skipped) and lever_source ("levers", "slot" or
@@ -235,7 +240,7 @@ def scan_table(frame, empty, phrase=DEFAULT_PHRASE, client=None,
             "skipped": classify_skip(blob_table),
             "contour": blob["contour"], "lever_deg": None,
             "lever_source": None, "lever_reason": None,
-            "retried": False,
+            "retried": False, "known": False,
         })
     unskipped = [item for item in results if item["skipped"] is None]
     if len(unskipped) > MAX_CANDIDATES:
@@ -248,7 +253,12 @@ def scan_table(frame, empty, phrase=DEFAULT_PHRASE, client=None,
     for item in unskipped:
         confirmed, sam_center, confidence = False, None, None
         retried = False
-        if client is not None:
+        hit, known_confidence, known_point = match_known(
+            known, item["table_mm"])
+        if hit:
+            confirmed, confidence = True, known_confidence
+            item["known"] = True
+        elif client is not None:
             try:
                 confirmed, sam_center, confidence = confirm_candidate(
                     frame, {"center": item["pixel"], "bbox": item["bbox"]},
@@ -263,10 +273,14 @@ def scan_table(frame, empty, phrase=DEFAULT_PHRASE, client=None,
                     retried = confirmed
             except Exception as exc:  # noqa: BLE001 - mapped, no key
                 raise RuntimeError(_request_error(exc)) from exc
-        pixel = sam_center if confirmed else item["pixel"]
+        pixel = (sam_center if confirmed and sam_center is not None
+                 else item["pixel"])
         item.update(pixel=pixel, table_mm=to_table(pixel),
                     confirmed=confirmed, confidence=confidence,
                     retried=retried)
+        if hit:
+            item["table_mm"] = [float(known_point[0]),
+                                float(known_point[1])]
         angle = lever_angle_deg(frame, item["bbox"], item["contour"],
                                 to_table)
         if angle["ok"]:
@@ -348,6 +362,8 @@ def main(argv=None):
             continue
         if client is None:
             sam_text = "skipped"
+        elif item.get("known"):
+            sam_text = "known"
         elif not item["confirmed"]:
             sam_text = "no box"
         elif item["confidence"] is None:

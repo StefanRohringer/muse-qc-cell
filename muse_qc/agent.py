@@ -46,13 +46,14 @@ FAIL_STOP = 2
 SYSTEM_PROMPT = (
     "You control a robot quality inspection cell. Parts are "
     "connectors with 3 orange levers: good means 3 levers, bad "
-    "means fewer. Scan once, then sort the listed parts one "
-    "after another without rescanning, retry a missed grip at "
-    "most once per part, never sort a part twice, rescan after "
-    "a failed or missed sort and once the list is done, stop "
-    "when a scan finds no parts, then write the report and "
-    "finish with a short summary (parts sorted good/bad, "
-    "failures)."
+    "means fewer. Scan once at the start; every inspect_and_sort "
+    "result contains the updated table list with new part ids, "
+    "always use the ids from the latest list, retry a missed "
+    "grip at most once per part, never sort a part twice, "
+    "rescan after a failed or missed sort and once the list is "
+    "done, stop when a scan finds no parts, then write the "
+    "report and finish with a short summary (parts sorted "
+    "good/bad, failures)."
 )
 START_TEXT = (
     "Start the inspection: scan the table, then sort every part."
@@ -223,20 +224,8 @@ def _run_tool(name, args, state, scan_fn, sort_fn, report_fn,
                       "reason": f"scan failed: {exc}"}
             out(f"tool: {result['reason']}")
             return result, False
-        items = found.get("parts", [])
-        positions = [part["table_mm"] for part in items]
-        levers = [part.get("lever_deg") for part in items]
-        state.new_scan(positions, levers)
-        count = len(positions)
-        skipped = int(found.get("skipped", 0) or 0)
-        result = {"parts": [
-            {"id": index,
-             "table_mm": [float(pos[0]), float(pos[1])],
-             "confidence": part.get("confidence"),
-             "lever_deg": (None if part.get("lever_deg") is None
-                           else round(float(part["lever_deg"]), 1))}
-            for index, (pos, part) in enumerate(zip(positions, items))
-        ], "skipped": skipped, "image": found.get("image")}
+        result = agent_tools.store_scan(state, found)
+        count = len(result["parts"])
         if count == 0:
             out("tool: no parts found")
         elif count == 1:
@@ -283,9 +272,10 @@ def _run_tool(name, args, state, scan_fn, sort_fn, report_fn,
             if result.get("record"):
                 state.records.append(str(result["record"]))
             state.note_sorted(position)
-            state.remove_sorted(part_id)
             out(f"tool: part {part_id} levers {result.get('levers')}"
                 f" {result.get('verdict')}, sorted")
+            result.update(
+                agent_tools.rescan_after_sort(state, scan_fn, out))
         else:
             # Any other outcome (missed grip, error, inspect_failed,
             # interrupted, refused): the table may have changed, so

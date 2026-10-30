@@ -64,14 +64,17 @@ class FakeClient:
 def _scan_fn_factory(scans, seen_images=None):
     """Fake scan_fn returning the queued part lists in order."""
     calls = []
+    known_seen = []
 
-    def scan():
+    def scan(known=None):
         calls.append(True)
+        known_seen.append(known)
         parts = scans[min(len(calls) - 1, len(scans) - 1)]
         return {"parts": [{"table_mm": list(pos)} for pos in parts],
                 "skipped": 0, "image": "recordings/fake.png"}
 
     scan.calls = calls  # type: ignore[attr-defined]
+    scan.known_seen = known_seen  # type: ignore[attr-defined]
     return scan
 
 
@@ -175,20 +178,24 @@ def test_tool_call_uses_model_spark_with_tools(tmp_path):
         "scan_table", "inspect_and_sort", "write_report", "finish"}
 
 
-def test_unknown_and_stale_id_refused(tmp_path):
-    scan = _scan_fn_factory([[P0]])
-    sort = _sort_fn_factory([_sorted_outcome(3, "good", "rec.json")])
+def test_unknown_and_old_id_refused(tmp_path):
+    scan = _scan_fn_factory([[P0, P1], [P1]])
+    sort = _sort_fn_factory([
+        _sorted_outcome(3, "good", "rec.json"),
+        _sorted_outcome(2, "bad", "rec2.json"),
+    ])
     report = _report_fn_factory(tmp_path)
     script = [
         [_call("c1", "scan_table", {})],
         [_call("c2", "inspect_and_sort", {"part_id": 99})],
         [_call("c3", "inspect_and_sort", {"part_id": 0})],
-        [_call("c4", "inspect_and_sort", {"part_id": 0})],
-        [_call("c5", "finish", {"summary": "done"})],
+        [_call("c4", "inspect_and_sort", {"part_id": 1})],
+        [_call("c5", "inspect_and_sort", {"part_id": 0})],
+        [_call("c6", "finish", {"summary": "done"})],
     ]
     result, lines, _ = _run(script, scan, sort, report, tmp_path)
     assert result["finished"] is True
-    assert len(sort.seen) == 1
+    assert sort.seen == [P0, P1]
     text = "\n".join(lines)
     assert "unknown part id, call scan_table first" in text
     assert text.count("refused") == 2
@@ -215,7 +222,8 @@ def test_coordinates_from_model_are_ignored(tmp_path):
 
 
 def test_max_sorts_stops_loop(tmp_path):
-    scan = _scan_fn_factory([[P0], [P1], [P2]])
+    fresh = [580.0, 280.0]
+    scan = _scan_fn_factory([[P0], [P1], [P2], [fresh]])
     sort = _sort_fn_factory([
         _sorted_outcome(3, "good", "a.json"),
         _sorted_outcome(3, "good", "b.json"),
@@ -847,21 +855,28 @@ def test_two_child_sorts_in_one_run(tmp_path):
                             "recordings/count_child_000002.json"]]
 
 
-def _scan_with_levers(parts):
+def _scan_with_levers(parts, extra=None):
     calls = []
+    known_seen = []
 
-    def scan():
+    def scan(known=None):
         calls.append(True)
-        return {"parts": [dict(part) for part in parts],
+        known_seen.append(known)
+        queue = [parts] if extra is None else [parts, extra]
+        chosen = queue[min(len(calls) - 1, len(queue) - 1)]
+        return {"parts": [dict(part) for part in chosen],
                 "skipped": 0, "image": "recordings/fake.png"}
 
     scan.calls = calls  # type: ignore[attr-defined]
+    scan.known_seen = known_seen  # type: ignore[attr-defined]
     return scan
 
 
-def test_two_sorts_from_one_scan_without_rescan(tmp_path):
+def test_sorted_part_rescans_table_with_new_ids(tmp_path):
     scan = _scan_with_levers([
         {"table_mm": list(P0), "lever_deg": 89.8},
+        {"table_mm": list(P1), "lever_deg": None},
+    ], extra=[
         {"table_mm": list(P1), "lever_deg": None},
     ])
     sort = _sort_fn_factory([
@@ -879,11 +894,51 @@ def test_two_sorts_from_one_scan_without_rescan(tmp_path):
     result, lines, _ = _run(script, scan, sort, report, tmp_path)
     assert result["finished"] is True
     assert result["good"] == 1 and result["bad"] == 1
-    assert len(scan.calls) == 1
+    assert len(scan.calls) == 3
     assert sort.seen == [P0, P1]
     assert sort.levers == [89.8, None]
     text = "\n".join(lines)
     assert "unknown part id, call scan_table first" in text
+    assert scan.known_seen[0] is None
+    assert [entry["table_mm"] for entry in scan.known_seen[1]] == [P0, P1]
+    transcripts = list(tmp_path.glob("agent_*.json"))
+    assert len(transcripts) == 1
+    loaded = json.loads(transcripts[0].read_text(encoding="utf-8"))
+    after = loaded["steps"][1]["results"][0]["table after sort"]
+    assert after == [{"id": 0, "table_mm": list(P1),
+                     "confidence": None, "lever_deg": None}]
+
+
+def test_failed_rescan_expires_scan():
+    state = agent_tools.RunState()
+    state.new_scan([P0], [None], [0.8])
+    lines = []
+
+    def boom(known=None):
+        raise RuntimeError("camera gone")
+
+    update = agent_tools.rescan_after_sort(state, boom, out=lines.append)
+    assert state.fresh is False
+    assert state.lookup(0) is None
+    assert "failed" in update["rescan"]
+    assert "scan_table" in update["rescan"]
+    assert "table after sort" not in update
+    assert "rescan failed" in "\n".join(lines)
+
+
+def test_empty_rescan_expires_scan_with_empty_list():
+    state = agent_tools.RunState()
+    state.new_scan([P0], [None], [0.8])
+    lines = []
+
+    def empty(known=None):
+        assert [entry["table_mm"] for entry in known] == [P0]
+        return {"parts": [], "skipped": 0, "image": "recordings/fake.png"}
+
+    update = agent_tools.rescan_after_sort(state, empty, out=lines.append)
+    assert state.fresh is False
+    assert update["table after sort"] == []
+    assert "scan_table" in update["rescan"]
 
 
 def test_missed_grip_expires_whole_scan(tmp_path):
@@ -904,7 +959,7 @@ def test_missed_grip_expires_whole_scan(tmp_path):
     ]
     result, lines, _ = _run(script, scan, sort, report, tmp_path)
     assert result["finished"] is True
-    assert len(scan.calls) == 2
+    assert len(scan.calls) == 3
     assert sort.seen == [P0, P0]
     assert "unknown part id, call scan_table first" in "\n".join(lines)
 
@@ -919,14 +974,13 @@ def test_fake_table_run_ends_with_expected_counts(tmp_path):
                                  {"part_id": 0})],
         [_message("sort"), _call("c3", "inspect_and_sort",
                                  {"part_id": 1})],
-        [_message("scan"), _call("c4", "scan_table", {})],
-        [_message("sort"), _call("c5", "inspect_and_sort",
+        [_message("sort"), _call("c4", "inspect_and_sort",
                                  {"part_id": 0})],
+        [_message("scan"), _call("c5", "scan_table", {})],
         [_message("sort"), _call("c6", "inspect_and_sort",
-                                 {"part_id": 1})],
-        [_message("scan"), _call("c7", "scan_table", {})],
-        [_message("report"), _call("c8", "write_report", {})],
-        [_message("end"), _call("c9", "finish", {
+                                 {"part_id": 0})],
+        [_message("report"), _call("c7", "write_report", {})],
+        [_message("end"), _call("c8", "finish", {
             "summary": "sorted 3 parts: 2 good, 1 bad"})],
     ]
     result, _, _ = _run(script, fake.scan, fake.sort,
@@ -934,6 +988,7 @@ def test_fake_table_run_ends_with_expected_counts(tmp_path):
     assert result["finished"] is True
     assert result["good"] == 2 and result["bad"] == 1
     assert fake.seen_levers[0] == 89.8
+    assert fake.parts == []
 
 
 def test_scan_result_shows_lever_deg(tmp_path):

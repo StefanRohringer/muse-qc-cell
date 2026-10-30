@@ -43,19 +43,22 @@ class FakeClient:
 
 
 def _full_sort_script():
-    """Drive the FakeTable through all 3 parts (one missed grip)."""
+    """Drive the FakeTable through all 3 parts (one missed grip).
+
+    Every sort rescans at once with new ids, so no scan_table
+    call sits between two sorts; one explicit rescan follows
+    the missed grip.
+    """
     return [
         [_call("c1", "scan_table", {})],
         [_call("c2", "inspect_and_sort", {"part_id": 0})],
-        [_call("c3", "scan_table", {})],
+        [_call("c3", "inspect_and_sort", {"part_id": 1})],
         [_call("c4", "inspect_and_sort", {"part_id": 0})],
         [_call("c5", "scan_table", {})],
         [_call("c6", "inspect_and_sort", {"part_id": 0})],
-        [_call("c7", "inspect_and_sort", {"part_id": 1})],
-        [_call("c8", "scan_table", {})],
-        [_call("c9", "write_report", {})],
+        [_call("c7", "write_report", {})],
         [_message("done"),
-         _call("c10", "finish", {"summary": "2 good, 1 bad"})],
+         _call("c8", "finish", {"summary": "2 good, 1 bad"})],
     ]
 
 
@@ -87,6 +90,39 @@ def test_fake_table_run_writes_live_page(monkeypatch, tmp_path):
     assert text.count('class="card"') == 3
     assert "GOOD" in text and "BAD" in text
     assert "finished: 2 good, 1 bad" in text
+
+
+def test_live_page_shows_rescan_image_after_sort(tmp_path):
+    calls = []
+
+    def scan(known=None):
+        index = len(calls)
+        calls.append(known)
+        pos = [[500.0, 360.0]] if index == 0 else [[540.0, 330.0]]
+        return {"parts": [{"table_mm": list(point)} for point in pos],
+                "skipped": 0, "image": f"recordings/scan_{index}.png"}
+
+    def sort(position, lever_deg=None):
+        return {"outcome": "sorted", "levers": 3, "verdict": "good",
+                "box": "good", "record": "recordings/r.json",
+                "reason": None, "lines": ["dropped into the good box"]}
+
+    page = LivePage(tmp_path / "live.html")
+    script = [
+        [_call("c1", "scan_table", {})],
+        [_call("c2", "inspect_and_sort", {"part_id": 0})],
+        [_message("done"), _call("c3", "finish", {"summary": "1 good"})],
+    ]
+    result = run_agent(FakeClient(script), scan, sort,
+                       _report_fn(tmp_path),
+                       out=lambda line: None,
+                       recordings_dir=str(tmp_path), live=page)
+    assert result["finished"] is True
+    assert len(calls) == 2
+    text = (tmp_path / "live.html").read_text(encoding="utf-8")
+    assert "scan_1.png" in text
+    assert "scan_0.png" not in text
+    assert "parts left: 1" in text
 
 
 def test_console_line_is_escaped(tmp_path):

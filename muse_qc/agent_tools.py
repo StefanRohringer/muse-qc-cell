@@ -22,13 +22,15 @@ the --simulate run.
 
 from __future__ import annotations
 
-import math
 from datetime import datetime
 from pathlib import Path
 
 from muse_qc.agent_parse import parse_pick_lines as parse_pick_lines
-
-SAME_PART_MM = 15.0
+from muse_qc.agent_state import (
+    SAME_PART_MM,
+    RunState,
+    _dist,
+)
 
 TOOL_DEFINITIONS = [
     {
@@ -49,9 +51,11 @@ TOOL_DEFINITIONS = [
         "description": (
             "Pick the part with this scan id, count its levers and "
             "drop it into the good or bad box. Ids come from the "
-            "latest scan_table result; a sorted id expires but the "
-            "other ids stay valid, a failed or missed sort expires "
-            "the whole scan."
+            "latest list: the scan_table result or the table "
+            "after sort in the last inspect_and_sort result. "
+            "Every sort rescans at once, so always use the ids "
+            "from the latest list; a failed or missed sort "
+            "expires the whole scan."
         ),
         "parameters": {
             "type": "object",
@@ -97,97 +101,65 @@ TOOL_DEFINITIONS = [
     },
 ]
 
-def _dist(first, second) -> float:
-    """Return the table-mm distance of two [x, y] positions."""
-    return math.dist((float(first[0]), float(first[1])),
-                     (float(second[0]), float(second[1])))
+def store_scan(state, found) -> dict:
+    """Store a scan in state under new ids; return the tool result part.
+
+    Same shape as a scan_table call: {"parts", "skipped", "image"}
+    with one {"id", "table_mm", "confidence", "lever_deg"} dict
+    per part. The state is fresh again under new ids.
+    """
+    items = found.get("parts", [])
+    positions = [part["table_mm"] for part in items]
+    state.new_scan(
+        positions,
+        [part.get("lever_deg") for part in items],
+        [part.get("confidence") for part in items],
+    )
+    skipped = int(found.get("skipped", 0) or 0)
+    return {"parts": [
+        {"id": index,
+         "table_mm": [float(pos[0]), float(pos[1])],
+         "confidence": part.get("confidence"),
+         "lever_deg": (None if part.get("lever_deg") is None
+                       else round(float(part["lever_deg"]), 1))}
+        for index, (pos, part) in enumerate(zip(positions, items))
+    ], "skipped": skipped, "image": found.get("image")}
 
 
-class RunState:
-    """Latest scan, attempts and records of one agent run."""
+def rescan_after_sort(state, scan_fn, out=print) -> dict:
+    """Rescan right after a sorted part; return the result update.
 
-    def __init__(self) -> None:
-        self.parts: dict[int, list[float]] = {}
-        self.levers: dict[int, float | None] = {}
-        self.fresh = False
-        self.attempts: list[list[float]] = []
-        self.sorted_positions: list[list[float]] = []
-        self.records: list[str] = []
-        self.sort_count = 0
-
-    def new_scan(self, positions, levers=None) -> dict[int, list[float]]:
-        """Store the scan positions under fresh ids, return the mapping.
-
-        levers holds the find_parts lever_deg per part (or None);
-        lever_of returns it for real_sort's --lever-deg.
-        """
-        self.parts = {
-            index: [float(pos[0]), float(pos[1])]
-            for index, pos in enumerate(positions)
-        }
-        by_id = list(levers) if levers is not None else [None] * len(positions)
-        self.levers = {
-            index: (None if value is None else float(value))
-            for index, value in enumerate(by_id)
-        }
-        self.fresh = True
-        return dict(self.parts)
-
-    def lookup(self, part_id) -> list[float] | None:
-        """Return the stored position for part_id, or None.
-
-        None means unknown or stale: not an int id, no fresh scan,
-        or the id is not from the latest scan. Extra coordinates
-        from the model are never consulted.
-        """
-        if isinstance(part_id, bool) or not isinstance(part_id, int):
-            return None
-        if not self.fresh:
-            return None
-        found = self.parts.get(part_id)
-        return [found[0], found[1]] if found is not None else None
-
-    def lever_of(self, part_id) -> float | None:
-        """Return the stored lever_deg for part_id, or None.
-
-        None means unknown, stale or no lever direction; the sort
-        then runs without --lever-deg.
-        """
-        if isinstance(part_id, bool) or not isinstance(part_id, int):
-            return None
-        if not self.fresh:
-            return None
-        return self.levers.get(part_id)
-
-    def remove_sorted(self, part_id) -> None:
-        """Drop one sorted id; the other ids of the scan stay valid."""
-        self.parts.pop(part_id, None)
-        self.levers.pop(part_id, None)
-        if not self.parts:
-            self.fresh = False
-
-    def mark_stale(self) -> None:
-        """Expire the latest scan; the table changed after a sort."""
-        self.fresh = False
-
-    def attempts_at(self, position) -> int:
-        """Count inspect_and_sort calls near this position."""
-        return sum(1 for seen in self.attempts
-                   if _dist(seen, position) <= SAME_PART_MM)
-
-    def note_attempt(self, position) -> None:
-        """Record one inspect_and_sort call at this position."""
-        self.attempts.append([float(position[0]), float(position[1])])
-
-    def already_sorted(self, position) -> bool:
-        """True when a part was already sorted near this position."""
-        return any(_dist(seen, position) <= SAME_PART_MM
-                   for seen in self.sorted_positions)
-
-    def note_sorted(self, position) -> None:
-        """Remember a successful sort at this position."""
-        self.sorted_positions.append(
-            [float(position[0]), float(position[1])])
+    The pick_test child has ended (arm at rest, motors off), so
+    the scan runs at once with known = the confirmed points of
+    the previous scan: known parts skip SAM, a slipped part gets
+    its new position. The new scan is stored under new ids like
+    a scan_table call and returned as "table after sort" with
+    the same part fields. When the rescan fails or finds
+    nothing, the scan expires and the update says so; the model
+    then calls scan_table as usual. Prints nothing but the
+    one-line rescan outcome through out.
+    """
+    known = state.known_parts()
+    try:
+        found = scan_fn(known=known)
+    except Exception as exc:  # noqa: BLE001 - short, no key
+        state.mark_stale()
+        out(f"tool: rescan failed: {exc}")
+        return {"rescan": f"failed: {exc}, call scan_table"}
+    items = found.get("parts", []) if isinstance(found, dict) else []
+    if not items:
+        state.mark_stale()
+        out("tool: rescan found no parts, call scan_table")
+        return {"table after sort": [],
+                "rescan": "no parts found, call scan_table"}
+    result = store_scan(state, found)
+    count = len(result["parts"])
+    if count == 1:
+        out("tool: rescan found 1 part")
+    else:
+        out(f"tool: rescan found {count} parts")
+    return {"table after sort": result["parts"],
+            "image after sort": result["image"]}
 
 
 class FakeTable:
@@ -213,8 +185,13 @@ class FakeTable:
         self._records = 0
         self.seen_levers: list = []
 
-    def scan(self) -> dict:
-        """Return the parts still on the fake table."""
+    def scan(self, known=None) -> dict:
+        """Return the parts still on the fake table.
+
+        known is accepted like the real scan (confirmed points
+        of the previous scan); the fake has no SAM to skip, so
+        the same remaining parts come back either way.
+        """
         return {
             "parts": [
                 {"table_mm": list(part["table_mm"]),
@@ -294,8 +271,12 @@ def fake_report(record_paths, recordings_dir="recordings",
     return str(out_path)
 
 
-def real_scan() -> dict:
-    """Scan the real table (camera plus SAM). Only --execute."""
+def real_scan(known=None) -> dict:
+    """Scan the real table (camera plus SAM). Only --execute.
+
+    known holds the confirmed points of the previous scan;
+    known parts skip SAM (first scan: known empty, all to SAM).
+    """
     import cv2
 
     from muse_qc import find_parts
@@ -322,7 +303,8 @@ def real_scan() -> dict:
         raise RuntimeError(
             f"request failed: {exc}") from exc
     results, path = find_parts.scan_table(
-        frame, empty, find_parts.DEFAULT_PHRASE, client)
+        frame, empty, find_parts.DEFAULT_PHRASE, client,
+        known=known)
     parts = [
         {"table_mm": [float(item["table_mm"][0]),
                       float(item["table_mm"][1])],

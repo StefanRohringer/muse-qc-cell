@@ -467,3 +467,99 @@ def test_skipped_summary_count(monkeypatch, tmp_path, capsys):
     assert "skipped: arm zone" in out
     assert "skipped: out of reach" in out
     assert "parts: 1 confirmed of 5 candidates (4 skipped)" in out
+
+
+def _scan_direct(monkeypatch, tmp_path, parts, texts=None, seen=None,
+                 known=None):
+    """Run scan_table on a synthetic frame, return (results, seen)."""
+    monkeypatch.setattr(find_parts, "detect_table_markers",
+                        lambda frame: _fake_markers())
+    monkeypatch.setattr(find_parts, "load_table_calibration", lambda: None)
+    monkeypatch.chdir(tmp_path)
+    results, _ = find_parts.scan_table(
+        _frame_with(parts), _background(), client=_FakeClient(texts, seen),
+        recordings_dir=str(tmp_path), known=known)
+    return results
+
+
+def test_known_match_limit_is_10_mm():
+    from muse_qc.known_match import KNOWN_MATCH_MM, match_known
+
+    assert KNOWN_MATCH_MM == 10.0
+    assert match_known([{"table_mm": [505.0, 360.0], "confidence": 0.77}],
+                       (505.0, 360.0)) == (True, 0.77, (505.0, 360.0))
+    assert match_known([{"table_mm": [505.0, 360.0], "confidence": 0.77}],
+                       (515.0, 360.0)) == (True, 0.77, (505.0, 360.0))
+    assert match_known([[505.0, 360.0]],
+                       (505.0, 360.0)) == (True, None, (505.0, 360.0))
+    assert match_known([{"table_mm": [505.0, 360.0], "confidence": 0.77}],
+                       (520.0, 360.0)) == (False, None, None)
+    assert match_known(None, (505.0, 360.0)) == (False, None, None)
+
+
+def test_known_candidate_makes_no_sam_call(monkeypatch, tmp_path):
+    seen: list = []
+    results = _scan_direct(
+        monkeypatch, tmp_path, [_rect_at((505.0, 360.0))], seen=seen,
+        known=[{"table_mm": [505.0, 360.0], "confidence": 0.77}])
+    assert seen == []
+    (item,) = [part for part in results if part["skipped"] is None]
+    assert item["confirmed"] is True
+    assert item["confidence"] == 0.77
+    assert item["known"] is True
+    assert item["retried"] is False
+    assert "lever_deg" in item
+
+
+def test_candidate_15_mm_away_goes_to_sam(monkeypatch, tmp_path):
+    seen: list = []
+    texts = ["0<|box;x1=270;y1=270;x2=370;y2=370;w=100;h=100;c=0.88|>"]
+    results = _scan_direct(
+        monkeypatch, tmp_path, [_rect_at((505.0, 360.0))],
+        texts=texts, seen=seen,
+        known=[{"table_mm": [520.0, 360.0], "confidence": 0.5}])
+    assert len(seen) == 1
+    (item,) = [part for part in results if part["skipped"] is None]
+    assert item["confirmed"] is True
+    assert item["confidence"] == 0.88
+    assert item["known"] is False
+
+
+def test_known_none_behaves_as_today(monkeypatch, tmp_path):
+    seen: list = []
+    texts = ["0<|box;x1=270;y1=270;x2=370;y2=370;w=100;h=100;c=0.88|>"]
+    results = _scan_direct(
+        monkeypatch, tmp_path, [_rect_at((505.0, 360.0))],
+        texts=texts, seen=seen, known=None)
+    assert len(seen) == 1
+    (item,) = [part for part in results if part["skipped"] is None]
+    assert item["confirmed"] is True
+    assert item["known"] is False
+
+
+def test_known_candidate_keeps_known_table_mm(monkeypatch, tmp_path):
+    seen: list = []
+    results = _scan_direct(
+        monkeypatch, tmp_path, [_rect_at((505.0, 360.0))], seen=seen,
+        known=[{"table_mm": [511.0, 360.0], "confidence": 0.77}])
+    assert seen == []
+    (item,) = [part for part in results if part["skipped"] is None]
+    assert item["confirmed"] is True
+    assert item["table_mm"] == [511.0, 360.0]
+    assert item["confidence"] == 0.77
+
+
+def test_known_printed_as_sam_known(monkeypatch, tmp_path, capsys):
+    real_scan_table = find_parts.scan_table
+
+    def with_known(frame, empty, phrase=None, client=None,
+                   recordings_dir="recordings", known=None):
+        return real_scan_table(
+            frame, empty, phrase, client, recordings_dir,
+            known=[{"table_mm": [505.0, 360.0], "confidence": 0.77}])
+
+    monkeypatch.setattr(find_parts, "scan_table", with_known)
+    out = _run_frame(monkeypatch, tmp_path, capsys,
+                     [_rect_at((505.0, 360.0))])
+    assert "sam=known" in out
+    assert "parts: 1 confirmed of 1 candidates" in out

@@ -1683,11 +1683,18 @@ Tools offered to the model:
   latest table scan under fresh ids.
 - `inspect_and_sort(part_id)` picks the part with that id, counts
   its levers and drops it into the good or bad box. Unknown or
-  stale ids are refused; one scan covers the whole list (human
-  decision 2026-10-30): after a sorted part only that id expires
-  and the model sorts the next id without rescanning, while a
-  failed or missed sort expires the whole scan, so the model
-  rescans then and once the list is done.
+  stale ids are refused; after every sorted part the table is
+  scanned again right away (the arm is back at rest with the
+  motors off, since each sort runs as its own child process) and
+  the new part list comes back inside the tool result under
+  "table after sort" with new ids, so a slipped part gets its new
+  position, the live page shows the table after every sort and no
+  extra model call is needed. The rescan stays cheap: parts
+  already confirmed in the previous scan are not sent to SAM
+  again (match within `KNOWN_MATCH_MM` = 10.0 mm, confidence
+  copied). A failed or missed sort, a failed rescan and an empty
+  rescan expire the whole scan, so the model calls `scan_table`
+  then.
 - `write_report()` builds the HTML report from only this run's
   records.
 - `finish(summary)` ends the run; the summary is printed and stored.
