@@ -14,9 +14,27 @@ import math
 
 from muse_qc import mit_hold, safety
 from muse_qc.drop_plan import BOXES_TABLE_MM, solve_drop
-from muse_qc.first_move_plan import SPEED_FRACTION
+from muse_qc.first_move_plan import LOOP_RATE_HZ, SPEED_FRACTION
 from muse_qc.mit_hold import MIT_KD, MIT_KP, TAU_SCALE
 from muse_qc.pick_plan import FREE_STEP_DEG
+
+# Slow per-joint position trim (software integrator): the SDK gravity
+# model does not match the real gripper and camera, so MIT keeps a
+# pose-dependent steady-state error (about 3 deg on joint 4 at rest,
+# 6 mm in tip height at the grip pose). Adding a fraction of the
+# remaining error per second removes it in every pose, like the
+# POS_VEL loop does internally, while MIT keeps its calm behaviour.
+# The 4 deg clamp keeps a stuck joint from winding the trim up.
+# The gate below it keeps fast moves from winding it up either: with
+# vel 0 the kd term brakes against the motion, so every joint lags
+# its target by about kd*v/kp during a free move (1.7 deg on joints
+# 4-6 at 15 deg/s). That lag is motion, not steady-state error, so
+# the trim only integrates while every joint target moves at most
+# TRIM_GATE_DEG_PER_S since the last send (holds, settles and the
+# slow lower/lift ladder).
+TRIM_RATE_PER_S = 1.0
+TRIM_LIMIT_DEG = 4.0
+TRIM_GATE_DEG_PER_S = 5.0
 
 
 class MitArmSender:
@@ -37,6 +55,10 @@ class MitArmSender:
         self.tau_scale = mit_hold.validate_tau_scale(
             TAU_SCALE if tau_scale is None else tau_scale)
         self.gravity_fn = gravity_fn
+        self._trim = [0.0] * 6
+        self._frozen = False
+        self._last_sent: list[float] | None = None
+        self._last_step_deg_per_s = [0.0] * 6
 
     def _tau(self, joint_rad: list[float]) -> list[float]:
         """Return scale * g(q) per joint for one command in radians."""
@@ -51,17 +73,61 @@ class MitArmSender:
         """Switch to MIT and send the first command at the start pose."""
         first = [float(value) for value in start_rad]
         self.group.mode_mit()
-        self.group.send_mit(
-            first, vel=[0.0] * len(first),
-            kp=self.kp, kd=self.kd, tau=self._tau(first),
-        )
+        self.send(first)
         return list(first)
 
+    def observe(self, measured_deg: object, target_deg: object) -> None:
+        """Fold a fraction of the remaining error into the trim.
+
+        Skips the update when frozen, when any reading is not finite,
+        or when any joint target moved faster than TRIM_GATE_DEG_PER_S
+        since the last send; each joint trim is clamped to
+        +-TRIM_LIMIT_DEG.
+        """
+        if self._frozen:
+            return
+        measured = [float(value) for value in measured_deg]
+        target = [float(value) for value in target_deg]
+        if len(measured) != 6 or len(target) != 6:
+            return
+        if not all(math.isfinite(v) for v in measured + target):
+            return
+        if any(speed > TRIM_GATE_DEG_PER_S
+               for speed in self._last_step_deg_per_s):
+            return
+        step = TRIM_RATE_PER_S / LOOP_RATE_HZ
+        self._trim = [min(max(old + step * (want - got),
+                              -TRIM_LIMIT_DEG), TRIM_LIMIT_DEG)
+                      for old, got, want in zip(self._trim, measured, target)]
+
+    def freeze(self) -> None:
+        """Stop updating the trim, keeping its value."""
+        self._frozen = True
+
+    def trim_line(self) -> str:
+        """Return one status line with the six trim values in degrees."""
+        return "mit trim deg: " + " ".join(f"{v:+.2f}" for v in self._trim)
+
     def send(self, arm_rad: object) -> None:
-        """Command one arm pose through MIT with gravity feed-forward."""
+        """Command target plus trim through MIT with gravity feed-forward.
+
+        Vel is the unbiased target step times the loop rate (0 on the
+        first send and while holding); the trim stays out of it. The
+        torque stays scale * g(q) of the unbiased target pose, not of
+        the trimmed pose.
+        """
         commanded = [float(value) for value in arm_rad]
+        if self._last_sent is None:
+            vel = [0.0] * len(commanded)
+        else:
+            vel = [(c - p) * LOOP_RATE_HZ
+                   for c, p in zip(commanded, self._last_sent)]
+        self._last_step_deg_per_s = [abs(v) * 180.0 / math.pi for v in vel]
+        self._last_sent = list(commanded)
+        trimmed = [c + math.radians(t)
+                   for c, t in zip(commanded, self._trim)]
         self.group.send_mit(
-            commanded, vel=[0.0] * len(commanded),
+            trimmed, vel=vel,
             kp=self.kp, kd=self.kd, tau=self._tau(commanded),
         )
 
@@ -108,9 +174,13 @@ def feed_guard(loop: object, current_deg: list[float]) -> bool:
     if guard is None:
         return False
     commanded = [math.degrees(v) for v in loop.cmd_arm_rad]
+    if loop.arm_sender is not None:
+        loop.arm_sender.observe(list(current_deg), commanded)
     tripped = guard.feed(list(current_deg), commanded)
     if tripped is None:
         return False
+    if loop.arm_sender is not None:
+        loop.arm_sender.freeze()
     loop.cmd_arm_rad = [math.radians(v) for v in current_deg]
     loop._abort_from = list(current_deg)
     loop._fault(f"tracking error on joint {tripped}, holding")

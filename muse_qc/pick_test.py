@@ -204,7 +204,7 @@ def execute(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, input_fn=input,
             arm_mode="posvel", tau_scale=None, gravity_fn=None):
     out(f"arm mode: {arm_mode}")
     reader, arm_start_deg, grip_start_deg = _read_start(sdk)
-    stream, sensor = None, None
+    stream, sensor, arm_sender = None, None, None
     old_ref = safety.J6_REF
     safety.set_j6_ref(arm_start_deg[5])
     try:
@@ -243,7 +243,7 @@ def execute(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, input_fn=input,
         arm_group, gripper_group = sdk.groups["arm"], sdk.groups["gripper"]
         hold_deg = list(clamp_to_limits(arm_start_deg, limits))
         arm_start_rad = [math.radians(v) for v in hold_deg]
-        arm_sender = guard = None
+        guard = None
         if arm_mode == "mit-ff":
             arm_sender = pick_mit.MitArmSender(
                 arm_group, tau_scale=tau_scale, gravity_fn=gravity_fn)
@@ -299,6 +299,8 @@ def execute(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, input_fn=input,
         return stream.exit_code
     finally:
         safety.set_j6_ref(old_ref)
+        if arm_sender is not None:
+            out(arm_sender.trim_line())
         out("stopping: the motors will be disabled now")
         try:
             sdk.stop_control_loop()

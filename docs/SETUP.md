@@ -1212,6 +1212,12 @@ uv run python -m muse_qc.pick_test --table-mm 500 335 --inspect --arm-mode mit-f
 
 Not yet run on hardware. The default stays posvel for now; it changes
 in a later doc commit after the human tests mit-ff first.
+The arm sender adds a slow per-joint position trim (about 1/s of the
+remaining error, clamped at 4 deg per joint, frozen on a tracking
+trip) plus the target step times the loop rate as velocity
+feed-forward: the trim only integrates while every joint target moves
+at most 5 deg/s, so the kd*v/kp lag of fast moves never winds it up.
+`mit trim deg: ...` in the execute output shows the final trim values.
 
 ## 29. Find parts on the table (empty reference + SAM confirm)
 

@@ -930,3 +930,17 @@ part: box=(323, 268, 360, 316) confidence=0.59
 levers: 2
 verdict: bad
 - Decision: the part is inspected in the gripper after the lift, because the camera sits on the gripper and the held part always appears at the same image position (no alignment, no arm shadow). An unverified part goes to the bad box.
+- Human ran (2026-10-30 ~08:45, power supply on, hand on the switch) `uv run python -m muse_qc.pick_test --table-mm 503.5 344.3 --inspect --arm-mode mit-ff --execute` after `find_parts` found the good part at table_mm=(503.5, 344.3) sam=confirmed 0.73:
+```text
+contact: gripper commanded deg -40.57 measured deg -43.83 contacts L2 R2
+contacts L1 L2 R1 R2 (lifting)
+part lifted, holding
+inspect: levers 3 verdict good
+dropped into the good box
+end readings: arm [-3.11 -0.14 -2.79 +5.23 +1.48 -1.80] gripper -126.28 deg
+```
+The record gave part_offset_px 4.6 (part in the gripper at the expected image position). First run of the in-gripper inspection and of the MIT arm mode in a pick; no tracking error.
+- Human ran `pick_test --table-mm 503.5 344.3 --no-grip --hold-s 15 --arm-mode mit-ff --execute` (~08:49): "holding at tip z 4.7 mm", human measured 8 mm tip to table; end readings arm [-3.11 -0.27 -2.76 +5.17 +1.45 -1.78].
+- Human ran the same without --arm-mode (posvel, ~08:51): "holding at tip z 4.7 mm", human measured 2 mm; end readings arm [-3.14 +0.14 -1.63 +2.02 +1.41 -1.93].
+- Human observation: in mit-ff joint 4 stands visibly too low at rest. Conclusion: MIT leaves a pose-dependent steady-state error (model mismatch of gripper and camera), so a slow position trim was added.
+- Human found after a PC restart that the arm port moved to /dev/ttyACM1 while the SDK channel stayed /dev/ttyACM0 (all joints read 0.0); `muse_qc.preflight` showed "sdk-port: FAIL"; plugging the arm in before the gripper Pico fixed it.

@@ -11,6 +11,7 @@ import math
 import pytest
 
 from muse_qc import pick_mit, pick_test
+from muse_qc.first_move_plan import LOOP_RATE_HZ
 from muse_qc.gripper_grip import width_to_deg
 from muse_qc.mit_hold import MIT_KD, MIT_KP, TAU_SCALE
 
@@ -309,10 +310,14 @@ def test_mitff_sends_only_mit_with_scaled_tau():
     assert [call for call in group.calls if call[0] == "send_posvel"] == []
     sends = _arm_sends(sdk, "send_mit")
     assert sends, "arm commands must go through send_mit"
-    for _, _pos, vel, kp, kd, _tau in sends:
-        assert vel == pytest.approx([0.0] * 6)
+    assert sends[0][2] == pytest.approx([0.0] * 6)  # first send
+    previous = sends[0][1]
+    for _, pos, vel, kp, kd, _tau in sends[1:]:
+        assert vel == pytest.approx(
+            [(c - p) * LOOP_RATE_HZ for c, p in zip(pos, previous)])
         assert kp == pytest.approx(list(MIT_KP))
         assert kd == pytest.approx(list(MIT_KD))
+        previous = pos
     for _, pos, _vel, _kp, _kd, tau in sends:
         assert tau[0] == pytest.approx(TAU_SCALE[0] * 2.0 * pos[0])
         assert tau[1:] == pytest.approx([0.0] * 5)
@@ -340,7 +345,8 @@ def test_tracking_trip_holds_measured_pose_and_returns():
     assert _arm_sends(sdk, "send_mit"), "the hold keeps sending with feed-forward"
     rest_rad = tuple(math.radians(v) for v in REST)
     last = _arm_sends(sdk, "send_mit")[-1][1]
-    assert tuple(last) == pytest.approx(rest_rad)
+    # Within the trim frozen at the trip (under 1 deg on joint 2).
+    assert tuple(last) == pytest.approx(rest_rad, abs=math.radians(1.0))
     assert "disable_all" in sdk.calls and "disconnect" in sdk.calls
 
 
@@ -367,7 +373,8 @@ def test_abort_ramp_bridges_the_lag_without_a_jump():
     assert all(peak_deg(before, after) < 2.0
                for before, after in zip(tail, tail[1:]))
     rest_rad = [math.radians(v) for v in REST]
-    assert sends[-1] == pytest.approx(rest_rad)
+    # Within the trim frozen at the trip (under 1 deg on joint 2).
+    assert sends[-1] == pytest.approx(rest_rad, abs=math.radians(1.0))
 
 
 def test_guard_trips_once_after_ten_bad_cycles_in_a_row():
@@ -461,6 +468,162 @@ def test_dry_run_drop_box_selects_the_pose():
     text = "\n".join(str(line) for line in lines)
     assert "drop (bad) pose gravity:" in text
     assert text.count("gravity torque:") == 18
+
+
+class HangArmGroup(FakeArmGroup):
+    """Readings hang a constant offset below the last command."""
+
+    def __init__(self, joints_deg, hang_joint=3, hang_deg=3.0):
+        super().__init__(joints_deg)
+        self._hang = [0.0] * 6
+        self._hang[hang_joint] = math.radians(hang_deg)
+
+    def get_positions(self):
+        self.calls.append("get")
+        return [c - hang for c, hang in zip(self._rad, self._hang)]
+
+
+def _trim_values(sender):
+    return [float(v) for v in sender.trim_line().split(":")[1].split()]
+
+
+def _drive(sender, group, target_deg, cycles):
+    target_rad = [math.radians(v) for v in target_deg]
+    for _ in range(cycles):
+        measured = [math.degrees(v) for v in group.get_positions()]
+        sender.observe(measured, list(target_deg))
+        sender.send(target_rad)
+
+
+def test_trim_converges_to_hang_offset():
+    group = HangArmGroup(REST, hang_joint=3, hang_deg=3.0)
+    sender = pick_mit.MitArmSender(group, gravity_fn=lambda q: [0.0] * 6)
+    _drive(sender, group, REST, 300)
+    commanded = [call[1] for call in group.calls if call[0] == "send_mit"][-1]
+    assert commanded[3] == pytest.approx(
+        math.radians(REST[3] + 3.0), abs=math.radians(0.2))
+    assert all(abs(v) <= pick_mit.TRIM_LIMIT_DEG + 1e-9
+               for v in _trim_values(sender))
+
+
+def test_trim_clamps_at_limit():
+    group = HangArmGroup(REST, hang_joint=3, hang_deg=10.0)
+    sender = pick_mit.MitArmSender(group, gravity_fn=lambda q: [0.0] * 6)
+    _drive(sender, group, REST, 600)
+    assert _trim_values(sender)[3] == pytest.approx(pick_mit.TRIM_LIMIT_DEG)
+    commanded = [call[1] for call in group.calls if call[0] == "send_mit"][-1]
+    assert commanded[3] == pytest.approx(
+        math.radians(REST[3]) + math.radians(pick_mit.TRIM_LIMIT_DEG))
+
+
+def test_tau_uses_target_pose_not_trimmed_pose():
+    group = HangArmGroup(REST, hang_joint=0, hang_deg=2.0)
+    sender = pick_mit.MitArmSender(group, gravity_fn=_q_gravity)
+    _drive(sender, group, REST, 100)
+    assert _trim_values(sender)[0] != pytest.approx(0.0)  # trim is active
+    target_rad = [math.radians(v) for v in REST]
+    last = [call for call in group.calls if call[0] == "send_mit"][-1]
+    assert last[5][0] == pytest.approx(
+        TAU_SCALE[0] * 2.0 * target_rad[0])
+
+
+class LagRateArmGroup(FakeArmGroup):
+    """Reading trails the command by kd*v/kp of the command velocity."""
+
+    def __init__(self, joints_deg, kp=18.0, kd=2.0, lag_joint=3):
+        super().__init__(joints_deg)
+        self._prev = list(self._rad)
+        self._kp, self._kd, self._joint = kp, kd, lag_joint
+
+    def send_mit(self, pos, vel=None, kp=None, kd=None, tau=None):
+        self._prev = list(self._rad)
+        super().send_mit(pos, vel=vel, kp=kp, kd=kd, tau=tau)
+
+    def get_positions(self):
+        self.calls.append("get")
+        reading = list(self._rad)
+        vel = (self._rad[self._joint] - self._prev[self._joint]) * LOOP_RATE_HZ
+        reading[self._joint] -= self._kd * vel / self._kp
+        return reading
+
+
+def test_fast_ramp_leaves_trim_unchanged():
+    group = LagRateArmGroup(REST)
+    sender = pick_mit.MitArmSender(group, gravity_fn=lambda q: [0.0] * 6)
+    target = [math.radians(v) for v in REST]
+    sender.begin(target)
+    stepped = list(target)
+    stepped[3] += math.radians(0.15)  # one 15 deg/s step on joint 4
+    sender.send(stepped)
+    reading = group.get_positions()
+    assert (stepped[3] - reading[3]) == pytest.approx(
+        2.0 * math.radians(15.0) / 18.0)  # the kd*v/kp lag is real here
+    target = stepped
+    for _ in range(200):
+        stepped = list(target)
+        stepped[3] += math.radians(0.15)
+        measured = [math.degrees(v) for v in group.get_positions()]
+        sender.observe(measured, [math.degrees(v) for v in target])
+        sender.send(stepped)
+        target = stepped
+    assert sender.trim_line() == "mit trim deg: " + "+0.00 " * 5 + "+0.00"
+    last = [call for call in group.calls if call[0] == "send_mit"][-1]
+    assert last[1][3] == pytest.approx(target[3])  # no trim wound up
+
+
+def test_vel_feedforward_matches_target_step_without_trim():
+    group = FakeArmGroup(REST)
+    sender = pick_mit.MitArmSender(group, gravity_fn=lambda q: [0.0] * 6)
+    base = [math.radians(v) for v in REST]
+    sender.begin(base)
+    assert [call for call in group.calls
+            if call[0] == "send_mit"][0][2] == pytest.approx([0.0] * 6)
+    sender.observe(
+        [v - (2.0 if i == 3 else 0.0) for i, v in enumerate(REST)], REST)
+    assert _trim_values(sender)[3] == pytest.approx(0.02)  # trim is active
+    stepped = list(base)
+    stepped[3] += math.radians(0.15)
+    sender.send(stepped)
+    last = [call for call in group.calls if call[0] == "send_mit"][-1]
+    assert last[2][3] == pytest.approx(math.radians(0.15) * LOOP_RATE_HZ)
+    assert last[2][:3] + last[2][4:] == pytest.approx([0.0] * 5)
+    assert last[1][3] == pytest.approx(
+        stepped[3] + math.radians(0.02))  # position carries the trim
+    sender.send(stepped)  # holding
+    held = [call for call in group.calls if call[0] == "send_mit"][-1]
+    assert held[2] == pytest.approx([0.0] * 6)
+
+
+def test_freeze_stops_trim_updates():
+    group = HangArmGroup(REST, hang_joint=3, hang_deg=3.0)
+    sender = pick_mit.MitArmSender(group, gravity_fn=lambda q: [0.0] * 6)
+    _drive(sender, group, REST, 50)
+    sender.freeze()
+    before = sender.trim_line()
+    _drive(sender, group, REST, 50)
+    assert sender.trim_line() == before
+
+
+def test_observe_ignores_non_finite_readings():
+    group = FakeArmGroup(REST)
+    sender = pick_mit.MitArmSender(group, gravity_fn=lambda q: [0.0] * 6)
+    bad = list(REST)
+    bad[2] = float("nan")
+    sender.observe(bad, REST)
+    worse = list(REST)
+    worse[4] = float("inf")
+    sender.observe(REST, worse)
+    assert sender.trim_line() == "mit trim deg: " + "+0.00 " * 5 + "+0.00"
+
+
+def test_trim_line_printed_only_in_mitff():
+    sdk = FakeSdk()
+    _, text = _run(sdk, lambda n: "-")
+    assert "mit trim" not in text
+    sdk = FakeSdk()
+    _, text = _run(sdk, lambda n: "-", arm_mode="mit-ff")
+    assert "mit trim deg:" in text
+    assert text.index("mit trim deg:") < text.index("stopping:")
 
 
 def test_maybe_ramp_inserts_checked_micro_steps():
