@@ -1585,9 +1585,9 @@ The bad part run gave "inspect: levers 2 verdict bad" and "dropped into the bad 
 With `--execute` the loop no longer stops at hover: it walks the
 hover segment (opening the gripper) and lowers directly, grips,
 lifts and holds the last lift waypoint with the part held: first
-2 s to let the arm settle (not yet run on hardware; raised from
-1 s because the 2026-10-30 ~10:26 photo came out blurred), then
-the main thread grabs one frame
+2 s to let the arm settle (run on hardware 2026-10-30; raised
+from 1 s because the 2026-10-30 ~10:26 photo came out blurred),
+then the main thread grabs one frame
 with the arm camera, saves it as
 recordings/armcam_<timestamp>.png, counts the levers with
 count_clips.count_frame and hands the verdict to the loop, which
@@ -1618,7 +1618,7 @@ inspection ("inspect skipped: no part held") and returns as
 today. Only the human runs it,
 never CI and never an agent.
 
-Lever-count retry (not yet run on hardware): SAM is not fully
+Lever-count retry (run on hardware 2026-10-30): SAM is not fully
 deterministic (the same image gave 0 levers three times, then
 1), so every first count other than exactly 3 is retried. The
 first retry is one fresh arm camera frame with the normal

@@ -1011,3 +1011,32 @@ attempt 1: prompt brown bar scale 8 margin 15 levers 1
 levers: 1
 verdict: bad
 Conclusion: SAM is not fully deterministic on this image (0 three times, now 1), so the retry now covers every count other than 3, and good needs two retry counts of exactly 3. AI-assisted review of the crop image count_20261030_112838_crop.png from the CLI run (human agreed): all 3 levers visible to the eye, SAM boxed only the middle one, the whole image is blurred (text on the part unreadable), so the settle before the photo was raised to 2 s.
+- Human ran (2026-10-30 ~10:40, power supply off) `uv run python -m muse_qc.count_retry --image recordings/armcam_20261030_102620.png` with the new rule (commit 97398a8):
+attempt 1: prompt brown bar scale 8 margin 15 levers 0
+attempt 2: prompt brown bar scale 6 margin 15 levers 0
+attempt 3: prompt brown bar scale 10 margin 25 levers 0
+attempt 4: prompt orange bar scale 8 margin 15 levers 0
+levers: 0
+verdict: bad
+Early stop after 4 attempts as designed; crop and prompt variants cannot rescue the blurred image, only a sharper fresh frame can (the CLI never grabs one).
+- Human ran (~10:41) `find_parts`: part 4 table_mm=(506.5, 327.7) sam=confirmed 0.86 (good part), then (~10:42, power supply on, hand on the switch) `uv run python -m muse_qc.pick_test --table-mm 506.5 327.7 --inspect --execute` (2 s settle, commit 97398a8):
+segments at 100 Hz: hover 301 lower 259 lift 214 to-box 323 release 2 return 675 (total 1774)
+contact: gripper commanded deg -44.52 measured deg -47.94 contacts L2 R2
+contacts L1 L2 R2 (lifting)
+part lifted, holding
+inspect: levers 3 verdict good
+dropped into the good box
+mit trim deg: -0.13 +0.60 +2.47 +0.23 -0.06 -0.15
+end readings: arm [-2.13 +0.32 -2.74 +4.89 +1.43 -4.40] gripper -126.28 deg
+First count gave 3, no retry.
+- Human ran (~10:43) `find_parts`: part 7 table_mm=(505.3, 336.1) sam=confirmed 0.58 (bad part), then (~10:44, power supply on, hand on the switch) `uv run python -m muse_qc.pick_test --table-mm 505.3 336.1 --inspect --execute`:
+segments at 100 Hz: hover 305 lower 259 lift 214 to-box 325 release 2 return 675 (total 1780)
+contact: gripper commanded deg -44.52 measured deg -47.94 contacts L2 R2
+contacts L1 L2 R1 R2 (lifting)
+part lifted, holding
+inspect retry: 5 attempts
+inspect: levers 2 verdict bad
+dropped into the bad box
+mit trim deg: +0.16 +0.55 +2.41 +0.24 -0.01 -0.13
+end readings: arm [-2.46 +0.21 -2.96 +5.61 +1.37 -4.43] gripper -126.28 deg
+The retry ran on hardware (fresh frame plus variants, early stop after 5 attempts) and the bad part stayed bad. File times in recordings/ (human listed them): photo armcam_20261030_114342.png at 11:43:42, first count 11:43:45, fresh frame armcam_20261030_114346.png at 11:43:46, retry counts at 11:43:49, :51, :53, :55, so about 13 s from photo to verdict; the good part took about 3 s (photo 11:41:54, count 11:41:57). Each count is about 2 s; the 60 s inspect timeout leaves ample margin. Joint 4 rest reading creeps up (+4.64, +4.89, +5.06 at the start of the last three runs, +5.61 at the end); watched, no action yet.
