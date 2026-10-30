@@ -1300,6 +1300,14 @@ image is still saved and one extra line prints before the error
 (`blobs: N total, S skipped, U unskipped` plus the image path),
 so the changes can be seen.
 
+SAM with `grey object` is not deterministic on the zoomed crops, so a
+`no box` candidate whose blob area is between 350 and 900 mm2
+(`RETRY_AREA_MM2`, real parts measured 398 to 775 mm2) gets one more
+confirm with the phrase `small part` (`RETRY_PHRASE`); only a
+confirmation from that second call counts, printed as
+`sam=confirmed 0.NN (small part)`. Candidates outside the area range
+get no second call.
+
 Before SAM, every candidate is checked against three skip zones and
 skipped ones cost no SAM call: within 70 mm (max of |dx|, |dy|) of
 a sorting box centre from `drop_plan.BOXES_TABLE_MM` (parts already

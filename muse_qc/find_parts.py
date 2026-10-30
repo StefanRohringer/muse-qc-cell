@@ -12,7 +12,6 @@ Hand-run only (real camera and API); tests use synthetic images:
 from __future__ import annotations
 
 import argparse
-import math
 import sys
 from pathlib import Path
 
@@ -21,10 +20,9 @@ import numpy
 
 from muse_qc.camera_top import open_table_camera
 from muse_qc.detect_markers import detect_table_markers, scale_px_per_mm
-from muse_qc.drop_plan import BOXES_TABLE_MM
+from muse_qc.find_skip import classify_skip
 from muse_qc.part_angle import lever_angle_deg
 from muse_qc.parts_image import annotate, save_annotated
-from muse_qc.target_pose import ARM_BASE_IN_TABLE_MM
 from muse_qc.model_check import (
     KEY_NAME,
     _is_auth_error,
@@ -53,14 +51,11 @@ EMPTY_PATH = "recordings/empty_table.png"
 TABLE_X_MAX_MM = 990.0
 TABLE_Y_MAX_MM = 540.0
 GROW_PX = 10
-# Skip zones for diff blobs, table mm. Parts already sorted sit in the
-# 100 mm boxes (square keep-out around the box centre), the arm with
-# cables and gripper rests in ARM_ZONE_TABLE_MM, and anything beyond
-# REACH_MAX_MM from the joint 1 axis cannot be picked anyway.
-BOX_KEEP_OUT_MM = 70.0
-ARM_ZONE_TABLE_MM = ((380.0, 610.0, 0.0, 200.0),  # base/arm
-                       (430.0, 590.0, 200.0, 300.0))  # resting gripper
-REACH_MAX_MM = 345.0
+# Second SAM try for real-looking candidates: SAM with DEFAULT_PHRASE
+# misses real parts on some crops, so a "no box" blob with an area in
+# RETRY_AREA_MM2 gets one more confirm with RETRY_PHRASE.
+RETRY_AREA_MM2 = (350.0, 900.0)
+RETRY_PHRASE = "small part"
 
 
 class TooManyChanges(RuntimeError):
@@ -70,34 +65,6 @@ class TooManyChanges(RuntimeError):
         super().__init__("too many changes: light or arm moved? take a new"
                          " empty reference with --save-empty")
         self.results, self.path = results, path
-
-
-def classify_skip(table_mm):
-    """Return the skip reason for a candidate table position, or None.
-
-    "in box good"/"in box bad" is within BOX_KEEP_OUT_MM (max of
-    |dx|, |dy|) of the drop_plan box centre, "arm zone" is inside
-    ARM_ZONE_TABLE_MM, "out of reach" is farther than REACH_MAX_MM
-    from the joint 1 axis. None (no mapping) is never skipped.
-    """
-    if table_mm is None:
-        return None
-    table_x, table_y = float(table_mm[0]), float(table_mm[1])
-    for name in ("good", "bad"):
-        box = BOXES_TABLE_MM.get(name)
-        if box is None:
-            continue
-        if max(abs(table_x - box[0]), abs(table_y - box[1])) \
-                <= BOX_KEEP_OUT_MM:
-            return f"in box {name}"
-    for zone in ARM_ZONE_TABLE_MM:
-        x_min, x_max, y_min, y_max = zone
-        if x_min <= table_x <= x_max and y_min <= table_y <= y_max:
-            return "arm zone"
-    base_x, base_y = ARM_BASE_IN_TABLE_MM
-    if math.dist((table_x, table_y), (base_x, base_y)) > REACH_MAX_MM:
-        return "out of reach"
-    return None
 
 
 def detect_changes(frame, empty, scale, to_table_mm=None):
@@ -219,10 +186,12 @@ def scan_table(frame, empty, phrase=DEFAULT_PHRASE, client=None,
     """Scan one frame for parts, return (results, annotated image path).
 
     Runs the same steps as main: table mapping, empty-table diff,
-    skip zones, one SAM confirm per unskipped candidate, then the
-    annotated image save. Each result holds bbox, pixel, area_mm2,
-    table_mm, confirmed, confidence, skipped (the skip reason or
-    None), contour (the diff-mask blob contour, never printed or
+    skip zones, one SAM confirm per unskipped candidate plus one
+    retry with RETRY_PHRASE when "no box" meets RETRY_AREA_MM2,
+    then the annotated image save. Each result holds bbox, pixel,
+    area_mm2, table_mm, confirmed, confidence, skipped (the skip
+    reason or None), retried (True only for a retry confirmation),
+    contour (the diff-mask blob contour, never printed or
     saved), lever_deg (table-frame lever direction in deg, None
     when unclear or skipped) and lever_source ("levers", "slot" or
     "outline", None when unclear or skipped) plus lever_reason
@@ -251,6 +220,7 @@ def scan_table(frame, empty, phrase=DEFAULT_PHRASE, client=None,
             "skipped": classify_skip(blob_table),
             "contour": blob["contour"], "lever_deg": None,
             "lever_source": None, "lever_reason": None,
+            "retried": False,
         })
     unskipped = [item for item in results if item["skipped"] is None]
     if len(unskipped) > MAX_CANDIDATES:
@@ -262,16 +232,26 @@ def scan_table(frame, empty, phrase=DEFAULT_PHRASE, client=None,
         raise TooManyChanges(results, path)
     for item in unskipped:
         confirmed, sam_center, confidence = False, None, None
+        retried = False
         if client is not None:
             try:
                 confirmed, sam_center, confidence = confirm_candidate(
                     frame, {"center": item["pixel"], "bbox": item["bbox"]},
                     phrase, client)
+                if not confirmed and RETRY_AREA_MM2[0] <= item[
+                        "area_mm2"] <= RETRY_AREA_MM2[1]:
+                    second = confirm_candidate(
+                        frame, {"center": item["pixel"],
+                                "bbox": item["bbox"]},
+                        RETRY_PHRASE, client)
+                    confirmed, sam_center, confidence = second
+                    retried = confirmed
             except Exception as exc:  # noqa: BLE001 - mapped, no key
                 raise RuntimeError(_request_error(exc)) from exc
         pixel = sam_center if confirmed else item["pixel"]
         item.update(pixel=pixel, table_mm=to_table(pixel),
-                    confirmed=confirmed, confidence=confidence)
+                    confirmed=confirmed, confidence=confidence,
+                    retried=retried)
         angle = lever_angle_deg(frame, item["bbox"], item["contour"],
                                 to_table)
         if angle["ok"]:
@@ -359,6 +339,8 @@ def main(argv=None):
             sam_text = "confirmed n/a"
         else:
             sam_text = f"confirmed {item['confidence']:.2f}"
+            if item.get("retried"):
+                sam_text += " (small part)"
         if item["lever_deg"] is None:
             lever_text = f"lever_deg=? ({item['lever_reason']})"
         else:

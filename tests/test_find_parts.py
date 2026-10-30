@@ -409,6 +409,46 @@ def test_real_candidate_still_goes_to_sam(monkeypatch, tmp_path, capsys):
     assert "skipped" not in out
 
 
+def _phrases(seen):
+    """Noun phrases of the SAM calls recorded in seen."""
+    return [call["input"][0]["content"][0]["text"] for call in seen]
+
+
+def test_retry_small_part_confirms(monkeypatch, tmp_path, capsys):
+    seen: list = []
+    texts = ["",
+             "0<|box;x1=270;y1=270;x2=370;y2=370;w=100;h=100;c=0.53|>"]
+    out = _run_frame(monkeypatch, tmp_path, capsys,
+                     [_rect_at((505.0, 360.0), half=(15, 10))],
+                     texts=texts, seen=seen)
+    assert len(seen) == 2
+    assert _phrases(seen) == ["grey object", "small part"]
+    assert "sam=confirmed 0.53 (small part)" in out
+    assert "parts: 1 confirmed of 1 candidates" in out
+
+
+def test_retry_skipped_outside_area(monkeypatch, tmp_path, capsys):
+    seen: list = []
+    out = _run_frame(monkeypatch, tmp_path, capsys,
+                     [_rect_at((505.0, 360.0))], texts=[""], seen=seen)
+    assert len(seen) == 1
+    assert "sam=no box" in out
+    assert "(small part)" not in out
+    assert "parts: 0 confirmed of 1 candidates" in out
+
+
+def test_no_retry_when_first_confirms(monkeypatch, tmp_path, capsys):
+    seen: list = []
+    texts = ["0<|box;x1=270;y1=270;x2=370;y2=370;w=100;h=100;c=0.88|>"]
+    out = _run_frame(monkeypatch, tmp_path, capsys,
+                     [_rect_at((505.0, 360.0), half=(15, 10))],
+                     texts=texts, seen=seen)
+    assert len(seen) == 1
+    assert "sam=confirmed 0.88" in out
+    assert "(small part)" not in out
+    assert "parts: 1 confirmed of 1 candidates" in out
+
+
 def test_skipped_summary_count(monkeypatch, tmp_path, capsys):
     seen: list = []
     texts = ["0<|box;x1=270;y1=270;x2=370;y2=370;w=100;h=100;c=0.88|>"]
