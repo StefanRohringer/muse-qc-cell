@@ -1290,7 +1290,9 @@ or `skipped`), sorted by table x; the last lines give the
 `parts: N confirmed of M candidates` count and the path of the
 annotated copy at `recordings/parts_<YYYYmmdd_HHMMSS>.png` (blob
 rectangles, green when confirmed, yellow otherwise, with id and
-table mm). A missing reference or a size mismatch prints a short
+table mm). The saved parts image is cropped to the table (marker
+bounding box plus 15 px); the measurement still uses the full
+frame. A missing reference or a size mismatch prints a short
 message with exit 2; more than 12 blobs outside the skip zones
 prints `too many changes` with exit 1. Skipped blobs never count
 against the limit, so gripper and arm motion in the arm zone or a

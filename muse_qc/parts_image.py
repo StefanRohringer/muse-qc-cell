@@ -6,6 +6,9 @@ from datetime import datetime
 from pathlib import Path
 
 import cv2
+import numpy
+
+CROP_MARGIN_PX = 15
 
 
 def annotate(frame, results):
@@ -35,6 +38,36 @@ def annotate(frame, results):
                 color, 2,
             )
     return out
+
+
+def crop_to_markers(image, markers, margin_px=CROP_MARGIN_PX):
+    """Crop image to the bounding box of all table marker corners.
+
+    markers is used as returned by detect_table_markers (integer keys
+    hold a "corners" list of four pixel points). The box is grown by
+    margin_px on every side and clamped to the image. Returns the
+    cropped copy; raises ValueError when no marker corners are found.
+    """
+    xs, ys = [], []
+    for key, value in markers.items():
+        if not isinstance(key, int) or not isinstance(value, dict):
+            continue
+        corners = value.get("corners")
+        if corners is None:
+            continue
+        for point in numpy.asarray(corners, dtype=float).reshape(-1, 2):
+            xs.append(point[0])
+            ys.append(point[1])
+    if not xs:
+        raise ValueError("no marker corners to crop to")
+    height, width = image.shape[0], image.shape[1]
+    x0 = max(0, int(min(xs)) - margin_px)
+    y0 = max(0, int(min(ys)) - margin_px)
+    x1 = min(width, int(max(xs)) + margin_px)
+    y1 = min(height, int(max(ys)) + margin_px)
+    if x1 <= x0 or y1 <= y0:
+        raise ValueError("marker crop box is empty")
+    return image[y0:y1, x0:x1].copy()
 
 
 def save_annotated(frame, recordings_dir="recordings"):

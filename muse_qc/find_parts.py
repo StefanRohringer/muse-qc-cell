@@ -22,7 +22,7 @@ from muse_qc.camera_top import open_table_camera
 from muse_qc.detect_markers import detect_table_markers, scale_px_per_mm
 from muse_qc.find_skip import classify_skip
 from muse_qc.part_angle import lever_angle_deg
-from muse_qc.parts_image import annotate, save_annotated
+from muse_qc.parts_image import annotate, crop_to_markers, save_annotated
 from muse_qc.model_check import (
     KEY_NAME,
     _is_auth_error,
@@ -165,6 +165,21 @@ def _request_error(exc):
     return f"request failed: {exc}"
 
 
+def _save_cropped(frame, results, markers, recordings_dir):
+    """Annotate and save, cropped to the table markers.
+
+    Only the saved image is cropped; the frame used for detection,
+    calibration and all table_mm numbers stays untouched. A failed
+    crop never raises: the uncropped image is saved instead.
+    """
+    annotated = annotate(frame, results)
+    try:
+        annotated = crop_to_markers(annotated, markers)
+    except Exception:  # noqa: BLE001 - uncropped fallback, never raised
+        pass
+    return save_annotated(annotated, recordings_dir)
+
+
 def save_empty():
     """Take one empty-table frame and store it as the reference."""
     try:
@@ -226,7 +241,7 @@ def scan_table(frame, empty, phrase=DEFAULT_PHRASE, client=None,
     if len(unskipped) > MAX_CANDIDATES:
         results.sort(key=lambda item: item["table_mm"][0])
         try:
-            path = save_annotated(annotate(frame, results), recordings_dir)
+            path = _save_cropped(frame, results, markers, recordings_dir)
         except (OSError, RuntimeError) as exc:
             raise RuntimeError(f"request failed: {exc}") from exc
         raise TooManyChanges(results, path)
@@ -261,7 +276,7 @@ def scan_table(frame, empty, phrase=DEFAULT_PHRASE, client=None,
             item["lever_reason"] = angle["reason"]
     results.sort(key=lambda item: item["table_mm"][0])
     try:
-        path = save_annotated(annotate(frame, results), recordings_dir)
+        path = _save_cropped(frame, results, markers, recordings_dir)
     except (OSError, RuntimeError) as exc:
         raise RuntimeError(f"request failed: {exc}") from exc
     return results, path
