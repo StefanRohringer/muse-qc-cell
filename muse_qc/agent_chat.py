@@ -38,9 +38,13 @@ def run_session(client, scan_fn, sort_fn, report_fn, *, task=None,
                 max_sorts=None, live=None) -> dict:
     """Run the first order, then keep asking while chat is on.
 
-    task replaces the default first order; with chat, ask (a
-    drop-in for input) prompts "next order (empty line to quit): "
-    after each run and a non-empty line continues the same run
+    task replaces the default first order; with chat and no
+    task, ask (a drop-in for input) prompts
+    "order (empty line to quit): " before the first run and an
+    empty answer ends the session at once (no model or tool
+    call). With chat, ask prompts
+    "next order (empty line to quit): " after each run and a
+    non-empty line continues the same run
     (same history, same RunState, same limits and safety). Before
     each new chat order (not the first) the scan expires
     (state.fresh is set to False), so the model must call
@@ -65,6 +69,14 @@ def run_session(client, scan_fn, sort_fn, report_fn, *, task=None,
     state = None
     pending = task if task else START_TEXT
     result: dict = {"finished": False, "summary": ""}
+    if chat and not task and ask is not None:
+        try:
+            first = ask("order (empty line to quit): ")
+        except (EOFError, KeyboardInterrupt):
+            return result
+        if not first.strip():
+            return result
+        pending = first.strip()
     while True:
         out(f"order: {pending}")
         if history is not None:

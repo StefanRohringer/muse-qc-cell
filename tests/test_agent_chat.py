@@ -81,7 +81,7 @@ def test_chat_two_orders_then_quit(monkeypatch, tmp_path):
     monkeypatch.setattr(agent_mod, "read_api_key", lambda: SECRET)
     script = _scan_and_finish("first done") + _scan_and_finish("rest done")
     client = FakeClient(script)
-    answers = iter(["sort the rest", ""])
+    answers = iter(["sort the good ones", "sort the rest", ""])
     prompts = []
     lines = []
     code = main(["--chat"],
@@ -93,10 +93,12 @@ def test_chat_two_orders_then_quit(monkeypatch, tmp_path):
     assert code == 0
     text = "\n".join(lines)
     assert text.count("agent finished:") == 2
-    assert prompts == ["next order (empty line to quit): "] * 2
+    assert prompts == ["order (empty line to quit): ",
+                       "next order (empty line to quit): ",
+                       "next order (empty line to quit): "]
     assert len(client.seen) == 4
     assert len(client.seen[2]["input"]) > len(client.seen[0]["input"])
-    assert "Start the inspection" in _first_user_text(client.seen[0])
+    assert _first_user_text(client.seen[0]) == "sort the good ones"
     second_first = client.seen[2]["input"]
     assert "sort the rest" in second_first[-1]["content"][0]["text"]
 
@@ -133,7 +135,7 @@ def test_second_order_needs_new_scan(monkeypatch, tmp_path):
     client = FakeClient(script)
     fake = agent_tools.FakeTable()
     sorts_before = list(fake.parts)
-    answers = iter(["sort the rest", ""])
+    answers = iter(["sort the good ones", "sort the rest", ""])
     lines = []
     code = main(
         ["--chat"],
@@ -148,6 +150,65 @@ def test_second_order_needs_new_scan(monkeypatch, tmp_path):
     assert text.count("agent finished:") == 2
     assert "call scan_table first" in text
     assert fake.parts == sorts_before
+
+
+def test_chat_first_order_asked_before_run(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(agent_mod, "read_api_key", lambda: SECRET)
+    client = FakeClient(_scan_and_finish("good ones done"))
+    answers = iter(["sort the good ones", ""])
+    prompts = []
+    lines = []
+    code = main(["--chat"],
+                client_factory=lambda key: client,
+                toolset=_toolset(tmp_path),
+                input_fn=lambda prompt: (prompts.append(prompt),
+                                         next(answers))[1],
+                out=lines.append)
+    assert code == 0
+    assert prompts[0] == "order (empty line to quit): "
+    assert _first_user_text(client.seen[0]) == "sort the good ones"
+    assert "order: sort the good ones" in "\n".join(lines)
+
+
+def test_chat_empty_first_order_runs_nothing(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(agent_mod, "read_api_key", lambda: SECRET)
+    client = FakeClient([])
+    fake = agent_tools.FakeTable()
+    sorts_before = list(fake.parts)
+    prompts = []
+    lines = []
+    code = main(
+        ["--chat"],
+        client_factory=lambda key: client,
+        toolset=(fake.scan, fake.sort,
+                 lambda records: agent_tools.fake_report(
+                     records, recordings_dir=str(tmp_path))),
+        input_fn=lambda prompt: (prompts.append(prompt), "")[1],
+        out=lines.append)
+    assert code == 1
+    assert prompts == ["order (empty line to quit): "]
+    assert client.seen == []
+    assert fake.parts == sorts_before
+
+
+def test_chat_with_task_asks_no_first_order(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(agent_mod, "read_api_key", lambda: SECRET)
+    client = FakeClient(_scan_and_finish("all done"))
+    answers = iter([""])
+    prompts = []
+    lines = []
+    code = main(["--chat", "--task", "sort all parts"],
+                client_factory=lambda key: client,
+                toolset=_toolset(tmp_path),
+                input_fn=lambda prompt: (prompts.append(prompt),
+                                         next(answers))[1],
+                out=lines.append)
+    assert code == 0
+    assert prompts == ["next order (empty line to quit): "]
+    assert _first_user_text(client.seen[0]) == "sort all parts"
 
 
 def test_no_task_no_chat_unchanged(monkeypatch, tmp_path):

@@ -1861,6 +1861,12 @@ asks for, never bypass a tool check:
 uv run python -m muse_qc.agent --execute --chat --task "sort all parts"
 ```
 
+Without `--task`, `--chat` asks for the order first, so the human types it live:
+
+```bash
+uv run python -m muse_qc.agent --execute --chat
+```
+
 ## Safety notes
 
 Read-only review of the SDK file
