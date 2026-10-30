@@ -1718,32 +1718,50 @@ reasoning items with their encrypted content (the transcript
 holds no reasoning blobs). Only the human runs it, never CI
 and never an agent.
 
-## 34. Lever direction on the table camera (not yet run on hardware)
+## 34. Lever direction on the table camera (run on hardware 2026-10-30)
 
 The human places parts at any angle; later the arm should turn
 joint 6 so it grips every part the same way as a straight part.
 `muse_qc/part_angle.py` measures the lever direction first,
 vision only (moves nothing): the precise angle comes from the
 part outline (`minAreaRect` of the diff-mask blob contour), and
-the orange/brown lever bars (HSV mask) only pick which of the
-two outline directions (angle or angle + 90) the bars follow.
+a stripe cue inside the part only picks which of the two
+outline directions (angle or angle + 90) the bars follow. The
+stripe cue is the structure tensor of the grayscale gradients
+(Sobel) inside the filled diff contour eroded by
+`REGION_ERODE_PX` = 2, weighted only where the pixel is
+lever-like or next to one (the lever HSV mask dilated by
+`WEIGHT_DILATE_PX` = 2, covering the dark gaps between merged
+bars): the dominant gradient runs across the bars, so the lever
+direction is the tensor direction + 90 deg, with strength =
+coherence ((l1 - l2) / (l1 + l2)). `MIN_STRENGTH` = 0.3 only
+decides that outline-vs-+90 choice; the final angle always
+comes from the outline. The lever HSV range is tight (S at
+least 110, V at most 165) because the wooden table itself falls
+into the lever hue (see docs/DEVLOG.md 2026-10-30): no wood
+pixel outside the contour may influence the direction.
 The result is mapped into the table frame and reported as
 `lever_deg` in [0, 180), where 0 means bars parallel to table
-+x and 90 parallel to table +y. Unclear levers fall back to the
-long outline side when its aspect ratio reaches 1.1, else the
-direction is unknown.
++x and 90 parallel to table +y. A weak stripe cue falls back to
+the long outline side when its aspect ratio reaches
+`FALLBACK_ASPECT_MIN` = 1.1, else the direction is unknown.
 
 `muse_qc/find_parts.py` prints the direction on each unskipped
-part line (`lever_deg=NN.N`, or `lever_deg=?` when unknown),
-with `--no-sam` and `--image` too, so the human can test on
-saved images and live without SAM cost:
+part line (`lever_deg=NN.N (levers|outline)`, or
+`lever_deg=? (reason)` when unknown, for example
+`lever_deg=? (bars unclear)`), with `--no-sam` and `--image`
+too, so the human can test on saved images and live without
+SAM cost:
 
 ```bash
 uv run python -m muse_qc.find_parts --no-sam
 uv run python -m muse_qc.find_parts --image recordings/frame.png --no-sam
 ```
 
-Not yet run on hardware.
+First hardware run 2026-10-30 (see docs/DEVLOG.md): the old
+crop-based lever cue was decided or blocked by wood pixels and
+no real part got source "levers"; fixed by the inside-the-part
+stripe cue above.
 
 ## Safety notes
 

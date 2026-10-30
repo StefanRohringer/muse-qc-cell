@@ -3,9 +3,19 @@
 The part is a grey connector (about 17 x 20.5 mm) with 3 orange
 levers lying side by side on top. The levers can look brownish
 under the lamp. The part outline alone gives a precise angle but
-only modulo 90 deg (the part is nearly square), so the orange
-lever bars pick which of the two outline directions is the lever
+only modulo 90 deg (the part is nearly square), so the lever
+stripes pick which of the two outline directions is the lever
 direction. The final angle always comes from the outline.
+
+Only pixels INSIDE the part contour are used: the wooden table
+itself falls into the lever HSV range, so any wood pixel outside
+the contour must not influence the direction. The stripe cue is
+the structure tensor of the grayscale gradients (Sobel) inside
+the eroded part region, weighted where the pixel is lever-like
+or next to one (dilated lever mask, covering the dark gaps
+between merged bars). The dominant gradient runs across the
+bars, so the lever direction is the tensor direction + 90 deg,
+with strength = coherence ((l1 - l2) / (l1 + l2)).
 
 Angles are measured in image pixels (x right, y down) and then
 mapped into the table frame with to_table, so the result is
@@ -22,31 +32,33 @@ import math
 import cv2
 import numpy
 
-# Orange/brown lever pixels in OpenCV HSV (H 0..179). S_MIN and
-# V_MIN stay low so brownish levers under the lamp still match,
-# while the grey body (near-zero saturation) does not.
+# Orange/brown lever pixels in OpenCV HSV (H 0..179). S_MIN 110
+# and V_MAX 165 keep bright wood (S about 66-110, V about
+# 170-227) out of the mask while brownish levers (S about
+# 110-215, V about 90-160) still match; the grey body (low
+# saturation) never matches.
 LEVER_H_MIN = 3
 LEVER_H_MAX = 35
-LEVER_S_MIN = 50
+LEVER_S_MIN = 110
 LEVER_S_MAX = 255
 LEVER_V_MIN = 50
-LEVER_V_MAX = 255
-# Pixels around the blob bbox included in the lever crop, so
-# slightly oversized blobs still show all three bars.
+LEVER_V_MAX = 165
+# Pixels around the blob bbox included in the crop, so slightly
+# oversized blobs still show the whole part.
 CROP_MARGIN_PX = 4
-# A single lever contour below this area (px2) is noise, not a bar.
-MIN_BAR_AREA_PX2 = 8
-# A lever contour votes only when its minAreaRect is this
-# elongated (long side over short side): merged lever blobs on
-# real images are compact and must not decide the direction.
-MIN_BAR_ASPECT = 2.0
-# Fewer lever pixels than this: the levers are not visible.
+# Erosion of the filled-contour region mask: gradients are only
+# read this far inside the part, so no wood pixel outside the
+# contour influences the direction.
+REGION_ERODE_PX = 2
+# Dilation radius of the lever mask for the tensor weight: covers
+# the dark gap lines between bars that touch in the HSV mask.
+WEIGHT_DILATE_PX = 2
+# Fewer lever pixels than this inside the region: no cue to read.
 MIN_LEVER_PIXELS = 40
-# Pixel count at which the lever cue counts fully; below it the
-# strength scales down linearly.
-STRONG_LEVER_PIXELS = 120
-# Directional agreement below this: the bars are unclear.
-MIN_STRENGTH = 0.5
+# Stripe coherence ((l1 - l2) / (l1 + l2)) at or above which the
+# stripe cue picks outline vs outline + 90. Only used for that
+# choice; the final angle always comes from the outline.
+MIN_STRENGTH = 0.3
 # Outline aspect ratio (long side over short side) at or above
 # which the long side is a usable fallback direction.
 FALLBACK_ASPECT_MIN = 1.1
@@ -105,45 +117,32 @@ def _lever_mask(crop_bgr):
     return cv2.inRange(hsv, lower, upper) > 0
 
 
-def _bar_direction(mask):
-    """Dominant bar direction of a lever mask in [0, 180).
+def _stripe_direction(gray, weight):
+    """Lever direction from the gradient structure tensor.
 
-    Uses minAreaRect of each lever contour: the long side of a
-    thin bar is its direction. Only contours elongated enough
-    (MIN_BAR_ASPECT) vote, so a blob of merged levers stays out.
-    Contours are averaged with the doubled-angle method weighted
-    by area, so bars 180 deg apart agree instead of cancelling.
-    Returns (angle, agreement) where agreement is the resultant
-    length in 0..1 (1 = parallel); (None, 0.0) when no contour
-    votes.
+    gray is the float64 crop gradient source, weight the boolean
+    pixels to read (lever-like or gap pixels inside the part).
+    The dominant gradient runs across the bars, so the lever
+    direction is that direction + 90 deg. Returns (angle,
+    coherence) with coherence (l1 - l2) / (l1 + l2) in 0..1;
+    (None, 0.0) when no gradient energy is weighted.
     """
-    contours, _ = cv2.findContours(mask.astype(numpy.uint8),
-                                   cv2.RETR_EXTERNAL,
-                                   cv2.CHAIN_APPROX_SIMPLE)
-    sum_cos, sum_sin, sum_weight = 0.0, 0.0, 0.0
-    for contour in contours:
-        area = float(cv2.contourArea(contour))
-        if area < MIN_BAR_AREA_PX2:
-            continue
-        rect = cv2.minAreaRect(contour)
-        (_, _), (width, height), _ = rect
-        short_side = min(float(width), float(height))
-        if short_side <= 0.0:
-            continue
-        if float(max(float(width), float(height))) / short_side \
-                < MIN_BAR_ASPECT:
-            continue
-        box = cv2.boxPoints(rect)
-        angle = _long_side_deg([(float(p[0]), float(p[1])) for p in box])
-        doubled = math.radians(2.0 * angle)
-        sum_cos += area * math.cos(doubled)
-        sum_sin += area * math.sin(doubled)
-        sum_weight += area
-    if sum_weight <= 0.0:
+    grad_x = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+    grad_y = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+    weighted = weight.astype(numpy.float64)
+    sum_xx = float((weighted * grad_x * grad_x).sum())
+    sum_yy = float((weighted * grad_y * grad_y).sum())
+    sum_xy = float((weighted * grad_x * grad_y).sum())
+    trace = sum_xx + sum_yy
+    if trace <= 0.0:
         return None, 0.0
-    agreement = math.hypot(sum_cos, sum_sin) / sum_weight
-    angle = _angle_mod_180(math.degrees(math.atan2(sum_sin, sum_cos)) / 2.0)
-    return angle, min(1.0, max(0.0, agreement))
+    disc = math.sqrt(max(0.0, (sum_xx - sum_yy) ** 2
+                         + 4.0 * sum_xy * sum_xy))
+    large, small = (trace + disc) / 2.0, (trace - disc) / 2.0
+    coherence = (large - small) / (large + small)
+    grad_deg = _angle_mod_180(
+        math.degrees(math.atan2(2.0 * sum_xy, sum_xx - sum_yy)) / 2.0)
+    return _angle_mod_180(grad_deg + 90.0), min(1.0, max(0.0, coherence))
 
 
 def _to_table_deg(image_deg, center, to_table):
@@ -161,6 +160,24 @@ def _to_table_deg(image_deg, center, to_table):
     return _angle_mod_180(math.degrees(math.atan2(delta_y, delta_x)))
 
 
+def _region_mask(contour, x0, y0, shape):
+    """Filled diff contour in crop coordinates, eroded by px.
+
+    shape is the (height, width) crop shape. Returns None when
+    nothing of the contour lands inside the crop.
+    """
+    height, width = shape
+    mask = numpy.zeros((height, width), dtype=numpy.uint8)
+    shifted = contour.copy().astype(numpy.float64)
+    shifted[:, :, 0] -= float(x0)
+    shifted[:, :, 1] -= float(y0)
+    cv2.fillPoly(mask, [shifted.astype(numpy.int32)], 255)
+    if not mask.any():
+        return None
+    kernel = numpy.ones((3, 3), numpy.uint8)
+    return cv2.erode(mask, kernel, iterations=REGION_ERODE_PX) > 0
+
+
 def lever_angle_deg(frame, bbox, contour, to_table):
     """Measure the lever direction of one part, vision only.
 
@@ -170,10 +187,10 @@ def lever_angle_deg(frame, bbox, contour, to_table):
     "source"}: lever_deg in [0, 180) in the table frame (None when
     not ok), strength in 0..1, source "levers" or "outline" (None
     when not ok). The precise angle comes from the blob outline
-    (minAreaRect long side); the orange lever bars only choose
-    between that direction and +90 deg. Without clear levers, the
-    long side is used when the outline aspect ratio reaches
-    FALLBACK_ASPECT_MIN, else ok is False.
+    (minAreaRect long side); the gradient stripe cue inside the
+    part only chooses between that direction and +90 deg. Without
+    a clear stripe cue, the long side is used when the outline
+    aspect ratio reaches FALLBACK_ASPECT_MIN, else ok is False.
     """
     if contour is None or len(contour) < 3:
         return {"ok": False, "lever_deg": None, "strength": 0.0,
@@ -194,32 +211,38 @@ def lever_angle_deg(frame, bbox, contour, to_table):
         return {"ok": False, "lever_deg": None, "strength": 0.0,
                 "reason": "bbox outside frame", "source": None}
     center = (x + box_w / 2.0, y + box_h / 2.0)
-    mask = _lever_mask(frame[y0:y1, x0:x1])
-    lever_pixels = int(mask.sum())
+    crop = frame[y0:y1, x0:x1]
+    region = _region_mask(contour, x0, y0, (y1 - y0, x1 - x0))
+    if region is None or not region.any():
+        return {"ok": False, "lever_deg": None, "strength": 0.0,
+                "reason": "no part region", "source": None}
+    lever_inside = _lever_mask(crop) & region
+    lever_pixels = int(lever_inside.sum())
     if lever_pixels >= MIN_LEVER_PIXELS:
-        bar_deg, agreement = _bar_direction(mask)
-        if bar_deg is not None:
-            strength = agreement * min(
-                1.0, lever_pixels / STRONG_LEVER_PIXELS)
-            if strength >= MIN_STRENGTH:
-                second = _angle_mod_180(outline_deg + 90.0)
-                if _angle_distance_mod_180(second, bar_deg) < \
-                        _angle_distance_mod_180(outline_deg, bar_deg):
-                    outline_deg = second
-                table_deg = _to_table_deg(outline_deg, center, to_table)
-                if table_deg is None:
-                    return {"ok": False, "lever_deg": None,
-                            "strength": 0.0,
-                            "reason": "table mapping degenerate",
-                            "source": None}
-                return {"ok": True, "lever_deg": table_deg,
-                        "strength": strength, "reason": "levers",
-                        "source": "levers"}
-            reason = "bars unclear"
-        else:
-            strength, reason = 0.0, "no bars found"
+        dilate = numpy.ones((2 * WEIGHT_DILATE_PX + 1,
+                             2 * WEIGHT_DILATE_PX + 1), numpy.uint8)
+        weight = cv2.dilate(lever_inside.astype(numpy.uint8),
+                            dilate, iterations=1) > 0
+        weight &= region
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY).astype(numpy.float64)
+        stripe_deg, coherence = _stripe_direction(gray, weight)
+        if stripe_deg is not None and coherence >= MIN_STRENGTH:
+            second = _angle_mod_180(outline_deg + 90.0)
+            if _angle_distance_mod_180(second, stripe_deg) < \
+                    _angle_distance_mod_180(outline_deg, stripe_deg):
+                outline_deg = second
+            table_deg = _to_table_deg(outline_deg, center, to_table)
+            if table_deg is None:
+                return {"ok": False, "lever_deg": None,
+                        "strength": 0.0,
+                        "reason": "table mapping degenerate",
+                        "source": None}
+            return {"ok": True, "lever_deg": table_deg,
+                    "strength": coherence, "reason": "levers",
+                    "source": "levers"}
+        reason, strength = "bars unclear", coherence
     else:
-        strength, reason = 0.0, "too few lever pixels"
+        reason, strength = "too few lever pixels", 0.0
     if aspect >= FALLBACK_ASPECT_MIN:
         table_deg = _to_table_deg(outline_deg, center, to_table)
         if table_deg is None:

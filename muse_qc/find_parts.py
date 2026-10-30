@@ -225,7 +225,8 @@ def scan_table(frame, empty, phrase=DEFAULT_PHRASE, client=None,
     None), contour (the diff-mask blob contour, never printed or
     saved), lever_deg (table-frame lever direction in deg, None
     when unclear or skipped) and lever_source ("levers" or
-    "outline", None when unclear or skipped). Raises RuntimeError
+    "outline", None when unclear or skipped) plus lever_reason
+    (the unclear reason, None otherwise). Raises RuntimeError
     with the user-facing message (the
     same text main prints) instead of returning an exit code.
     """
@@ -249,7 +250,7 @@ def scan_table(frame, empty, phrase=DEFAULT_PHRASE, client=None,
             "confirmed": False, "confidence": None,
             "skipped": classify_skip(blob_table),
             "contour": blob["contour"], "lever_deg": None,
-            "lever_source": None,
+            "lever_source": None, "lever_reason": None,
         })
     unskipped = [item for item in results if item["skipped"] is None]
     if len(unskipped) > MAX_CANDIDATES:
@@ -276,6 +277,8 @@ def scan_table(frame, empty, phrase=DEFAULT_PHRASE, client=None,
         if angle["ok"]:
             item["lever_deg"] = angle["lever_deg"]
             item["lever_source"] = angle["source"]
+        else:
+            item["lever_reason"] = angle["reason"]
     results.sort(key=lambda item: item["table_mm"][0])
     try:
         path = save_annotated(annotate(frame, results), recordings_dir)
@@ -357,7 +360,7 @@ def main(argv=None):
         else:
             sam_text = f"confirmed {item['confidence']:.2f}"
         if item["lever_deg"] is None:
-            lever_text = "lever_deg=?"
+            lever_text = f"lever_deg=? ({item['lever_reason']})"
         else:
             shown = float(item["lever_deg"])
             if round(shown, 1) >= 180.0:
