@@ -1585,7 +1585,9 @@ The bad part run gave "inspect: levers 2 verdict bad" and "dropped into the bad 
 With `--execute` the loop no longer stops at hover: it walks the
 hover segment (opening the gripper) and lowers directly, grips,
 lifts and holds the last lift waypoint with the part held: first
-1 s to let the arm settle, then the main thread grabs one frame
+2 s to let the arm settle (not yet run on hardware; raised from
+1 s because the 2026-10-30 ~10:26 photo came out blurred), then
+the main thread grabs one frame
 with the arm camera, saves it as
 recordings/armcam_<timestamp>.png, counts the levers with
 count_clips.count_frame and hands the verdict to the loop, which
@@ -1616,18 +1618,21 @@ inspection ("inspect skipped: no part held") and returns as
 today. Only the human runs it,
 never CI and never an agent.
 
-Zero-lever retry (not yet run on hardware): 0 levers on a found
-part is implausible (good parts have 3, bad parts 1 or 2), so
-only that case is retried. The first retry is one fresh arm
-camera frame with the normal prompt, then ("brown bar", 6, 15),
-("brown bar", 10, 25), ("orange bar", 8, 15) and ("orange bar",
-6, 15) on the original frame; the first attempt with at least
-1 lever wins, and when all give 0 the part stays bad. Counts of
-1, 2 or 3 are never retried, so a bad part is never talked into
-good. A retry prints "inspect retry: N attempts" before the
-"inspect: levers ..." line. The worst case is 6 counts (12 SAM
-calls) plus a second camera open, so the inspect timeout is
-60 s; the arm keeps holding the part meanwhile.
+Lever-count retry (not yet run on hardware): SAM is not fully
+deterministic (the same image gave 0 levers three times, then
+1), so every first count other than exactly 3 is retried. The
+first retry is one fresh arm camera frame with the normal
+prompt, then ("brown bar", 6, 15), ("brown bar", 10, 25),
+("orange bar", 8, 15) and ("orange bar", 6, 15) on the original
+frame. The part is good only when two retry counts each give
+exactly 3; the run stops at the second 3, and also stops early
+when the remaining retries can no longer reach two 3s.
+Otherwise the first result stands (verdict bad), so an
+unconfirmed single 3 never turns a bad part into good. A retry
+prints "inspect retry: N attempts" before the "inspect: levers
+..." line. The worst case is 6 counts (12 SAM calls) plus a
+second camera open, so the inspect timeout is 60 s; the arm
+keeps holding the part meanwhile.
 
 A saved image can be rechecked by hand with
 `uv run python -m muse_qc.count_retry --image <file>` (not yet

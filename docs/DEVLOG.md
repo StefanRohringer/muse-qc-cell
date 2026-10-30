@@ -1006,3 +1006,8 @@ mit trim deg: +0.16 +0.54 +2.48 +0.32 +0.32 -0.09
 end readings: arm [-2.50 +0.10 -2.68 +4.64 +1.50 -4.43] gripper -126.30 deg
 Mechanics fine (faster gripper, 20 mm/s approach, part_offset_px 1.1), but the good part was judged bad: the crop shows 3 levers, SAM returned none.
 - Human ran `count_clips --image recordings/armcam_20261030_102620.png --expect-target` twice and once with --prompt "orange bar": each time "part: box=(323, 267, 362, 311) confidence=0.71", "levers: 0", "verdict: bad". Conclusion: deterministic miss on this image, so a retry (fresh camera frame first, then other crop sizes and prompts) was added for the 0-lever case only.
+- Human ran (2026-10-30 ~10:28, power supply off) `uv run python -m muse_qc.count_retry --image recordings/armcam_20261030_102620.png`:
+attempt 1: prompt brown bar scale 8 margin 15 levers 1
+levers: 1
+verdict: bad
+Conclusion: SAM is not fully deterministic on this image (0 three times, now 1), so the retry now covers every count other than 3, and good needs two retry counts of exactly 3. AI-assisted review of the crop image count_20261030_112838_crop.png from the CLI run (human agreed): all 3 levers visible to the eye, SAM boxed only the middle one, the whole image is blurred (text on the part unreadable), so the settle before the photo was raised to 2 s.

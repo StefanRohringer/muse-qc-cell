@@ -12,7 +12,6 @@ from types import SimpleNamespace
 
 import cv2
 import numpy
-import pytest
 
 from muse_qc import count_clips, count_retry, inspect_step
 
@@ -82,19 +81,29 @@ def _no_grab():
     raise AssertionError("grab_frame must not be called")
 
 
-@pytest.mark.parametrize("levers", [3, 2, 1])
-def test_no_retry_on_3_2_or_1(levers):
-    counter = _ScriptedCounter([levers])
+def test_no_retry_on_3():
+    counter = _ScriptedCounter([3])
     result = count_retry.count_with_retry(
         object(), _frame(), "brown bar", grab_frame=_no_grab,
         count_fn=counter)
-    assert result["levers"] == levers
+    assert result["levers"] == 3
+    assert result["verdict"] == "good"
     assert len(counter.calls) == 1
-    assert result["attempts"] == [("brown bar", 8, 15, levers)]
+    assert result["attempts"] == [("brown bar", 8, 15, 3)]
 
 
-def test_retry_tries_fresh_frame_first_and_stops(tmp_path):
-    counter = _ScriptedCounter([0, 2])
+def test_1_first_is_retried():
+    counter = _ScriptedCounter([1, 0, 0, 0, 0, 0])
+    result = count_retry.count_with_retry(
+        object(), _frame(), "brown bar", grab_frame=lambda: _frame(),
+        count_fn=counter)
+    assert len(counter.calls) > 1
+    assert result["levers"] == 1
+    assert result["verdict"] == "bad"
+
+
+def test_2_first_then_two_threes_is_good(tmp_path):
+    counter = _ScriptedCounter([2, 3, 3])
     frame = _frame()
     fresh = _frame() + 1
     grabs: list = []
@@ -106,53 +115,57 @@ def test_retry_tries_fresh_frame_first_and_stops(tmp_path):
     result = count_retry.count_with_retry(
         object(), frame, "brown bar", recordings_dir=tmp_path,
         count_fn=counter, grab_frame=grab)
-    assert result["levers"] == 2
-    assert result["verdict"] == "bad"
+    assert result["levers"] == 3
+    assert result["verdict"] == "good"
     assert len(grabs) == 1
-    assert len(counter.calls) == 2
+    assert len(counter.calls) == 3
     assert counter.calls[0][0] is frame
     assert counter.calls[0][1:] == ("brown bar", 8, 15)
     assert counter.calls[1][0] is fresh
     assert counter.calls[1][1:] == ("brown bar", 8, 15)
+    assert counter.calls[2][1:] == ("brown bar", 6, 15)
     assert result["attempts"] == [
-        ("brown bar", 8, 15, 0), ("brown bar", 8, 15, 2)]
+        ("brown bar", 8, 15, 2),
+        ("brown bar", 8, 15, 3),
+        ("brown bar", 6, 15, 3),
+    ]
     assert len(list(Path(tmp_path).glob("armcam_*.png"))) == 1
 
 
-def test_retry_falls_through_variants_in_order(tmp_path):
-    counter = _ScriptedCounter([0, 0, 0, 1])
+def test_single_3_stays_bad_and_returns_first():
+    first = {"ok": True, "levers": 1, "verdict": "bad"}
+    third = {"ok": True, "levers": 3, "verdict": "good"}
+    rest = {"ok": True, "levers": 0, "verdict": "bad"}
+    results = [first, third, rest, rest, rest, rest]
+    calls: list = []
+
+    def counter(*args, **kwargs):
+        calls.append(args)
+        return results[min(len(calls) - 1, len(results) - 1)]
+
     result = count_retry.count_with_retry(
-        object(), _frame(), "brown bar", recordings_dir=tmp_path,
-        grab_frame=lambda: _frame(), count_fn=counter)
+        object(), _frame(), "brown bar", grab_frame=lambda: _frame(),
+        count_fn=counter)
+    assert result is first
     assert result["levers"] == 1
-    assert [call[1:] for call in counter.calls] == [
-        ("brown bar", 8, 15),
-        ("brown bar", 8, 15),
-        ("brown bar", 6, 15),
-        ("brown bar", 10, 25),
-    ]
-    assert result["attempts"] == [
-        ("brown bar", 8, 15, 0),
-        ("brown bar", 8, 15, 0),
-        ("brown bar", 6, 15, 0),
-        ("brown bar", 10, 25, 1),
-    ]
+    assert result["verdict"] == "bad"
+    assert [entry[3] for entry in result["attempts"]] == [1, 3, 0, 0, 0, 0]
 
 
-def test_all_zero_returns_bad_with_all_attempts(tmp_path):
+def test_all_zero_stops_early(tmp_path):
     counter = _ScriptedCounter([0])
     result = count_retry.count_with_retry(
         object(), _frame(), "brown bar", recordings_dir=tmp_path,
         grab_frame=lambda: _frame(), count_fn=counter)
     assert result["levers"] == 0
     assert result["verdict"] == "bad"
+    assert len(counter.calls) == 5
     assert result["attempts"] == [
         ("brown bar", 8, 15, 0),
         ("brown bar", 8, 15, 0),
         ("brown bar", 6, 15, 0),
         ("brown bar", 10, 25, 0),
         ("orange bar", 8, 15, 0),
-        ("orange bar", 6, 15, 0),
     ]
     assert count_retry.RETRY_VARIANTS == (
         ("brown bar", 6, 15),
@@ -160,6 +173,16 @@ def test_all_zero_returns_bad_with_all_attempts(tmp_path):
         ("orange bar", 8, 15),
         ("orange bar", 6, 15),
     )
+
+
+def test_4_first_is_retried():
+    counter = _ScriptedCounter([4, 3, 3])
+    result = count_retry.count_with_retry(
+        object(), _frame(), "brown bar", grab_frame=lambda: _frame(),
+        count_fn=counter)
+    assert result["levers"] == 3
+    assert result["verdict"] == "good"
+    assert len(counter.calls) == 3
 
 
 def test_failed_first_count_is_not_retried():
@@ -276,13 +299,15 @@ def test_cli_prints_attempt_lines(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr(count_retry, "read_api_key", lambda: SECRET)
     monkeypatch.setattr(
         count_retry, "_default_client_factory",
-        lambda key: _SeqClient([PART, "", PART, THREE_BARS]))
+        lambda key: _SeqClient(
+            [PART, "", PART, THREE_BARS, PART, THREE_BARS]))
     monkeypatch.chdir(tmp_path)
     code = count_retry.main(["--image", str(image_path)])
     assert code == 0
     out = capsys.readouterr().out
     assert "attempt 1: prompt brown bar scale 8 margin 15 levers 0" in out
     assert "attempt 2: prompt brown bar scale 6 margin 15 levers 3" in out
+    assert "attempt 3: prompt brown bar scale 10 margin 25 levers 3" in out
     assert "levers: 3" in out
     assert "verdict: good" in out
 
@@ -294,12 +319,12 @@ def test_cli_all_zero_stays_bad(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr(
         count_retry, "_default_client_factory",
         lambda key: _SeqClient(
-            [PART, "", PART, "", PART, "", PART, "", PART, ""]))
+            [PART, "", PART, "", PART, "", PART, ""]))
     monkeypatch.chdir(tmp_path)
     code = count_retry.main(["--image", str(image_path)])
     assert code == 0
     out = capsys.readouterr().out
-    assert out.count("attempt ") == 5
-    assert "attempt 5: prompt orange bar scale 6 margin 15 levers 0" in out
+    assert out.count("attempt ") == 4
+    assert "attempt 4: prompt orange bar scale 8 margin 15 levers 0" in out
     assert "levers: 0" in out
     assert "verdict: bad" in out

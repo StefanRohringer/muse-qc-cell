@@ -1,14 +1,16 @@
-"""Retry the lever count when SAM finds 0 levers on a held part.
+"""Retry the lever count when SAM misses the 3 levers of a good part.
 
-A good part has 3 levers, a bad part 1 or 2; 0 levers on a found
-part is implausible and worth a retry, while 1, 2 or 3 is never
-retried (a bad part must never be talked into good). The first
-retry is a fresh camera frame (the arm may still have moved
-slightly during the photo), counted with the normal prompt, scale
-and margin and saved as a new armcam_<timestamp>.png; only then
-come the crop and prompt variants in RETRY_VARIANTS. When every
-attempt gives 0 the part stays bad. A failed first count (no
-part, request error) is returned unchanged, never retried.
+SAM is not fully deterministic: the same image gave 0 levers
+three times, then 1. So every first count other than exactly 3
+is retried, and the part is good only when two retry counts each
+give exactly 3. The first retry is a fresh camera frame (the arm
+may still have moved slightly during the photo), counted with
+the normal prompt, scale and margin and saved as a new
+armcam_<timestamp>.png; only then come the crop and prompt
+variants in RETRY_VARIANTS. Without two 3s the first result
+stands (verdict bad), so an unconfirmed single 3 never turns
+into good. A failed first count (no part, request error) is
+returned unchanged, never retried.
 
 Run by the human only (it contacts the Meta Model API):
 
@@ -62,18 +64,22 @@ def count_with_retry(
     count_fn: Callable = count_clips.count_frame,
     grab_frame: Callable[[], numpy.ndarray | None] | None = None,
 ) -> dict:
-    """Count levers, retrying only a 0-lever result on a found part.
+    """Count levers, retrying any first count other than exactly 3.
 
-    Runs the normal count first and returns it unchanged when it
-    fails or finds 1 or more levers. Only when it succeeds with
-    0 levers, retries follow in order: first a fresh frame from
-    grab_frame (when given) with the normal prompt, scale and
-    margin, then RETRY_VARIANTS on the original frame. Returns
-    the first result with at least 1 lever, else the last
-    successful retry (verdict bad as without retry). The returned
-    dict gains "attempts", one (prompt, scale, margin, levers)
-    tuple per executed count, starting with the normal count.
-    Prints nothing and never includes any key.
+    Runs the normal count first: a failed count is returned
+    unchanged, and exactly 3 levers are returned as good, both
+    without retry. Otherwise retries follow in order: first a
+    fresh frame from grab_frame (when given) with the normal
+    prompt, scale and margin, then RETRY_VARIANTS on the
+    original frame. The part is good only when two retry counts
+    each give exactly 3 levers; returns that second 3 on
+    arrival, and stops early when the remaining retries can no
+    longer reach two 3s. Otherwise the first result stands
+    (verdict bad), so an unconfirmed single 3 never turns into
+    good. Failed retry counts simply count as not 3. The
+    returned dict gains "attempts", one (prompt, scale, margin,
+    levers) tuple per executed count, starting with the normal
+    count. Prints nothing and never includes any key.
     """
     first = count_fn(
         client, frame, prompt, recordings_dir, source_image,
@@ -85,53 +91,50 @@ def count_with_retry(
         count_clips.CROP_MARGIN_PX,
         first.get("levers"),
     )]
-    if not first.get("ok") or (first.get("levers") or 0) != 0:
+    if not first.get("ok") or first.get("levers") == 3:
         if first.get("ok"):
             first["attempts"] = attempts
         return first
-    last_ok = None
+    specs: list[tuple] = []
     if grab_frame is not None:
         try:
             fresh = grab_frame()
         except Exception:  # noqa: BLE001 - fall through to variants
             fresh = None
         if fresh is not None:
-            fresh_source = _save_fresh_frame(fresh, recordings_dir)
-            result = count_fn(
-                client, fresh, prompt, recordings_dir, fresh_source,
-                expected_px=expected_px,
-            )
-            attempts.append((
+            specs.append((
                 prompt,
                 count_clips.CROP_SCALE,
                 count_clips.CROP_MARGIN_PX,
-                result.get("levers"),
+                fresh,
+                _save_fresh_frame(fresh, recordings_dir),
             ))
-            if result.get("ok"):
-                last_ok = result
-                if (result.get("levers") or 0) >= 1:
-                    result["attempts"] = attempts
-                    return result
     for variant_prompt, scale, margin in RETRY_VARIANTS:
+        specs.append(
+            (variant_prompt, scale, margin, frame, source_image))
+    threes = 0
+    for index, (retry_prompt, scale, margin, retry_frame,
+                retry_source) in enumerate(specs):
         result = count_fn(
-            client, frame, variant_prompt, recordings_dir,
-            source_image, expected_px=expected_px,
+            client, retry_frame, retry_prompt, recordings_dir,
+            retry_source, expected_px=expected_px,
             crop_scale=scale, crop_margin_px=margin,
         )
         attempts.append(
-            (variant_prompt, scale, margin, result.get("levers")))
-        if result.get("ok"):
-            last_ok = result
-            if (result.get("levers") or 0) >= 1:
+            (retry_prompt, scale, margin, result.get("levers")))
+        if result.get("ok") and result.get("levers") == 3:
+            threes += 1
+            if threes == 2:
                 result["attempts"] = attempts
                 return result
-    final = last_ok if last_ok is not None else first
-    final["attempts"] = attempts
-    return final
+        if threes + len(specs) - index - 1 < 2:
+            break
+    first["attempts"] = attempts
+    return first
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Count levers on a saved image with the 0-lever retry.
+    """Count levers on a saved image with the retry rule.
 
     Always uses --expect-target behaviour (the held-part position)
     and never grabs a fresh frame. Prints one line per attempt
@@ -141,7 +144,7 @@ def main(argv: list[str] | None = None) -> int:
     stack trace and never include the key.
     """
     parser = argparse.ArgumentParser(
-        description="Count levers on a saved image with 0-lever retry."
+        description="Count levers on a saved image with the retry rule."
     )
     parser.add_argument("--image", required=True, help="saved image file")
     args = parser.parse_args(argv)
