@@ -1077,3 +1077,81 @@ part 7 center=(1006, 382) area_mm2=398 table_mm=(507.2, 346.6) sam=skipped lever
 part 16 center=(1347, 545) area_mm2=577 table_mm=(716.5, 245.0) sam=skipped lever_deg=92.6 (levers)
 ```
 Part 16 is the part turned 90 deg (levers along table +x, expected about 0): the stripe cue reached MIN_STRENGTH but picked the wrong direction (on these small parts the gradients of the lever ends and part edges dominate). The slot cue was right on all three real parts (AI-assisted check: about 80, 39 and 20 deg for the 90, 30 and 0 deg parts). Conclusion: try the slot cue first (source "slot"), then the stripe cue (source "levers"), then the outline fallback (source "outline").
+- Human ran (2026-10-30 ~13:37, power supply off, arm not moved) `uv run python -m muse_qc.find_parts --no-sam` after commit 0ff9ec0 (slot cue first), same straight and 90 deg parts as the 13:30 run:
+```text (excerpt)
+part 5 center=(1004, 383) area_mm2=609 table_mm=(505.2, 346.2) sam=skipped lever_deg=89.8 (slot)
+part 16 center=(1347, 545) area_mm2=611 table_mm=(716.4, 244.9) sam=skipped lever_deg=2.3 (slot)
+```
+Result: both parts now read correctly (straight part about 90, part turned 90 deg about 0; before: 92.6 from the stripes).
+- Human ran (2026-10-30 ~17:02, power supply on, hand on the switch) `uv run python -m muse_qc.pick_test --table-mm 722.0 250.9 --lever-deg 23.5 --inspect --execute` (position and lever from find_parts at ~17:01):
+```text (excerpt)
+grip yaw: lever 23.5 deg, offset -21.8 deg
+contact: gripper commanded deg -44.97 measured deg -48.27 contacts L2 R2
+contacts L1 L2 R1 R2 (lifting)
+part lifted, holding
+inspect retry: 5 attempts
+inspect: levers 0 verdict bad
+dropped into the bad box
+```
+Human observation: the inspection crop showed the end face of the part (the part sat turned by about 90 deg between the fingers), so the levers could not be counted. Whether this part was good or bad was not recorded. AI-assisted reading of the table image: the lever angle 23.5 looked plausible, so the part probably turned during the grip; not confirmed.
+- Human ran (2026-10-30 ~17:07, power supply on, hand on the switch) `uv run python -m muse_qc.pick_test --table-mm 696.5 204.5 --lever-deg 37.7 --inspect --execute`:
+```text (excerpt)
+grip yaw: lever 37.7 deg, offset -4.5 deg
+contact: gripper commanded deg -45.57 measured deg -49.08 contacts L2 R2
+contacts L2 R2 (lifting)
+part lifted, holding
+inspect retry: 5 attempts
+inspect: levers 0 verdict bad
+dropped into the bad box
+```
+Human check: this part had only 2 levers, so "bad" was correct. The inspection crop showed the levers upright as intended (grip rotation correct); SAM counted 0 instead of 2. Follow-up: a first count of 1 or 2 is now final without retry (commit c20d678).
+- Human ran (2026-10-30 ~17:30 and ~17:32, power supply off, nothing moved between the runs) `uv run python -m muse_qc.find_parts`:
+```text (excerpt)
+17:30: part 13 center=(1222, 474) area_mm2=652 table_mm=(640.4, 288.5) sam=no box lever_deg=53.2 (outline)
+17:30: part 14 center=(1314, 565) area_mm2=660 table_mm=(696.9, 232.3) sam=no box lever_deg=40.0 (outline)
+17:32: part 12 center=(1222, 475) area_mm2=658 table_mm=(640.4, 288.4) sam=no box lever_deg=53.2 (levers)
+17:32: part 13 center=(1315, 563) area_mm2=664 table_mm=(697.0, 233.6) sam=confirmed 0.53 lever_deg=39.5 (outline)
+```
+Result: SAM with "grey object" is not deterministic on the crops; the table image clearly shows both as parts. Follow-up: second try with "small part" (commit 9241a00). Also seen: the part at about (522, 346) read lever_deg 89.9 (slot) at 17:30 and 125.9 (slot) at 17:32, so the lever direction can jump on some parts.
+- Human ran (2026-10-30 ~17:43, power supply off) `uv run python -m muse_qc.find_parts` after commit 9241a00:
+```text (excerpt)
+part 8 center=(1030, 383) area_mm2=780 table_mm=(521.9, 346.2) sam=confirmed 0.86 lever_deg=96.6 (slot)
+part 14 center=(1184, 488) area_mm2=691 table_mm=(617.0, 280.7) sam=confirmed 0.56 lever_deg=31.4 (slot)
+part 15 center=(1322, 464) area_mm2=673 table_mm=(701.9, 294.6) sam=confirmed 0.78 lever_deg=31.6 (levers)
+part 16 center=(1327, 606) area_mm2=702 table_mm=(704.5, 206.8) sam=no box lever_deg=26.7 (outline)
+parts: 3 confirmed of 17 candidates (9 skipped)
+```
+Result: 3 of 4 real parts confirmed, one still missed after the second try.
+- Human ran (2026-10-30 ~19:33 to 19:38, power supply on, hand on the switch, live page open in the browser) the first continuous agent run `uv run python -m muse_qc.agent --execute --chat --task "sort all parts"` with 4 parts on the table:
+```text (excerpt)
+agent -> scan_table()
+tool: 2 parts found
+agent -> inspect_and_sort(part 0)
+grip yaw: lever 93.3 deg, offset +7.8 deg
+inspect: levers 3 verdict good
+dropped into the good box
+tool: part 0 levers 3 good, sorted
+agent -> inspect_and_sort(part 1)
+grip yaw: lever 32.5 deg, offset -20.4 deg
+inspect: levers 3 verdict good
+dropped into the good box
+tool: part 1 levers 3 good, sorted
+agent: First two parts sorted — rescanning for the rest.
+agent -> scan_table()
+tool: 1 part found
+agent -> inspect_and_sort(part 0)
+grip yaw: lever 28.2 deg, offset -13.9 deg
+inspect retry: 5 attempts
+inspect: levers 0 verdict bad
+dropped into the bad box
+tool: part 0 levers 0 bad, sorted
+agent -> scan_table()
+tool: no parts found
+agent -> write_report()
+agent finished: Sorted 3 parts: 2 good, 1 bad, 0 failures.
+next order (empty line to quit): there is still one part left, scan again and sort it
+agent -> scan_table()
+tool: no parts found
+agent finished: Rescan found 0 parts: 0 good, 0 bad, 0 failures. Total run 3 sorted (2 good, 1 bad).
+```
+Result: first continuous run: 3 parts sorted in one run (about 2.5 min, about 35 s per part, inspection images at 19:33:56, 19:34:30, 19:35:11), every grip on the first try, grip rotation applied each time, scan once then rescan only after the first scan was used up. Human check: the third part had only 2 levers, so "bad" was correct (SAM counted 0 instead of 2, as at 17:07). The fourth part (lying flat at about (616, 278)) was never confirmed by SAM, so the agent left it alone, also after the chat order. The chat order and the live page worked on hardware.

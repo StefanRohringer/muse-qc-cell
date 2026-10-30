@@ -1806,7 +1806,7 @@ child command only when it is known. Dry run for the human:
 uv run python -m muse_qc.pick_test --table-mm 643.9 297.2 --lever-deg 31.9 --inspect
 ```
 
-## 36. Live page (not yet run on hardware)
+## 36. Live page (run on hardware 2026-10-30)
 
 `muse_qc/live_page.py` (`LivePage`, 256 lines) shows the agent
 run while it happens, for the human watching and for the demo
@@ -1836,10 +1836,12 @@ once at the start. How to watch:
 
 ```bash
 uv run python -m muse_qc.agent
-xdg-open recordings/live.html
+firefox recordings/live.html &
 ```
 
-The page reloads every 2 s on its own. Not yet run on hardware.
+If no default browser is set, xdg-open fails; open the file with the browser directly.
+
+The page reloads every 2 s on its own. First used on hardware 2026-10-30 (see DEVLOG).
 
 Order by chat (human request 2026-10-30): `main` takes
 `--task "TEXT"` (optional) and `--chat`. The task text replaces
