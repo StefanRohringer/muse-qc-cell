@@ -979,3 +979,19 @@ mit trim deg: -0.08 +0.31 +2.62 +0.30 +0.09 -0.04
 end readings: arm [-2.90 +0.01 -2.59 +4.49 +1.45 -1.54] gripper -126.28 deg
 ```
 The record gave part_offset_px 4.1. The part held at grip z 8 mm in mit-ff (on 2026-10-29 a grip at 8 mm in posvel had slipped), so the 8 mm default stays.
+- Human ran (2026-10-30 ~09:50, power supply on, hand on the switch, part removed) `uv run python -m muse_qc.pick_test --table-mm 504.2 349.5 --no-grip --hold-s 3 --speed-deg-s 30 --accel-deg-s2 60 --execute`: "segments at 100 Hz: hover 452 lower 384 lift 264 put-down 380 raise 180 return 502 (total 2162)", "mit trim deg: +0.15 +0.31 +2.44 +0.43 -0.00 -0.12", end readings arm [-3.01 +0.03 -1.98 +2.92 +1.45 -4.43]; human: "perfekt".
+- Human ran the same with --speed-deg-s 50 --accel-deg-s2 100 (~09:51): "segments at 100 Hz: hover 312 lower 384 lift 264 put-down 380 raise 180 return 362 (total 1882)", "mit trim deg: +0.15 +0.29 +2.41 +0.18 +0.04 -0.13", end readings arm [-3.22 +0.03 -2.42 +4.08 +1.45 -4.43]; no tracking error.
+- Human took a new empty reference (`find_parts --save-empty`, ~09:53) because find_parts reported "too many changes"; then `find_parts` gave exactly one candidate: part 0 table_mm=(508.9, 340.4) sam=confirmed 0.72.
+- Human ran (~09:54) `uv run python -m muse_qc.pick_test --table-mm 508.9 340.4 --inspect --speed-deg-s 50 --accel-deg-s2 100 --execute`:
+```text
+segments at 100 Hz: hover 307 lower 384 lift 264 to-box 326 release 2 return 675 (total 1958)
+contact: gripper commanded deg -44.02 measured deg -47.68 contacts L2 R2
+contacts L1 L2 R1 R2 (lifting)
+part lifted, holding
+inspect: levers 3 verdict good
+dropped into the good box
+mit trim deg: -0.11 +0.38 +2.61 +0.18 -0.02 -0.13
+end readings: arm [-1.93 +0.80 -1.93 +2.74 +1.43 -4.40] gripper -126.30 deg
+```
+The part held during the fast move. Human remarks: gripper slow, slow approach jerky. Decision: 50/100 default, faster gripper, 20 mm/s approach.
+- Human ran (~10:02) the --no-grip run at 508.9 340.4 once with --arm-mode posvel and once in mit-ff (15/30) to compare the slow approach; both ran to "holding at tip z 7.7 mm" without errors; human saw hardly any difference, so the jerk is not specific to MIT.

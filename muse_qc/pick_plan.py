@@ -30,7 +30,7 @@ from muse_qc.target_pose import base_to_table_mm, solve_hover, table_to_base_mm
 from muse_qc.xy_correction import correct_base_target_mm
 
 HOVER_MM = 100.0
-LOWER_MM_S = 10.0
+LOWER_MM_S = 20.0
 FAST_MM_S = 40.0
 SLOW_ZONE_MM = 25.0
 LIFT_SLOW_MM = 10.0

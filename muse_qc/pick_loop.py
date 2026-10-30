@@ -15,13 +15,12 @@ from __future__ import annotations
 import math
 import threading
 import time
-from muse_qc import pick_mit, safety
+from muse_qc import grip_speed, pick_mit, safety
 from muse_qc.drop_plan import DROP_HOLD_CYCLES
 from muse_qc.first_move_plan import LOOP_RATE_HZ, SPEED_FRACTION, real_tip_m
-from muse_qc.gripper_grip import CLOSED_DEG, SAFE_MAX_DEG, SAFE_MIN_DEG
+from muse_qc.gripper_grip import CLOSED_DEG, SAFE_MAX_DEG, SAFE_MIN_DEG, deg_to_width
 from muse_qc.gripper_stream import JUMP_DEG, SENSOR_TIMEOUT_S
 from muse_qc.pick_plan import abort_detour
-GRIP_STEP_DEG = 15.0 / LOOP_RATE_HZ
 SQUEEZE_DEG = 2.0
 FAULT_HOLD_CYCLES = int(0.5 * LOOP_RATE_HZ)
 DROP_WALKS = ("to-box",)
@@ -155,13 +154,11 @@ class PickLoop:
     def _hold(self):
         assert self.pos is not None
         return self._walk_send(self.pos)
-    def _step_grip(self, target_deg):
-        diff = target_deg - self.grip_cmd
-        if abs(diff) <= GRIP_STEP_DEG:
-            self._send(self.cmd_arm_rad, target_deg)
-            return True
-        self._send(self.cmd_arm_rad, self.grip_cmd + math.copysign(GRIP_STEP_DEG, diff))
-        return False
+    def _step_grip(self, target_deg, step_deg=None):
+        step = grip_speed.SLOW_CLOSE_STEP_DEG if step_deg is None else step_deg
+        nxt, done = grip_speed.step_toward(self.grip_cmd, target_deg, step)
+        self._send(self.cmd_arm_rad, nxt)
+        return done
     def _start_abort(self):
         if self.inspect and not self._inspected:
             self.inspect_skipped = True
@@ -199,10 +196,10 @@ class PickLoop:
         self._send(self.cmd_arm_rad, self.grip_cmd)
         self.phase = "fault_hold"
         self.left = FAULT_HOLD_CYCLES
-    def _ramp(self, target_deg, after):
+    def _ramp(self, target_deg, after, step_deg=None):
         if not self._hold():
             return
-        if self._step_grip(target_deg):
+        if self._step_grip(target_deg, step_deg):
             after()
     def _hold_then(self, after):
         if not self._hold():
@@ -240,7 +237,8 @@ class PickLoop:
             self._ramp(self.open_deg, {"open": self._to_after_hover,
                                        "miss_open": self._start_abort,
                                        "reopen": self._to_raise,
-                                       "drop_open": self._to_return}[self.phase])
+                                       "drop_open": self._to_return}[self.phase],
+                      grip_speed.OPEN_STEP_DEG)
         elif self.phase == "release":
             self._do_release()
         elif self.phase in ("bottom_hold", "squeeze_hold", "top_hold",
@@ -295,7 +293,7 @@ class PickLoop:
         assert self.release_open_deg is not None
         if not self._hold():
             return
-        if self._step_grip(self.release_open_deg):
+        if self._step_grip(self.release_open_deg, grip_speed.OPEN_STEP_DEG):
             self.left = DROP_HOLD_CYCLES
             self.phase = "release_hold"
     def _to_squeeze_hold(self):
@@ -314,11 +312,8 @@ class PickLoop:
         return abs(self.grip_cmd - self.open_deg) <= 1e-9
 
     def _nudge_grip_open(self):
-        diff = self.open_deg - self.grip_cmd
-        if abs(diff) <= GRIP_STEP_DEG:
-            self.grip_cmd = self.open_deg
-        else:
-            self.grip_cmd = self.grip_cmd + math.copysign(GRIP_STEP_DEG, diff)
+        self.grip_cmd, _ = grip_speed.step_toward(
+            self.grip_cmd, self.open_deg, grip_speed.OPEN_STEP_DEG)
 
     def _do_walk(self):
         if self.phase == "lower" and self.contacts:
@@ -392,6 +387,9 @@ class PickLoop:
                 self.squeeze_target = min(self.grip_cmd + SQUEEZE_DEG, CLOSED_DEG)
                 self.phase = "squeeze"
                 return
-        if self._step_grip(CLOSED_DEG):
+        width = deg_to_width(self.grip_cmd)
+        nxt, done = grip_speed.close_step(self.grip_cmd, CLOSED_DEG, width)
+        self._send(self.cmd_arm_rad, nxt)
+        if done:
             self._out("missed grip")
             self.phase = "miss_open"

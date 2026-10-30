@@ -28,9 +28,10 @@ from muse_qc.drop_plan import (
     solve_drop,
 )
 from muse_qc.first_move import CONFIRM_WORD
-from muse_qc.first_move_plan import LOOP_RATE_HZ, VLIM_FRACTION
+from muse_qc.first_move_plan import LOOP_RATE_HZ
 from muse_qc.first_move_plan import clamp_to_limits, read_sdk_vlims, real_tip_m, scale_vlim
 from muse_qc.gripper_grip import deg_to_width, validate_targets, width_to_deg
+from muse_qc.grip_speed import GRIPPER_VLIM_FRACTION
 from muse_qc.gripper_motor import CONFIRM_PROMPT, GRIPPER_CONFIG_VLIM
 from muse_qc.gripper_stream import open_touch_sensor
 from muse_qc import inspect_step
@@ -45,8 +46,8 @@ from muse_qc.target_pose import table_to_base_mm
 GRIP_Z_MM = (5.0, 60.0, 8.0)
 OPEN_MM = (25.0, 50.0, 28.0)
 HOLD_S = (0.5, 30.0, 1.0)
-SPEED_DEG_S = (2.0, 50.0, 15.0)
-ACCEL_DEG_S2 = (15.0, 100.0, 30.0)
+SPEED_DEG_S = (2.0, 80.0, 50.0)
+ACCEL_DEG_S2 = (15.0, 160.0, 100.0)
 POSVEL_SPEED_MAX_DEG_S = 15.0
 def _ranged(text, name, low, high, unit):
     try:
@@ -237,9 +238,9 @@ def execute(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, input_fn=input,
         if vlims is None:
             out("SDK speed caps unreadable, not moving")
             return 1
-        slow, gripper_slow = scale_vlim(vlims), [GRIPPER_CONFIG_VLIM * VLIM_FRACTION]
+        slow, gripper_slow = scale_vlim(vlims), [GRIPPER_CONFIG_VLIM * GRIPPER_VLIM_FRACTION]
         out(f"arm vlim 10 %: {[f'{v:.2f}' for v in slow]}"
-            f" gripper vlim 10 %: {gripper_slow[0]:.2f}")
+            f" gripper vlim 25 %: {gripper_slow[0]:.2f}")
         if input_fn(CONFIRM_PROMPT).strip() != CONFIRM_WORD:
             out("confirmation missing, nothing was enabled")
             return 2
@@ -341,22 +342,19 @@ def main(argv=None, sdk_factory=None, **kwargs):
                         help="only lower to --grip-z-mm and hold for a ruler check")
     parser.add_argument("--hold-s", type=_hold_s_type, default=HOLD_S[2],
                         help="hold time in s, 0.5 to 30 (default 1)")
-    parser.add_argument("--speed-deg-s", type=_speed_type, default=SPEED_DEG_S[2],
-                        help="free ramp speed in deg/s, 2 to 50 (default 15;"
-                        " above 15 needs --arm-mode mit-ff)")
-    parser.add_argument("--accel-deg-s2", type=_accel_type, default=ACCEL_DEG_S2[2],
-                        help="free ramp accel in deg/s2, 15 to 100 (default 30)")
+    parser.add_argument("--speed-deg-s", type=_speed_type, default=None,
+                        help="free ramp speed in deg/s, 2 to 80"
+                        " (default 50 mit-ff, 15 posvel; explicit above 15 needs mit-ff)")
+    parser.add_argument("--accel-deg-s2", type=_accel_type, default=None,
+                        help="free ramp accel in deg/s2, 15 to 160 (default 100 mit-ff, 30 posvel)")
     parser.add_argument("--gains", choices=tuple(GAIN_PROFILES),
                         default="vel2",
                         help="motor gain profile for joints 4/5")
-    parser.add_argument("--arm-mode", choices=("posvel", "mit-ff"),
-                        default="mit-ff",
-                        help="arm control mode: MIT with gravity"
-                        " feed-forward (default) or the POS_VEL loop")
+    parser.add_argument("--arm-mode", choices=("posvel", "mit-ff"), default="mit-ff",
+                        help="arm control mode: mit-ff (default) or the old posvel loop")
     parser.add_argument("--tau-scale", nargs=6, type=float, default=None,
                         metavar=("S1", "S2", "S3", "S4", "S5", "S6"),
-                        help="per-joint gravity torque scale for mit-ff"
-                        " (six values, each 0.0 to 2.0)")
+                        help="per-joint gravity torque scale for mit-ff (six values, 0.0 to 2.0)")
     parser.add_argument("--execute", action="store_true", help="fly the pick after confirmation")
     parser.add_argument("--no-xy-correction", action="store_true",
                         help="fly the uncorrected target (for A/B tests)")
@@ -365,13 +363,17 @@ def main(argv=None, sdk_factory=None, **kwargs):
                            help="carry the part to the good (left) or bad (right)"
                            " box and release it over the box (default: put down)")
     exclusive.add_argument("--inspect", action="store_true",
-                           help="inspect the part in the gripper after the"
-                           " lift and sort into the box the lever count"
-                           " decides")
+                           help="inspect the part in the gripper after the lift"
+                           " and sort into the box the lever count decides")
     args = parser.parse_args(argv)
     if args.tau_scale is not None and args.arm_mode != "mit-ff":
         parser.error("--tau-scale needs --arm-mode mit-ff")
-    if args.arm_mode != "mit-ff" and args.speed_deg_s > POSVEL_SPEED_MAX_DEG_S:
+    speed_explicit = args.speed_deg_s is not None
+    if args.speed_deg_s is None:
+        args.speed_deg_s = SPEED_DEG_S[2] if args.arm_mode == "mit-ff" else 15.0
+    if args.accel_deg_s2 is None:
+        args.accel_deg_s2 = ACCEL_DEG_S2[2] if args.arm_mode == "mit-ff" else 30.0
+    if args.arm_mode != "mit-ff" and speed_explicit and args.speed_deg_s > POSVEL_SPEED_MAX_DEG_S:
         parser.error("--speed-deg-s above 15 needs --arm-mode mit-ff"
                      " (the POS_VEL vlim would cap the motors)")
     tau_scale = (tuple(args.tau_scale) if args.tau_scale is not None

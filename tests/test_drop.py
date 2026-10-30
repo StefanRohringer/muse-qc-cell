@@ -37,7 +37,7 @@ TEST_LIMITS = {
 }
 OPEN28 = width_to_deg(28.0)
 RELEASE40 = width_to_deg(RELEASE_OPEN_MM)
-GRIP_STEP = 15.0 / LOOP_RATE_HZ
+GRIP_OPEN_STEP = 40.0 / LOOP_RATE_HZ
 DROP_OK = (-3.0, -99.0, -80.0, 75.0, 1.0, -4.0)  # fake tip z 90 mm
 DROP_LOW = (-3.0, -98.0, -80.0, 75.0, 1.0, -4.0)  # fake tip z 80 mm
 
@@ -214,6 +214,7 @@ def _run_drop(sdk, script, open_mm=28.0, drop="good"):
         sdk, TABLE, 8.0, open_mm, False, 0.5, input_fn=lambda prompt: "yes",
         tip_fn=_fake_tip, solve_fn=_fake_solve, joint_limits=TEST_LIMITS,
         arm_vlims=VLIMS, find_port=lambda: "/dev/ttyFAKE", arm_mode="posvel",
+        speed_deg_s=15.0, accel_deg_s2=30.0,
         sensor_factory=lambda: FakeSensor(script),
         solve_drop_fn=_fake_drop_solve, drop=drop, out=lines.append)
     return code, "\n".join(lines)
@@ -232,7 +233,7 @@ def _cycle_plan(built, open_deg):
     """Cycle where each phase ends: hover/catchup/lower/close14/squeeze/holds."""
     ranges = built["ranges"]
     counts = {seg: ranges[seg][1] - ranges[seg][0] for seg in ranges}
-    ramp = math.ceil(abs(open_deg - REST_GRIP) / GRIP_STEP)
+    ramp = math.ceil(abs(open_deg - REST_GRIP) / GRIP_OPEN_STEP)
     catchup = max(0, ramp - counts["hover"])
     close_start = counts["hover"] + catchup + counts["lower"] + 1
     touch = close_start + 14
@@ -670,7 +671,7 @@ def _segment_line_counts(text):
 
 
 def test_fast_free_moves_shorten_drop_segments():
-    slow = _dry_run_drop([])
+    slow = _dry_run_drop(["--speed-deg-s", "15", "--accel-deg-s2", "30"])
     mid = _dry_run_drop(["--speed-deg-s", "30", "--accel-deg-s2", "60"])
     fast = _dry_run_drop(["--speed-deg-s", "50", "--accel-deg-s2", "100"])
     assert "speeds: free 15 deg/s, accel 30 deg/s2" in slow
@@ -731,3 +732,30 @@ def test_posvel_accepts_speed_at_15():
     text = _dry_run_drop(["--arm-mode", "posvel", "--speed-deg-s", "15"])
     assert "arm mode: posvel" in text
     assert "all waypoints ok" in text
+
+
+def test_drop_defaults_mitff_50_100():
+    text = _dry_run_drop([])
+    assert "arm mode: mit-ff" in text
+    assert "speeds: free 50 deg/s, accel 100 deg/s2" in text
+
+
+def test_drop_80_160_accepted():
+    text = _dry_run_drop(["--speed-deg-s", "80", "--accel-deg-s2", "160"])
+    assert "speeds: free 80 deg/s, accel 160 deg/s2" in text
+    assert "all waypoints ok" in text
+
+
+@pytest.mark.parametrize("flag,value", [("--speed-deg-s", "81"),
+                                        ("--accel-deg-s2", "161")])
+def test_drop_81_161_refused_before_connect(flag, value):
+    def factory(**kwargs):
+        raise AssertionError("must not connect on a refused range")
+
+    with pytest.raises(SystemExit) as info:
+        pick_test.main(
+            ["--table-mm", "495.9", "322.7", "--drop", "good", flag, value],
+            sdk_factory=factory,
+            out=lambda line: None,
+        )
+    assert info.value.code == 2

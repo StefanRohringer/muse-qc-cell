@@ -1131,18 +1131,27 @@ human runs it, never CI and never an agent.
 
 Three modules share the work (`tests/test_pick.py`, fake SDK, fake
 sensor and fake IK only): `muse_qc/pick_plan.py` builds the labelled
-arm waypoint plan (trapezoid hover ramp at 15 deg/s with 30 deg/s2
-plus a 0.5 s hover settle, 1 mm ladder fast at 40 mm/s above the
-slow zone and 10 mm/s near the part, lift slow for the first 10 mm
-then fast, put-down 2 mm higher, fast raise, trapezoid return ramp
-plus 1 s settle, all at 100 Hz), `muse_qc/pick_loop.py` flies it in
-one control loop, and `muse_qc/pick_test.py` is the CLI. The
-trapezoid ramps start and stop smoothly instead of jumping to full
-speed, and the 0.5 s hover settle lets the joints rest after the
-ramp before the tip dives; both soften the visible tip swing, which
-happens behind the motor encoders and no gain can see. The gripper
-opens to `--open-mm` during the hover ramp (holding at hover until
-fully open) instead of in a separate phase afterwards. Every arm
+arm waypoint plan (trapezoid hover ramp at the CLI speed with
+the CLI accel plus a 0.5 s hover settle, 1 mm ladder fast at
+40 mm/s above the slow zone and 20 mm/s near the part, lift slow
+for the first 10 mm then fast, put-down 2 mm higher, fast raise,
+trapezoid return ramp plus 1 s settle, all at 100 Hz),
+`muse_qc/pick_loop.py` flies it in one control loop, and
+`muse_qc/pick_test.py` is the CLI. The trapezoid ramps start and
+stop smoothly instead of jumping to full speed, and the 0.5 s
+hover settle lets the joints rest after the ramp before the tip
+dives; both soften the visible tip swing, which happens behind
+the motor encoders and no gain can see. The gripper opens to
+`--open-mm` during the hover ramp (holding at hover until fully
+open) instead of in a separate phase afterwards, at 40 deg/s;
+closing runs at 40 deg/s until the jaw width reaches 22.0 mm,
+then at the old 15 deg/s until contact, so contact detection and
+the squeeze behave exactly as before (`muse_qc/grip_speed.py`;
+the 22.0 mm switch sits just above the 17 x 20.5 mm part). The
+gripper POS_VEL vlim runs at 25 % of the config value
+(0.75 rad/s, about 43 deg/s) so the fast rate fits; the arm vlim
+stays at 10 %. The faster gripper and the 20 mm/s approach are
+not yet run on hardware. Every arm
 waypoint passes `safety.check_target` per cycle with the grasp floor
 `GRASP_Z_MIN_M` = 4 mm on the lower/lift/put-down/raise waypoints
 only; everywhere else the 30 mm floor is unchanged, and no safety
@@ -1152,25 +1161,30 @@ ladder and returns. `--no-grip` only lowers to `--grip-z-mm` and
 holds, so the human can check the real tip height with a ruler
 first. `--grip-z-mm` takes 5 to 60 mm (default 8), `--open-mm`
 25 to 50 mm (default 28), `--hold-s` 0.5 to 30 s (default 1),
-`--speed-deg-s` 2 to 50 deg/s for the free ramps (default 15);
-`--accel-deg-s2` 15 to 100 deg/s2 for the ramp accel (default 30,
-also used for the to-box and return ramps); anything else is an
-argparse error (exit 2) before anything connects. Above 15 deg/s
-needs `--arm-mode mit-ff` (the default): with posvel it is refused
-with exit 2 before connecting, because the POS_VEL vlim at 10 %
-would cap the motors. The dry run prints the real values in the
-`speeds:` line. `--no-xy-correction` flies the uncorrected target
-for A/B tests, to measure the uncorrected error near the part. No
-gripper-project code is used, only the serial line protocol and the
-SDK motor protocol. `--gains` defaults to `vel2` (the best
-profile so far, see section 30); `hold_test` keeps `default` so
-A/B runs stay explicit.
+`--speed-deg-s` 2 to 80 deg/s for the free ramps (default 50 in
+mit-ff, 15 in posvel); `--accel-deg-s2` 15 to 160 deg/s2 for the
+ramp accel (default 100 in mit-ff, 30 in posvel, also used for
+the to-box and return ramps); anything else is an argparse error
+(exit 2) before anything connects. An explicit value above
+15 deg/s needs `--arm-mode mit-ff` (the default): with posvel it
+is refused with exit 2 before connecting, because the POS_VEL
+vlim at 10 % would cap the motors; without an explicit value
+posvel quietly uses 15/30. The agent calls `pick_test` without
+these options, so it gets 50/100. The dry run prints the real
+values in the `speeds:` line. `--no-xy-correction` flies the
+uncorrected target for A/B tests, to measure the uncorrected
+error near the part. No gripper-project code is used, only the
+serial line protocol and the SDK motor protocol. `--gains`
+defaults to `vel2` (the best profile so far, see section 30);
+`hold_test` keeps `default` so A/B runs stay explicit.
 
-Faster free moves are not yet run on hardware. Planned human test,
-with the hand on the power supply switch: first `--no-grip` ruler
-stops at 30/60 (`--speed-deg-s 30 --accel-deg-s2 60`), then at
-50/100, watching for smooth ramps and no tracking trip; then one
-`--inspect` sort at the faster setting that ran clean.
+50/100 is the default since 2026-10-30: the human ran `--no-grip`
+stops at 30/60 and 50/100 plus one `--inspect` sort at 50/100,
+all without a tracking trip (see DEVLOG). 80/160 is accepted but
+not yet run on hardware; the human wants to try it next. The
+tracking guard stays the safety net: 80 deg/s at 100 Hz is 0.8
+deg per command. 80/160 becomes the default only after a human
+test.
 
 Order, with the hand on the power supply switch:
 
