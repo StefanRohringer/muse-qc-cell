@@ -111,7 +111,7 @@ def test_constants_match_spec():
     assert count_clips.GRIPPER_ZONE_Y == 380
     assert count_clips.CROP_MARGIN_PX == 15
     assert count_clips.CROP_SCALE == 8
-    assert count_clips.EXPECTED_PART_PX == (340, 201)
+    assert count_clips.EXPECTED_PART_PX == (342, 290)
     assert count_clips.MAX_PART_OFFSET_PX == 60
 
 
@@ -173,7 +173,7 @@ def test_find_part_returns_none_without_usable_box():
 # higher-confidence box far right (another part lying on its side).
 TARGET_AND_RIGHT = (
     "3<|box;x1=500;y1=180;x2=540;y2=230;w=40;h=50;c=0.91|>,"
-    "7<|box;x1=320;y1=181;x2=360;y2=221;w=40;h=40;c=0.76|>"
+    "7<|box;x1=322;y1=270;x2=362;y2=310;w=40;h=40;c=0.76|>"
 )
 FAR_PART = "3<|box;x1=500;y1=180;x2=540;y2=230;w=40;h=50;c=0.91|>"
 
@@ -184,7 +184,7 @@ def test_find_part_with_expected_px_picks_centre_part():
     part = find_part(boxes, count_clips.EXPECTED_PART_PX)
     assert part is not None
     assert part["confidence"] == 0.76
-    assert part["center"] == (340.0, 201.0)
+    assert part["center"] == (342.0, 290.0)
 
 
 def test_find_part_with_expected_px_rejects_far_part():
@@ -215,18 +215,22 @@ def test_target_not_in_view_gives_exit_code_3(tmp_path, capsys):
     assert "part: target not in view" in capsys.readouterr().out
 
 
+# A part held between the fingertips, near EXPECTED_PART_PX (342, 290).
+HELD_PART = "7<|box;x1=320;y1=266;x2=360;y2=308;w=40;h=42;c=0.75|>"
+
+
 def test_record_holds_part_offset_px(tmp_path):
     import json
     import math
 
     result = count_clips.count_frame(
-        _SeqClient([PART_AND_GRIPPER, THREE_BARS]),
+        _SeqClient([HELD_PART, THREE_BARS]),
         _arm_frame(), "brown bar", recordings_dir=tmp_path,
         expected_px=count_clips.EXPECTED_PART_PX)
     assert result["ok"] is True
     record = json.loads(Path(result["record"]).read_text(encoding="utf-8"))
     assert record["part_offset_px"] == pytest.approx(
-        math.dist((334.5, 210.0), (340, 201)))
+        math.dist((340.0, 287.0), (342, 290)))
     plain = count_clips.count_frame(
         _SeqClient([PART_AND_GRIPPER, THREE_BARS]),
         _arm_frame(), "brown bar", recordings_dir=tmp_path)

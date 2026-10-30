@@ -539,6 +539,43 @@ def test_parse_pick_lines_outcomes():
     assert both["outcome"] == "sorted"
 
 
+def test_parse_pick_lines_unverified_part_sorts_bad():
+    parsed = agent_tools.parse_pick_lines([
+        "inspect failed: no frame from /dev/videoFAKE",
+        "inspect failed, sorting into the bad box (unverified part)",
+        "dropped into the bad box",
+    ])
+    assert parsed["outcome"] == "sorted"
+    assert parsed["box"] == "bad"
+    assert parsed["levers"] is None
+    assert parsed["verdict"] is None
+    assert parsed["reason"] is not None
+    assert "unverified part" in parsed["reason"]
+
+
+def test_parse_pick_lines_timeout_sorts_bad_unverified():
+    parsed = agent_tools.parse_pick_lines([
+        "inspect timeout, sorting into the bad box (unverified part)",
+        "dropped into the bad box",
+    ])
+    assert parsed["outcome"] == "sorted"
+    assert parsed["box"] == "bad"
+    assert parsed["levers"] is None
+    assert "unverified part" in (parsed["reason"] or "")
+
+
+def test_parse_pick_lines_inspect_skipped_is_not_sorted():
+    skipped = agent_tools.parse_pick_lines(
+        ["missed grip", "inspect skipped: no part held"])
+    assert skipped["outcome"] == "missed_grip"
+    assert skipped["box"] is None
+    alone = agent_tools.parse_pick_lines(
+        ["inspect skipped: no part held"])
+    assert alone["outcome"] == "inspect_failed"
+    assert alone["box"] is None
+    assert "inspect skipped" in (alone["reason"] or "")
+
+
 def test_find_parts_main_output_unchanged(monkeypatch, tmp_path, capsys):
     import cv2
     import numpy

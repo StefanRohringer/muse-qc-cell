@@ -7,9 +7,11 @@ raise, return. --no-grip only lowers and holds for a ruler check.
 With --drop good|bad the plan is hover, lower, lift, to-box,
 release, return instead: the arm carries the part to the good
 (left) or bad (right) box and opens the gripper over it.
-With --inspect the arm holds the hover pose while the arm camera
-grabs one frame, the levers are counted and the verdict picks
-the box; a failed inspection aborts from hover with no grip.
+With --inspect the arm grips the part, lifts it, holds the last
+lift waypoint while the arm camera grabs one frame of the part in
+the gripper, the levers are counted and the verdict picks the
+box; a failed inspection sorts the unverified part into the bad
+box with exit code 1.
 """
 from __future__ import annotations
 import argparse
@@ -326,8 +328,9 @@ def main(argv=None, sdk_factory=None, **kwargs):
                            help="carry the part to the good (left) or bad (right)"
                            " box and release it over the box (default: put down)")
     exclusive.add_argument("--inspect", action="store_true",
-                           help="inspect at hover with the arm camera and sort"
-                           " into the box the lever count decides")
+                           help="inspect the part in the gripper after the"
+                           " lift and sort into the box the lever count"
+                           " decides")
     args = parser.parse_args(argv)
     out = kwargs.get("out", print)
     for line in describe(args.gains):

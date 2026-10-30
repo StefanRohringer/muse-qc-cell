@@ -54,7 +54,8 @@ CROP_MARGIN_PX = 15
 CROP_SCALE = 8
 MIN_BAR_PART_FRAC = 0.35
 MIN_BAR_TALLEST_FRAC = 0.6
-EXPECTED_PART_PX = (340, 201)
+# Position of a part held between the fingertips (human test 2026-10-30).
+EXPECTED_PART_PX = (342, 290)
 MAX_PART_OFFSET_PX = 60
 
 
@@ -139,10 +140,10 @@ def find_part(boxes: list[dict], expected_px=None) -> dict | None:
     Ignores boxes without confidence, below MIN_CONFIDENCE, or
     inside the gripper zone (center y at or above GRIPPER_ZONE_Y).
     Without expected_px picks the remaining box with the highest
-    confidence. With expected_px (the target part position in the
-    arm camera image at the hover pose) picks the nearest centre
-    instead, or None when even that is farther than
-    MAX_PART_OFFSET_PX away.
+    confidence. With expected_px (the position of a part held
+    between the fingertips in the arm camera image) picks the
+    nearest centre instead, or None when even that is farther
+    than MAX_PART_OFFSET_PX away.
     """
     candidates = [
         box
@@ -373,7 +374,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--prompt", default=LEVER_PROMPT)
     parser.add_argument("--expect-target", action="store_true",
                         help="only accept the part near EXPECTED_PART_PX,"
-                        " as the hover inspection does")
+                        " as the gripper inspection does")
     args = parser.parse_args(argv)
     try:
         frame = load_image(args.image)

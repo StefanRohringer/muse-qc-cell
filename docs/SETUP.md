@@ -704,9 +704,9 @@ uv run python -m muse_qc.count_clips --image recordings/armcam_test.png --prompt
 
 `--prompt` overrides only the lever prompt; the part prompt is
 always `PART_PROMPT`. With `--expect-target` only the part near
-`EXPECTED_PART_PX` = (340, 201) is accepted (up to
-`MAX_PART_OFFSET_PX` = 60 px away), as the hover inspection does,
-so a saved hover image can be re-checked the same way:
+`EXPECTED_PART_PX` = (342, 290) is accepted (up to
+`MAX_PART_OFFSET_PX` = 60 px away), as the gripper inspection
+does, so a saved gripper image can be re-checked the same way:
 
 ```bash
 uv run python -m muse_qc.count_clips --image recordings/armcam_test.png --expect-target
@@ -1493,7 +1493,7 @@ at rest, otherwise the boxes themselves become candidates. Parts
 must lie between the arm and the boxes within about 345 mm of the
 joint 1 axis, the outer range of the x/y correction.
 
-## 32. Inspect while hovering and sort (by hand only)
+## 32. Inspect in the gripper and sort (by hand only)
 
 With `--inspect` the pick sorts the part into the box the lever
 count decides instead of a fixed `--drop` box (`--inspect` and
@@ -1512,7 +1512,8 @@ uv run python -m muse_qc.pick_test --table-mm 513.3 340.7 --inspect
 uv run python -m muse_qc.pick_test --table-mm 513.3 340.7 --inspect --execute
 ```
 
-Recorded output (2026-10-29, good part):
+Recorded lines (2026-10-29, good part, from the earlier hover
+flow):
 
 ```text
 inspect: levers 3 verdict good
@@ -1524,26 +1525,38 @@ dropped into the good box
 
 The bad part run gave "inspect: levers 2 verdict bad" and "dropped into the bad box".
 
-With `--execute` the loop walks the hover segment and opens the
-gripper, then holds the last commanded hover pose: first 1 s to
-let the arm settle, then the main thread grabs one frame with the
-arm camera, saves it as recordings/armcam_<timestamp>.png, counts
-the levers with count_clips.count_frame and hands the verdict to
-the loop, which takes the ranges of that box and continues with
-lower as today. The inspection only accepts the part near
-`EXPECTED_PART_PX` = (340, 201) in the image (up to
-`MAX_PART_OFFSET_PX` = 60 px away) and counts its levers with
-`LEVER_PROMPT` ("brown bar"); otherwise it reports
-"part: target not in view" and aborts without gripping. The
-control loop thread never opens the camera
+With `--execute` the loop no longer stops at hover: it walks the
+hover segment (opening the gripper) and lowers directly, grips,
+lifts and holds the last lift waypoint with the part held: first
+1 s to let the arm settle, then the main thread grabs one frame
+with the arm camera, saves it as
+recordings/armcam_<timestamp>.png, counts the levers with
+count_clips.count_frame and hands the verdict to the loop, which
+takes the ranges of that box and walks its to-box waypoints. With
+the gripper flow the same lines print in pick order: the grip
+contact, the lifting contacts, "part lifted, holding",
+"inspect: levers 3 verdict good", "dropped into the good box".
+The camera sits on the gripper, so a held part always appears at
+the same image position: the inspection only accepts the part
+near `EXPECTED_PART_PX` = (342, 290) (up to `MAX_PART_OFFSET_PX`
+= 60 px away) and counts its levers with `LEVER_PROMPT`
+("brown bar"); otherwise it reports "part: target not in view"
+and the unverified part is sorted into the bad box (see below).
+The control loop thread never opens the camera
 and never calls the API; without `--inspect` everything behaves
 exactly as today.
 
 Failure behaviour: no frame, no part found or an API error prints
-"inspect failed: ..." and aborts the run from hover with exit
-code 1 -- the gripper stays open, no grip happens and the arm
-walks back to rest. The same abort (with "inspect timeout") fires
-when no verdict arrives within 30 s. Only the human runs it,
+"inspect failed: ..." and the unverified part is sorted into the
+bad box with exit code 1 -- the loop prints "inspect failed,
+sorting into the bad box (unverified part)" and never opens the
+gripper above the table; an unverified part counts as reject. The
+same bad-box sort fires when no verdict arrives within 30 s, with
+"inspect timeout, sorting into the bad box (unverified part)".
+A missed grip, a part lost while lifting, a
+contact stop or any other abort before the lift ends skips the
+inspection ("inspect skipped: no part held") and returns as
+today. Only the human runs it,
 never CI and never an agent.
 
 ## 33. Agent loop with Muse Spark (by hand only)

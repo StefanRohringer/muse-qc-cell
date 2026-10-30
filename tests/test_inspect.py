@@ -1,4 +1,4 @@
-"""Tests for hover inspection and sorting: --inspect, inspect_step, count_frame.
+"""Tests for gripper inspection and sorting: --inspect, inspect_step, count_frame.
 
 Offline only: fake SDK groups, fake touch sensor, fake arm camera,
 fake SAM client, fake API key. No bus, no serial port, no camera,
@@ -32,7 +32,7 @@ from muse_qc.drop_plan import (
     solve_drop,
 )
 from muse_qc.first_move_plan import LOOP_RATE_HZ
-from muse_qc.gripper_grip import CLOSED_DEG, width_to_deg
+from muse_qc.gripper_grip import width_to_deg
 
 TABLE = (495.9, 322.7)
 REST = [-3.33, -99.0, -79.0, 74.0, 0.91, -3.97]
@@ -51,9 +51,12 @@ DROP_GOOD = (-3.5, -99.03, -80.0, 75.0, 1.0, -4.0)  # fake tip z 90 mm
 DROP_BAD = (-5.0, -99.47, -81.0, 75.0, 1.5, -4.5)  # fake tip z 95 mm
 SECRET = "[REDACTED]"
 
+# Held-part fixture near EXPECTED_PART_PX (342, 290): the good part box
+# from the human 2026-10-30 gripper test, plus a gripper-zone box that
+# the zone filter must ignore.
 PART_AND_GRIPPER = (
     "8<|box;x1=423;y1=402;x2=456;y2=429;w=33;h=27;c=0.76|>,"
-    "7<|box;x1=317;y1=187;x2=352;y2=233;w=35;h=46;c=0.76|>"
+    "7<|box;x1=323;y1=268;x2=362;y2=312;w=39;h=44;c=0.75|>"
 )
 THREE_BARS = (
     "1<|box;x1=158;y1=206;x2=210;y2=457;w=52;h=251;c=0.70|>,"
@@ -468,9 +471,15 @@ def _arm_sends(arm):
     return [tuple(call[1]) for call in arm.calls if call[0] == "send"]
 
 
-def _grip_sends_deg(grip):
-    return [math.degrees(call[1][0])
-            for call in grip.calls if call[0] == "send"]
+def test_loop_does_not_hold_hover_for_inspection():
+    holder, lines = {}, []
+    built, arm, grip, loop = _inspect_loop(_grip_script(holder), lines)
+    holder["loop"] = loop
+    _step_until(loop, lambda: loop.phase == "lower")
+    assert not loop.inspect_ready.is_set()
+    _step_until(loop, lambda: loop.inspect_ready.is_set())
+    assert loop.phase == "inspect_hold"
+    assert loop.pos == built["shared_ranges"]["lift"][1] - 1
 
 
 def test_loop_verdict_good_sorts_into_good_box():
@@ -509,38 +518,92 @@ def test_loop_verdict_bad_sorts_into_bad_box():
     assert good_rad not in sends
 
 
-def test_loop_verdict_none_aborts_open_without_grip():
+def _assert_unverified_into_bad_box(loop, arm, lines):
+    text = "\n".join(lines)
+    assert loop.exit_code == 1
+    assert "dropped into the bad box" in text
+    sends = _arm_sends(arm)
+    good_rad = tuple(math.radians(v) for v in DROP_GOOD)
+    bad_rad = tuple(math.radians(v) for v in DROP_BAD)
+    assert bad_rad in sends
+    assert good_rad not in sends
+    return text
+
+
+def test_loop_verdict_none_sorts_unverified_into_bad_box():
     holder, lines = {}, []
     built, arm, grip, loop = _inspect_loop(_grip_script(holder), lines)
     holder["loop"] = loop
     _step_until(loop, lambda: loop.inspect_ready.is_set())
+    arm.calls.clear()
     loop.set_verdict(None)
     _step_until(loop, lambda: loop.done.is_set())
-    text = "\n".join(lines)
-    assert loop.exit_code == 1
-    assert "dropped into" not in text
-    grips = _grip_sends_deg(grip)
-    assert all(value < CLOSED_DEG - 1.0 for value in grips)
-    assert min(grips) == pytest.approx(OPEN28)  # opened, then held open
-    rest_rad = tuple(math.radians(v) for v in REST)
-    assert _arm_sends(arm)[-1] == rest_rad
+    text = _assert_unverified_into_bad_box(loop, arm, lines)
+    assert "inspect failed, sorting into the bad box" in text
+    assert "(unverified part)" in text
 
 
-def test_loop_inspect_timeout_aborts_open(monkeypatch):
+def test_loop_inspect_timeout_sorts_unverified_into_bad_box(monkeypatch):
     monkeypatch.setattr(pick_loop, "INSPECT_TIMEOUT_S", 0.05)
     holder, lines = {}, []
     built, arm, grip, loop = _inspect_loop(_grip_script(holder), lines)
     holder["loop"] = loop
     _step_until(loop, lambda: loop.inspect_ready.is_set())
+    arm.calls.clear()
+    _step_until(loop, lambda: loop.done.is_set())
+    text = _assert_unverified_into_bad_box(loop, arm, lines)
+    assert "inspect timeout, sorting into the bad box" in text
+    assert "(unverified part)" in text
+
+
+def _losing_script(holder):
+    """Contacts for the grip, then nothing: the part is lost in the lift."""
+
+    def script(n):
+        loop = holder.get("loop")
+        phase = loop.phase if loop is not None else "hover"
+        if phase in ("close", "squeeze", "squeeze_hold"):
+            return {"L1", "R1"}
+        return set()
+
+    return script
+
+
+def test_loop_lost_while_lifting_skips_inspection():
+    holder, lines = {}, []
+    built, arm, grip, loop = _inspect_loop(_losing_script(holder), lines)
+    holder["loop"] = loop
     _step_until(loop, lambda: loop.done.is_set())
     text = "\n".join(lines)
-    assert loop.exit_code == 1
-    assert "inspect timeout" in text
+    assert "part lost while lifting" in text
+    assert not loop.inspect_ready.is_set()
+    assert loop.inspect_skipped is True
     assert "dropped into" not in text
-    assert all(v < CLOSED_DEG - 1.0 for v in _grip_sends_deg(grip))
-    assert min(_grip_sends_deg(grip)) == pytest.approx(OPEN28)
+    assert loop.exit_code == 0
     rest_rad = tuple(math.radians(v) for v in REST)
     assert _arm_sends(arm)[-1] == rest_rad
+
+
+def test_missed_grip_skips_inspection_quickly():
+    holder, lines = {}, []
+    built, arm, grip, loop = _inspect_loop(lambda n: set(), lines)
+    holder["loop"] = loop
+    _step_until(loop, lambda: loop.done.is_set())
+    assert "missed grip" in "\n".join(lines)
+    assert not loop.inspect_ready.is_set()
+    assert loop.inspect_skipped is True
+
+    def _no_camera(node):
+        raise AssertionError("no frame without a part held")
+
+    out = []
+    box = inspect_step.wait_and_inspect(
+        loop, out.append, ready_timeout_s=5.0,
+        find_node=lambda: (_ for _ in ()).throw(
+            AssertionError("no camera without a part held")),
+        open_camera=_no_camera)
+    assert box is None
+    assert "inspect skipped: no part held" in "\n".join(out)
 
 
 def test_loop_hold_sends_last_commanded_pose():
@@ -656,7 +719,7 @@ def test_run_count_prints_paths_after_verdict(tmp_path, capsys):
     assert code == 0
     out = capsys.readouterr().out
     assert SECRET not in out
-    order = ["part: box=(317, 187, 352, 233) confidence=0.76",
+    order = ["part: box=(323, 268, 362, 312) confidence=0.75",
              "levers: 3", "verdict: good"]
     positions = [out.index(line) for line in order]
     assert positions == sorted(positions)
@@ -773,7 +836,36 @@ def test_wait_and_inspect_times_out_without_ready():
     box = inspect_step.wait_and_inspect(
         SimpleNamespace(), lines.append, ready_timeout_s=0.01)
     assert box is None
-    assert "inspect failed: hover never settled" in "\n".join(lines)
+    assert "inspect failed: hold never settled" in "\n".join(lines)
+
+
+def test_wait_and_inspect_returns_on_skip_without_frame():
+    skipped = SimpleNamespace(inspect_skipped=True)
+
+    def _no_camera(node):
+        raise AssertionError("no frame on skip")
+
+    lines = []
+    box = inspect_step.wait_and_inspect(
+        skipped, lines.append, ready_timeout_s=5.0,
+        open_camera=_no_camera)
+    assert box is None
+    assert "inspect skipped: no part held" in "\n".join(lines)
+
+
+def test_wait_and_inspect_returns_on_done_without_frame():
+    done = threading.Event()
+    done.set()
+
+    def _no_camera(node):
+        raise AssertionError("no frame when done")
+
+    lines = []
+    box = inspect_step.wait_and_inspect(
+        SimpleNamespace(done=done), lines.append, ready_timeout_s=5.0,
+        open_camera=_no_camera)
+    assert box is None
+    assert "inspect skipped: no part held" in "\n".join(lines)
 
 
 def test_loop_never_opens_camera_or_calls_api():
@@ -895,16 +987,18 @@ def test_execute_inspect_missing_key_exits_2_without_enabling(tmp_path):
     assert "disconnect" in sdk.calls
 
 
-def test_execute_inspect_failed_aborts_open(tmp_path):
+def test_execute_inspect_failed_sorts_unverified_into_bad_box(tmp_path):
     sdk, code, text = _run_execute_inspect(
         tmp_path, [PART_AND_GRIPPER, THREE_BARS],
         open_arm_camera=lambda node: None)
     assert code == 1
     assert "inspect failed: no frame" in text
-    assert "dropped into" not in text
-    grips = _grip_sends_deg(sdk.groups["gripper"])
-    assert all(value < CLOSED_DEG - 1.0 for value in grips)
-    assert min(grips) == pytest.approx(OPEN28)
-    rest_rad = tuple(math.radians(v) for v in REST)
-    assert _arm_sends(sdk.groups["arm"])[-1] == rest_rad
+    assert "inspect failed, sorting into the bad box" in text
+    assert "(unverified part)" in text
+    assert "dropped into the bad box" in text
+    good_rad = tuple(math.radians(v) for v in DROP_GOOD)
+    bad_rad = tuple(math.radians(v) for v in DROP_BAD)
+    sends = _arm_sends(sdk.groups["arm"])
+    assert bad_rad in sends
+    assert good_rad not in sends
     assert "disable_all" in sdk.calls and "disconnect" in sdk.calls

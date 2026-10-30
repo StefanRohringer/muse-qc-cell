@@ -1,15 +1,19 @@
-"""Inspect the part at the hover pose, decide the box. Main thread only.
+"""Inspect the part in the gripper after the lift, decide the box. Main thread only.
 
 Used by muse_qc.pick_test --inspect while the control loop holds
-the hover pose: grab one frame with the arm camera, save it as
-recordings/armcam_<timestamp>.png, count the levers with
-count_clips.count_frame and map the verdict to a box ("good" or
-"bad"). The control loop thread never touches this module: it only
-holds the pose and takes the verdict through PickLoop.set_verdict.
+the last lift waypoint with the part held: grab one frame with the
+arm camera, save it as recordings/armcam_<timestamp>.png, count
+the levers with count_clips.count_frame and map the verdict to a
+box ("good" or "bad"). The camera sits on the gripper, so a held
+part always appears at the same image position
+(count_clips.EXPECTED_PART_PX). The control loop thread never
+touches this module: it only holds the pose and takes the verdict
+through PickLoop.set_verdict.
 """
 
 from __future__ import annotations
 
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -144,14 +148,30 @@ def wait_and_inspect(
     ready_timeout_s: float = 135.0,
     **kwargs,
 ) -> str | None:
-    """Wait for the loop hover hold, inspect, return the box or None.
+    """Wait for the loop lift hold, inspect, return the box or None.
 
-    A ready timeout also returns None, so the caller hands
-    set_verdict(None) to the loop and it aborts from hover with
-    the gripper open.
+    Polls in short steps until inspect_ready is set (the lift hold
+    settled with the part held), the loop is done, or the loop
+    reports inspect_skipped (missed grip, lost part, contact stop
+    or another abort before the lift ended). On done or skip no
+    frame is taken and None is returned, so the caller hands
+    set_verdict(None) to the loop. A ready timeout also returns
+    None.
     """
     ready = getattr(stream, "inspect_ready", None)
-    if ready is None or not ready.wait(timeout=ready_timeout_s):
-        out("inspect failed: hover never settled")
-        return None
+    done = getattr(stream, "done", None)
+    deadline = time.monotonic() + ready_timeout_s
+    while True:
+        if getattr(stream, "inspect_skipped", False):
+            out("inspect skipped: no part held")
+            return None
+        if done is not None and done.is_set():
+            out("inspect skipped: no part held")
+            return None
+        if ready is not None and ready.is_set():
+            break
+        if time.monotonic() >= deadline:
+            out("inspect failed: hold never settled")
+            return None
+        time.sleep(0.1)
     return run_inspection(out, **kwargs)

@@ -63,6 +63,7 @@ class PickLoop:
         self.inspect = bool(inspect)
         self.ranges_by_box, self.shared_ranges = ranges_by_box, shared_ranges
         self.inspect_ready = threading.Event()
+        self.inspect_skipped = False
         self._verdict, self._inspected = "pending", False
         self._settle_left = int(INSPECT_SETTLE_S * LOOP_RATE_HZ)
     def abort(self):
@@ -154,6 +155,8 @@ class PickLoop:
         self._send(self.cmd_arm_rad, self.grip_cmd + math.copysign(GRIP_STEP_DEG, diff))
         return False
     def _start_abort(self):
+        if self.inspect and not self._inspected:
+            self.inspect_skipped = True
         if self.drop_box is not None and self._in_drop_segment("to-box"):
             first, end = self.ranges["to-box"]
             low, high = self.ranges["return"]
@@ -247,41 +250,27 @@ class PickLoop:
         self.k, self.end = self.ranges[segment]
         self.phase = segment
     def _to_after_hover(self):
-        if self.inspect and not self._inspected and self.ranges_by_box:
-            self.phase = "inspect_hold"
-        else:
-            self._to_lower()
+        self._to_lower()
     def _do_inspect_hold(self):
-        if not self._hold():
-            return
-        if self._settle_left > 0:
-            self._settle_left -= 1
-            if self._settle_left > 0:
-                return
-            self.inspect_ready.set()
-            self.left = int(INSPECT_TIMEOUT_S * LOOP_RATE_HZ)
-            return
-        if self._verdict == "pending":
-            self.left -= 1
-            if self.left <= 0:
-                self._out("inspect timeout")
-                self.exit_code = 1
-                self._start_abort()
-            return
-        box = self._verdict
-        self._inspected = True
-        if box is None:
-            self.exit_code = 1
-            self._start_abort()
-            return
+        from muse_qc.pick_inspect import do_inspect_hold
+        do_inspect_hold(self)
+    def _sort_box(self, box):
         self.drop_box = box
         self.ranges = {**self.shared_ranges, **self.ranges_by_box[box]}
-        self._to_lower()
+        self._walk_seg("to-box")
     def _to_lower(self): self._walk_seg("lower")
     def _to_lift(self): self._walk_seg("lift")
     def _to_raise(self): self._walk_seg("raise")
     def _to_return(self): self._walk_seg("return")
     def _to_after_lift(self):
+        if self.inspect and not self._inspected and self.ranges_by_box:
+            if self.lost:
+                self.inspect_skipped = True
+                self._start_abort()
+                return
+            self._settle_left = int(INSPECT_SETTLE_S * LOOP_RATE_HZ)
+            self.phase = "inspect_hold"
+            return
         if self.drop_box is None:
             self._walk_seg("put-down")
         else:

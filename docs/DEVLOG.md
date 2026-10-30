@@ -921,3 +921,12 @@ joint 6: mean err -0.35 deg, p2p 0.04 deg, rms 0.35 deg
 ```
 Result: tip z offset 0.0 mm at the hover pose, no joint 4 swing, whole path without a guard stop. These values become the default.
 - Human work on the torque scale: the human ran the dry run before every hardware run, kept a hand on the power supply switch, and had the per-joint factors computed from the measured offsets (AI-assisted) between the runs.
+- Human ran (2026-10-30 ~01:02, power supply off, USB only, arm at rest) `uv run python -m muse_qc.camera_arm` with a good part held between the fingertips by hand, then `uv run python -m muse_qc.count_clips --image recordings/armcam_20261030_010239.png`:
+part: box=(323, 268, 362, 312) confidence=0.75
+levers: 3
+verdict: good
+- Human ran the same with a bad part (~01:05), `count_clips --image recordings/armcam_20261030_010524.png`:
+part: box=(323, 268, 360, 316) confidence=0.59
+levers: 2
+verdict: bad
+- Decision: the part is inspected in the gripper after the lift, because the camera sits on the gripper and the held part always appears at the same image position (no alignment, no arm shadow). An unverified part goes to the bad box.

@@ -168,6 +168,9 @@ def parse_pick_lines(lines: list[str]) -> dict:
     interrupted wins over everything (Ctrl+C aborts the pick, the
     agent run must stop), then sorted over missed_grip (the part
     still landed in a box), missed_grip over inspect_failed.
+    An unverified part sorted into the bad box after "inspect
+    failed" is sorted too, with the failed line kept as the
+    reason; "inspect skipped" alone never counts as sorted.
     record is the last count_*.json path in the lines, or None.
     """
     levers = None
@@ -187,7 +190,8 @@ def parse_pick_lines(lines: list[str]) -> dict:
             box = match.group(1)
         if "missed grip" in line:
             missed = True
-        if line.startswith("inspect failed:"):
+        if line.startswith(("inspect failed", "inspect skipped:",
+                            "inspect timeout")):
             failed = line
         if "interrupted by human, holding position" in line:
             halted = line
