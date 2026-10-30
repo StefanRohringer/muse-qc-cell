@@ -612,9 +612,9 @@ def test_find_parts_main_output_unchanged(monkeypatch, tmp_path, capsys):
     lines = capsys.readouterr().out.splitlines()
     assert lines[:-1] == [
         "part 0 center=(327, 318) area_mm2=973"
-        " table_mm=(505.7, 359.8) sam=skipped",
+        " table_mm=(505.7, 359.8) sam=skipped lever_deg=0.0 (outline)",
         "part 1 center=(365, 283) area_mm2=975"
-        " table_mm=(567.4, 317.7) sam=skipped",
+        " table_mm=(567.4, 317.7) sam=skipped lever_deg=0.0 (outline)",
         "candidates: 2",
     ]
     assert lines[-1].startswith("recordings/parts_")

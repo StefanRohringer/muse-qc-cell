@@ -14,7 +14,6 @@ from __future__ import annotations
 import argparse
 import math
 import sys
-from datetime import datetime
 from pathlib import Path
 
 import cv2
@@ -23,6 +22,8 @@ import numpy
 from muse_qc.camera_top import open_table_camera
 from muse_qc.detect_markers import detect_table_markers, scale_px_per_mm
 from muse_qc.drop_plan import BOXES_TABLE_MM
+from muse_qc.part_angle import lever_angle_deg
+from muse_qc.parts_image import annotate, save_annotated
 from muse_qc.target_pose import ARM_BASE_IN_TABLE_MM
 from muse_qc.model_check import (
     KEY_NAME,
@@ -57,7 +58,8 @@ GROW_PX = 10
 # cables and gripper rests in ARM_ZONE_TABLE_MM, and anything beyond
 # REACH_MAX_MM from the joint 1 axis cannot be picked anyway.
 BOX_KEEP_OUT_MM = 70.0
-ARM_ZONE_TABLE_MM = (380.0, 610.0, 0.0, 300.0)  # x_min, x_max, y_min, y_max
+ARM_ZONE_TABLE_MM = ((380.0, 610.0, 0.0, 200.0),  # base/arm
+                       (430.0, 590.0, 200.0, 300.0))  # resting gripper
 REACH_MAX_MM = 345.0
 
 
@@ -88,9 +90,10 @@ def classify_skip(table_mm):
         if max(abs(table_x - box[0]), abs(table_y - box[1])) \
                 <= BOX_KEEP_OUT_MM:
             return f"in box {name}"
-    x_min, x_max, y_min, y_max = ARM_ZONE_TABLE_MM
-    if x_min <= table_x <= x_max and y_min <= table_y <= y_max:
-        return "arm zone"
+    for zone in ARM_ZONE_TABLE_MM:
+        x_min, x_max, y_min, y_max = zone
+        if x_min <= table_x <= x_max and y_min <= table_y <= y_max:
+            return "arm zone"
     base_x, base_y = ARM_BASE_IN_TABLE_MM
     if math.dist((table_x, table_y), (base_x, base_y)) > REACH_MAX_MM:
         return "out of reach"
@@ -101,7 +104,9 @@ def detect_changes(frame, empty, scale, to_table_mm=None):
     """Pure LAB diff of frame vs empty: blur, max-channel diff,
     threshold, open, close, external contours. Keeps blobs with an
     area in mm2 inside the part range whose centre maps onto the
-    table (with to_table_mm). Returns bbox/center/area_mm2 dicts."""
+    table (with to_table_mm). Returns bbox/center/area_mm2/contour
+    dicts (contour is the diff-mask blob contour, used for the
+    lever direction and never printed or saved)."""
     blurred = cv2.GaussianBlur(frame, (5, 5), 0)
     blurred_ref = cv2.GaussianBlur(empty, (5, 5), 0)
     lab = cv2.cvtColor(blurred, cv2.COLOR_BGR2LAB)
@@ -127,7 +132,7 @@ def detect_changes(frame, empty, scale, to_table_mm=None):
             if not 0.0 <= table_y <= TABLE_Y_MAX_MM:
                 continue
         blobs.append({"bbox": (x, y, width, height), "center": center,
-                      "area_mm2": area_mm2})
+                      "area_mm2": area_mm2, "contour": contour})
     return blobs
 
 
@@ -193,46 +198,6 @@ def _request_error(exc):
     return f"request failed: {exc}"
 
 
-def annotate(frame, results):
-    """Return a copy of frame with blob rectangles, ids and table mm.
-
-    Skipped blobs are grey with the skip reason below the box.
-    """
-    out = frame.copy()
-    for index, item in enumerate(results):
-        x, y, width, height = item["bbox"]
-        if item.get("skipped") is not None:
-            color = (128, 128, 128)
-        elif item["confirmed"]:
-            color = (0, 255, 0)
-        else:
-            color = (0, 255, 255)
-        cv2.rectangle(out, (x, y), (x + width, y + height), color, 2)
-        table_x, table_y = item["table_mm"]
-        cv2.putText(
-            out, f"{index} ({table_x:.0f}, {table_y:.0f})",
-            (x, max(0, y - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2,
-        )
-        if item.get("skipped") is not None:
-            cv2.putText(
-                out, str(item["skipped"]),
-                (x, y + height + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-                color, 2,
-            )
-    return out
-
-
-def save_annotated(frame, recordings_dir="recordings"):
-    """Save the annotated frame as PNG, return the file path."""
-    target = Path(recordings_dir)
-    target.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    path = target / f"parts_{stamp}.png"
-    if not cv2.imwrite(str(path), frame):
-        raise RuntimeError(f"failed to write image to {path}")
-    return path
-
-
 def save_empty():
     """Take one empty-table frame and store it as the reference."""
     try:
@@ -256,8 +221,12 @@ def scan_table(frame, empty, phrase=DEFAULT_PHRASE, client=None,
     Runs the same steps as main: table mapping, empty-table diff,
     skip zones, one SAM confirm per unskipped candidate, then the
     annotated image save. Each result holds bbox, pixel, area_mm2,
-    table_mm, confirmed, confidence and skipped (the skip reason or
-    None). Raises RuntimeError with the user-facing message (the
+    table_mm, confirmed, confidence, skipped (the skip reason or
+    None), contour (the diff-mask blob contour, never printed or
+    saved), lever_deg (table-frame lever direction in deg, None
+    when unclear or skipped) and lever_source ("levers" or
+    "outline", None when unclear or skipped). Raises RuntimeError
+    with the user-facing message (the
     same text main prints) instead of returning an exit code.
     """
     try:
@@ -279,6 +248,8 @@ def scan_table(frame, empty, phrase=DEFAULT_PHRASE, client=None,
             "area_mm2": blob["area_mm2"], "table_mm": blob_table,
             "confirmed": False, "confidence": None,
             "skipped": classify_skip(blob_table),
+            "contour": blob["contour"], "lever_deg": None,
+            "lever_source": None,
         })
     unskipped = [item for item in results if item["skipped"] is None]
     if len(unskipped) > MAX_CANDIDATES:
@@ -300,6 +271,11 @@ def scan_table(frame, empty, phrase=DEFAULT_PHRASE, client=None,
         pixel = sam_center if confirmed else item["pixel"]
         item.update(pixel=pixel, table_mm=to_table(pixel),
                     confirmed=confirmed, confidence=confidence)
+        angle = lever_angle_deg(frame, item["bbox"], item["contour"],
+                                to_table)
+        if angle["ok"]:
+            item["lever_deg"] = angle["lever_deg"]
+            item["lever_source"] = angle["source"]
     results.sort(key=lambda item: item["table_mm"][0])
     try:
         path = save_annotated(annotate(frame, results), recordings_dir)
@@ -380,9 +356,17 @@ def main(argv=None):
             sam_text = "confirmed n/a"
         else:
             sam_text = f"confirmed {item['confidence']:.2f}"
+        if item["lever_deg"] is None:
+            lever_text = "lever_deg=?"
+        else:
+            shown = float(item["lever_deg"])
+            if round(shown, 1) >= 180.0:
+                shown = 0.0
+            lever_text = f"lever_deg={shown:.1f} ({item['lever_source']})"
         print(f"part {index} center=({pixel_x:.0f}, {pixel_y:.0f})"
               f" area_mm2={item['area_mm2']:.0f}"
-              f" table_mm=({table_x:.1f}, {table_y:.1f}) sam={sam_text}")
+              f" table_mm=({table_x:.1f}, {table_y:.1f}) sam={sam_text}"
+              f" {lever_text}")
     skipped = sum(1 for item in results if item["skipped"] is not None)
     skipped_text = f" ({skipped} skipped)" if skipped else ""
     if client is None:

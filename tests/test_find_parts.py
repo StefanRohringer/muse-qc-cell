@@ -174,8 +174,10 @@ def test_skipped_blobs_do_not_count_against_limit(monkeypatch, tmp_path,
                                                  capsys):
     seen: list = []
     texts = ["0<|box;x1=270;y1=270;x2=370;y2=370;w=100;h=100;c=0.88|>"]
-    arm = [(x, y) for x in (420, 495, 570) for y in (90, 160, 230)]
-    arm.append((495, 270))
+    # y 230 needs x inside the gripper rect (430 to 590), and the
+    # (585, 270) point keeps its distance to the (495, 270) blob.
+    arm = [(x, y) for x in (420, 495, 570) for y in (90, 160)]
+    arm += [(470, 230), (545, 230), (495, 270), (585, 270)]
     good = [(335, 385), (415, 385), (335, 425), (415, 425),
             (335, 465), (415, 465)]
     bad = [(640, 390), (720, 390), (640, 430), (720, 430)]
@@ -338,6 +340,14 @@ def test_classify_skip_zones():
     assert find_parts.classify_skip((100.0, 450.0)) == "out of reach"
     assert find_parts.classify_skip((505.0, 360.0)) is None
     assert find_parts.classify_skip((567.0, 317.0)) is None
+
+
+def test_arm_zone_split_leaves_gap_for_parts():
+    """Narrowed arm zone: (389, 270) passes, gripper blobs still skip."""
+    assert find_parts.classify_skip((389.0, 270.0)) is None
+    assert find_parts.classify_skip((535.0, 253.0)) == "arm zone"
+    assert find_parts.classify_skip((604.0, 169.0)) == "arm zone"
+    assert find_parts.classify_skip((500.0, 150.0)) == "arm zone"
 
 
 def _run_frame(monkeypatch, tmp_path, capsys, parts, texts=None, seen=None):

@@ -1303,8 +1303,10 @@ so the changes can be seen.
 Before SAM, every candidate is checked against three skip zones and
 skipped ones cost no SAM call: within 70 mm (max of |dx|, |dy|) of
 a sorting box centre from `drop_plan.BOXES_TABLE_MM` (parts already
-sorted), inside the arm zone x 380 to 610 mm, y 0 to 300 mm (the
-arm, cables and gripper at rest), and farther than 345 mm from the
+sorted), inside one of the two arm zone rectangles (x 380 to
+610 mm, y 0 to 200 mm for the base and arm with cables, x 430 to
+590 mm, y 200 to 300 mm for the resting gripper), and farther
+than 345 mm from the
 joint 1 axis (out of reach, cannot be picked). A skipped candidate
 prints `skipped: <reason>` instead of a SAM verdict, the summary
 becomes `parts: N confirmed of M candidates (K skipped)`, and the
@@ -1715,6 +1717,33 @@ to a plain dict and sent back for the next call, including
 reasoning items with their encrypted content (the transcript
 holds no reasoning blobs). Only the human runs it, never CI
 and never an agent.
+
+## 34. Lever direction on the table camera (not yet run on hardware)
+
+The human places parts at any angle; later the arm should turn
+joint 6 so it grips every part the same way as a straight part.
+`muse_qc/part_angle.py` measures the lever direction first,
+vision only (moves nothing): the precise angle comes from the
+part outline (`minAreaRect` of the diff-mask blob contour), and
+the orange/brown lever bars (HSV mask) only pick which of the
+two outline directions (angle or angle + 90) the bars follow.
+The result is mapped into the table frame and reported as
+`lever_deg` in [0, 180), where 0 means bars parallel to table
++x and 90 parallel to table +y. Unclear levers fall back to the
+long outline side when its aspect ratio reaches 1.1, else the
+direction is unknown.
+
+`muse_qc/find_parts.py` prints the direction on each unskipped
+part line (`lever_deg=NN.N`, or `lever_deg=?` when unknown),
+with `--no-sam` and `--image` too, so the human can test on
+saved images and live without SAM cost:
+
+```bash
+uv run python -m muse_qc.find_parts --no-sam
+uv run python -m muse_qc.find_parts --image recordings/frame.png --no-sam
+```
+
+Not yet run on hardware.
 
 ## Safety notes
 
