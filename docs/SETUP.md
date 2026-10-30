@@ -1194,6 +1194,25 @@ stopping: the motors will be disabled now
 end readings: arm [-2.79 +0.12 -2.04 +2.94 +2.55 -0.36] gripper -126.28 deg
 ```
 
+`--arm-mode mit-ff` flies the same plan through MIT with per-cycle
+gravity feed-forward (gains and torque scale shared with section 30,
+`--tau-scale` works the same way and is refused with posvel) instead
+of the POS_VEL loop; the gripper group stays on pos_vel. A tracking
+guard trips when any arm joint stays more than 5 deg from its command
+for 10 cycles in a row: the loop prints `tracking error on joint N,
+holding`, holds the measured pose (a disable would drop the arm in
+MIT mode) and walks back to rest with exit 1, inserting a free-speed
+ramp first when the safety check would refuse the first abort step.
+The dry run prints the MIT gains plus one gravity block each for the
+hover pose, the grip pose and the drop pose:
+
+```bash
+uv run python -m muse_qc.pick_test --table-mm 500 335 --inspect --arm-mode mit-ff
+```
+
+Not yet run on hardware. The default stays posvel for now; it changes
+in a later doc commit after the human tests mit-ff first.
+
 ## 29. Find parts on the table (empty reference + SAM confirm)
 
 SAM 3.1 on the full 1920x1080 frame finds the white 25 mm cube

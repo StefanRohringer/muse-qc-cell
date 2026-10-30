@@ -15,7 +15,7 @@ from __future__ import annotations
 import math
 import threading
 import time
-from muse_qc import safety
+from muse_qc import pick_mit, safety
 from muse_qc.drop_plan import DROP_HOLD_CYCLES
 from muse_qc.first_move_plan import LOOP_RATE_HZ, SPEED_FRACTION, real_tip_m
 from muse_qc.gripper_grip import CLOSED_DEG, SAFE_MAX_DEG, SAFE_MIN_DEG
@@ -35,8 +35,11 @@ class PickLoop:
                  start_grip_deg, hold_cycles, no_grip, sensor, out=print,
                  check_fn=None, tip_fn=None, drop_box=None,
                  release_open_deg=None, inspect=False,
-                 ranges_by_box=None, shared_ranges=None):
+                 ranges_by_box=None, shared_ranges=None,
+                 arm_sender=None, tracking_guard=None):
         self.arm_group = arm_group
+        self.arm_sender, self.tracking_guard = arm_sender, tracking_guard
+        self._abort_from = None
         self.gripper_group = gripper_group
         self.arm_vlim = [float(v) for v in arm_vlim]
         self.gripper_vlim = [float(v) for v in gripper_vlim]
@@ -75,7 +78,10 @@ class PickLoop:
             raise ValueError(f"bad verdict {box!r}")
         self._verdict = box
     def _send(self, arm_rad, grip_deg):
-        self.arm_group.send_pos_vel([float(v) for v in arm_rad], vlim=self.arm_vlim)
+        if self.arm_sender is None:
+            self.arm_group.send_pos_vel([float(v) for v in arm_rad], vlim=self.arm_vlim)
+        else:
+            self.arm_sender.send([float(v) for v in arm_rad])
         self.gripper_group.send_pos_vel([math.radians(grip_deg)], vlim=self.gripper_vlim)
         self.cmd_arm_rad = [float(v) for v in arm_rad]
         self.grip_cmd = float(grip_deg)
@@ -127,6 +133,8 @@ class PickLoop:
             return self._refuse("read-failed", str(exc), "six joint angles")
         age_ms = (time.monotonic() - read_start) * 1000.0
         current_deg = [math.degrees(v) for v in current_rad]
+        if pick_mit.feed_guard(self, current_deg):
+            return False
         _, waypoint, grasp = self.plan[index]
         try:
             current_tip = self.tip_of(current_deg)
@@ -170,6 +178,7 @@ class PickLoop:
             self.detour = abort_detour(self.plan, self.tips, self.ranges,
                                        self.hover_z, self.pos)
         self.di = 0
+        pick_mit.maybe_ramp(self)
         self.abort_requested = False
         self.phase = "abort"
 
