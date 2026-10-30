@@ -15,6 +15,13 @@ from muse_qc.drop_plan import (
     RELEASE_OPEN_MM,
     solve_drop,
 )
+from muse_qc.inspect_station import (
+    STATION_J6_DEG,
+    STATION_TABLE_MM,
+    STATION_TIP_Z_MM,
+    USE_STATION_DEFAULT,
+    build_inspect_plan_with_station,
+)
 from muse_qc.first_move_plan import real_tip_m
 from muse_qc.gripper_grip import validate_targets, width_to_deg
 from muse_qc.pick_args import ACCEL_DEG_S2, SPEED_DEG_S
@@ -31,7 +38,12 @@ def _plan_and_check(arm_start_deg, grip_start_deg, table_xy, grip_z_mm, open_mm,
                     out, joint_limits, solve_fn, check_fn, tip_fn,
                     use_xy_correction=True, speed_deg_s=SPEED_DEG_S[2],
                     accel_deg_s2=ACCEL_DEG_S2[2], drop=None,
-                    solve_drop_fn=None, inspect=False):
+                    solve_drop_fn=None, inspect=False, use_station=None):
+    if use_station is None:
+        use_station = USE_STATION_DEFAULT
+    if use_station and not inspect:
+        out("station needs --inspect")
+        return None, None
     open_deg = width_to_deg(open_mm)
     refused = validate_targets(grip_start_deg, open_deg)
     boxes = ("good", "bad") if inspect else ([drop] if drop is not None else [])
@@ -61,13 +73,13 @@ def _plan_and_check(arm_start_deg, grip_start_deg, table_xy, grip_z_mm, open_mm,
                     out(f"drop solve failed: {one.get('reason')}")
                     return None, None
                 solved[box] = one
-            built = build_inspect_plan(
+            built = build_inspect_plan_with_station(
                 arm_start_deg, table_xy, grip_z_mm, joint_limits,
                 solve_fn=solve_fn, use_xy_correction=use_xy_correction,
                 free_speed_deg_s=speed_deg_s, accel_deg_s2=accel_deg_s2,
                 drop_joints_by_box={box: one["joints_deg"]
                                     for box, one in solved.items()},
-                tip_fn=tip_of)
+                tip_fn=tip_of, use_station=use_station)
         else:
             drop_joints = None
             if drop is not None:
@@ -87,6 +99,10 @@ def _plan_and_check(arm_start_deg, grip_start_deg, table_xy, grip_z_mm, open_mm,
             return None, None
         for line in plan_summary(built["plan"], built):
             out(line)
+        if use_station and built.get("use_station"):
+            out(f"station: table mm ({STATION_TABLE_MM[0]:.1f},"
+                f" {STATION_TABLE_MM[1]:.1f}), tip z {STATION_TIP_Z_MM:.1f} mm,"
+                f" joint 6 {STATION_J6_DEG:+.1f} deg")
         for box in boxes:
             one = solved[box] if inspect else solved
             box_xy = BOXES_TABLE_MM[box]

@@ -15,7 +15,7 @@ from __future__ import annotations
 import math
 import threading
 import time
-from muse_qc import grip_speed, pick_mit, safety
+from muse_qc import grip_speed, pick_inspect, pick_mit, safety
 from muse_qc.drop_plan import DROP_HOLD_CYCLES
 from muse_qc.first_move_plan import LOOP_RATE_HZ, SPEED_FRACTION, real_tip_m
 from muse_qc.gripper_grip import CLOSED_DEG, SAFE_MAX_DEG, SAFE_MIN_DEG, deg_to_width
@@ -24,7 +24,8 @@ from muse_qc.pick_plan import abort_detour
 SQUEEZE_DEG = 2.0
 FAULT_HOLD_CYCLES = int(0.5 * LOOP_RATE_HZ)
 DROP_WALKS = ("to-box",)
-_WALKS = ("hover", "lower", "lift", "put-down", "raise", "return") + DROP_WALKS
+_WALKS = ("hover", "lower", "lift", "to-station", "put-down", "raise",
+          "return") + DROP_WALKS
 INSPECT_SETTLE_S = 2.0
 INSPECT_TIMEOUT_S = 60.0
 class PickLoop:
@@ -171,6 +172,8 @@ class PickLoop:
             low, high = self.ranges["return"]
             hold = [] if self.pos is None else [self.pos]
             self.detour = hold + list(range(low, high))
+        elif pick_inspect.station_abort_detour(self) is not None:
+            self.detour = pick_inspect.station_abort_detour(self)
         else:
             self.detour = abort_detour(self.plan, self.tips, self.ranges,
                                        self.hover_z, self.pos)
@@ -259,29 +262,17 @@ class PickLoop:
     def _to_after_hover(self):
         self._to_lower()
     def _do_inspect_hold(self):
-        from muse_qc.pick_inspect import do_inspect_hold
-        do_inspect_hold(self)
+        pick_inspect.do_inspect_hold(self)
     def _sort_box(self, box):
-        self.drop_box = box
-        self.ranges = {**self.shared_ranges, **self.ranges_by_box[box]}
-        self._walk_seg("to-box")
+        pick_inspect.sort_box(self, box)
     def _to_lower(self): self._walk_seg("lower")
     def _to_lift(self): self._walk_seg("lift")
     def _to_raise(self): self._walk_seg("raise")
     def _to_return(self): self._walk_seg("return")
     def _to_after_lift(self):
-        if self.inspect and not self._inspected and self.ranges_by_box:
-            if self.lost:
-                self.inspect_skipped = True
-                self._start_abort()
-                return
-            self._settle_left = int(INSPECT_SETTLE_S * LOOP_RATE_HZ)
-            self.phase = "inspect_hold"
-            return
-        if self.drop_box is None:
-            self._walk_seg("put-down")
-        else:
-            self._walk_seg("to-box")
+        pick_inspect.after_lift(self)
+    def _to_after_station(self):
+        pick_inspect.after_station(self)
     def _to_putdown(self): self._walk_seg("put-down")
     def _to_released(self):
         if self.contacts:
@@ -333,7 +324,7 @@ class PickLoop:
                                   or not (self.contacts & safety.GRIP_RIGHT)):
                 self.lost = True
                 self._out("part lost while lifting")
-        if self.phase == "to-box":
+        if self.phase in ("to-box", "to-station"):
             if self.contacts != self._prev:
                 self._prev = frozenset(self.contacts)
                 self._out(f"contacts {' '.join(sorted(self.contacts)) or '-'} (carrying)")
@@ -366,6 +357,8 @@ class PickLoop:
                 self.phase = "drop_open"
             else:
                 self.phase = "release"
+        elif self.phase == "to-station":
+            self._to_after_station()
         elif self.phase == "put-down":
             self.phase = "reopen"
         elif self.phase == "raise":

@@ -1867,6 +1867,38 @@ Without `--task`, `--chat` asks for the order first, so the human types it live:
 uv run python -m muse_qc.agent --execute --chat
 ```
 
+## 37. Inspection station (not yet run on hardware)
+
+With `--station` (needs `--inspect`) the arm carries the held
+part to one fixed point left of the table after the lift, turns
+joint 6 to one fixed angle and holds there while the main
+thread inspects, so every part is seen under the same light
+against the same background; both drop branches then start
+from the station instead of the lift top. The constants live
+in `muse_qc/inspect_station.py`: `STATION_TABLE_MM` =
+(235.0, 150.0) table mm (human chosen 2026-10-30, about 290 mm
+from the joint 1 axis), `STATION_TIP_Z_MM` = the hover height
+(100 mm), `STATION_J6_DEG` = 0.0 (absolute joint 6 angle, the
+human tunes it later), `USE_STATION_DEFAULT` = False (the
+agent keeps inspecting at the lift pose until the human sets
+it to True after a hardware test). An unreachable station or
+a joint 6 outside its limits refuses the whole plan before
+anything moves; an abort during to-station or at the station
+returns to rest over planned, already checked waypoints with
+the gripper unchanged (the part stays held, never opened
+above the table). Dry run first, then one part with the
+hand on the power supply switch:
+
+```bash
+uv run python -m muse_qc.pick_test --table-mm X Y --inspect --station
+uv run python -m muse_qc.pick_test --table-mm X Y --inspect --station --execute
+```
+
+The dry run prints
+`station: table mm (235.0, 150.0), tip z 100.0 mm, joint 6 +0.0 deg`
+plus the to-station length in the segments line. Only the
+human runs it, never CI and never an agent.
+
 ## Safety notes
 
 Read-only review of the SDK file

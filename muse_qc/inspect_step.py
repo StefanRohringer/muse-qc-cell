@@ -63,7 +63,8 @@ def check_inspect_plan(built, start_deg, check_fn=None, tip_fn=None):
     plan = built["plan"]
     try:
         bad = built["ranges_by_box"]["bad"]
-        lift_end = built["shared_ranges"]["lift"][1]
+        shared = built["shared_ranges"]
+        lift_end = shared["lift"][1]
         good_end = built["ranges"]["return"][1]
     except (KeyError, TypeError):
         return check_pick_plan(plan, start_deg, check_fn, tip_fn)
@@ -73,7 +74,8 @@ def check_inspect_plan(built, start_deg, check_fn=None, tip_fn=None):
         return False, at, res
     bad_low = min(low for low, _ in bad.values())
     bad_high = max(high for _, high in bad.values())
-    seed = plan[lift_end - 1][1]
+    hold_end = shared.get("to-station", (None, lift_end))[1]
+    seed = plan[hold_end - 1][1]
     ok, at, res = check_pick_plan(plan[bad_low:bad_high], seed,
                                   check_fn, tip_fn)
     if not ok:

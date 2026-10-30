@@ -11,7 +11,9 @@ With --inspect the arm grips the part, lifts it, holds the last
 lift waypoint while the arm camera grabs one frame of the part in
 the gripper, the levers are counted and the verdict picks the
 box; a failed inspection sorts the unverified part into the bad
-box with exit code 1. The default arm mode is mit-ff (MIT with
+box with exit code 1. With --station the arm carries the part to
+the fixed inspection station first and inspects there; without
+it (default) the part is inspected at the lift pose. The default arm mode is mit-ff (MIT with
 gravity feed-forward); --arm-mode posvel selects the old POS_VEL
 loop. The default grip tip height is 8 mm. With --lever-deg the
 gripper turns about the vertical axis so the part is gripped like
@@ -49,6 +51,7 @@ from muse_qc.grip_speed import GRIPPER_VLIM_FRACTION
 from muse_qc.gripper_motor import CONFIRM_PROMPT, GRIPPER_CONFIG_VLIM
 from muse_qc.gripper_stream import open_touch_sensor
 from muse_qc import inspect_step
+from muse_qc.inspect_station import USE_STATION_DEFAULT
 from muse_qc.pick_loop import PickLoop
 from muse_qc.pick_plan_check import _plan_and_check
 
@@ -79,7 +82,7 @@ def dry_run(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, out=print,
             drop=None, solve_drop_fn=None,
             inspect=False, find_arm_node=None, read_key=None,
             arm_mode="mit-ff", tau_scale=None, gravity_fn=None,
-            lever_deg=None):
+            lever_deg=None, use_station=None):
     out(f"arm mode: {arm_mode}")
     if inspect and inspect_step.check_prereqs(
             out, find_arm_node, read_key) is None:
@@ -99,7 +102,8 @@ def dry_run(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, out=print,
                                        solve_fn, check_fn, tip_fn,
                                        use_xy_correction, speed_deg_s=speed_deg_s,
                                        accel_deg_s2=accel_deg_s2, drop=drop,
-                                       solve_drop_fn=solve_drop_fn, inspect=inspect)
+                                       solve_drop_fn=solve_drop_fn, inspect=inspect,
+                                       use_station=use_station)
             if built is None:
                 return 1
             if arm_mode == "mit-ff":
@@ -122,7 +126,7 @@ def execute(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, input_fn=input,
             read_key=None, open_arm_camera=None, make_client=None,
             count_frame=None, inspect_recordings_dir="recordings",
             arm_mode="mit-ff", tau_scale=None, gravity_fn=None,
-            lever_deg=None):
+            lever_deg=None, use_station=None):
     out(f"arm mode: {arm_mode}")
     reader, arm_start_deg, grip_start_deg = _read_start(sdk)
     stream, sensor, arm_sender = None, None, None
@@ -141,7 +145,8 @@ def execute(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, input_fn=input,
                                           solve_fn, check_fn, tip_fn,
                                           use_xy_correction, speed_deg_s=speed_deg_s,
                                           accel_deg_s2=accel_deg_s2, drop=drop,
-                                          solve_drop_fn=solve_drop_fn, inspect=inspect)
+                                          solve_drop_fn=solve_drop_fn, inspect=inspect,
+                                          use_station=use_station)
         if built is None:
             return 1
         limits = safety.JOINT_LIMITS_DEG if joint_limits is None else joint_limits
@@ -283,6 +288,12 @@ def main(argv=None, sdk_factory=None, **kwargs):
     exclusive.add_argument("--inspect", action="store_true",
                            help="inspect the part in the gripper after the lift"
                            " and sort into the box the lever count decides")
+    parser.add_argument("--station", dest="station", action="store_true",
+                        default=None,
+                        help="inspect at the fixed station left of the table"
+                        " (needs --inspect)")
+    parser.add_argument("--no-station", dest="station", action="store_false",
+                        help="inspect at the lift pose, as today")
     args = parser.parse_args(argv)
     if args.tau_scale is not None and args.arm_mode != "mit-ff":
         parser.error("--tau-scale needs --arm-mode mit-ff")
@@ -307,6 +318,10 @@ def main(argv=None, sdk_factory=None, **kwargs):
     run = execute if args.execute else dry_run
     kwargs.setdefault("drop", args.drop)
     kwargs.setdefault("inspect", args.inspect)
+    if args.station is None:
+        kwargs.setdefault("use_station", USE_STATION_DEFAULT)
+    else:
+        kwargs.setdefault("use_station", args.station)
     kwargs.setdefault("arm_mode", args.arm_mode)
     kwargs.setdefault("tau_scale", tau_scale)
     kwargs.setdefault("lever_deg", args.lever_deg)
