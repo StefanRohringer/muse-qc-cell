@@ -14,9 +14,9 @@ import cv2
 import numpy
 import pytest
 
-import muse_qc.calibrate_camera as calibrate_camera
-import muse_qc.capture_calibration as capture_calibration
-from muse_qc.calibrate_camera import (
+import muse_qc.vision.calibrate_camera as calibrate_camera
+import muse_qc.vision.capture_calibration as capture_calibration
+from muse_qc.vision.calibrate_camera import (
     board_object_points,
     calibrate_from_files,
     calibrate_from_points,
@@ -26,8 +26,8 @@ from muse_qc.calibrate_camera import (
     undistort,
     undistort_points,
 )
-from muse_qc.capture_calibration import capture_session, find_board
-from muse_qc.checkerboard import CHECKER_SQUARES
+from muse_qc.vision.capture_calibration import capture_session, find_board
+from muse_qc.vision.checkerboard import CHECKER_SQUARES
 
 TRUE_FX = 800.0
 TRUE_FY = 800.0

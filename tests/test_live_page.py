@@ -10,9 +10,9 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-from muse_qc import agent_tools
-from muse_qc.agent import run_agent
-from muse_qc.live_page import LivePage
+from muse_qc.agent import agent_tools
+from muse_qc.agent.agent import run_agent
+from muse_qc.agent.live_page import LivePage
 
 
 def _message(text):

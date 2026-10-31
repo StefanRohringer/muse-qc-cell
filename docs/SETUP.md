@@ -3,6 +3,44 @@
 One machine holds both this project and the Seeed SDK checkout.
 The SDK lives outside this repository; only the dependency pointer lives here.
 
+## Module move 2026-10-31: old command -> new command
+
+On 2026-10-31 the flat modules of `muse_qc/` moved into subpackages
+(`agent/`, `vision/`, `inspection/`, `arm/`, `gripper/`, `pick/`,
+`checks/`, `bringup/`). Nothing else changed. Use the new command:
+
+| Old command | New command |
+| --- | --- |
+| `python -m muse_qc.agent` | `python -m muse_qc.agent` (unchanged) |
+| `python -m muse_qc.arm_calibration` | `python -m muse_qc.arm.arm_calibration` |
+| `python -m muse_qc.target_pose` | `python -m muse_qc.arm.target_pose` |
+| `python -m muse_qc.xy_correction` | `python -m muse_qc.arm.xy_correction` |
+| `python -m muse_qc.diagnose_joints` | `python -m muse_qc.bringup.diagnose_joints` |
+| `python -m muse_qc.first_move` | `python -m muse_qc.bringup.first_move` |
+| `python -m muse_qc.fk_check` | `python -m muse_qc.bringup.fk_check` |
+| `python -m muse_qc.hold_test` | `python -m muse_qc.bringup.hold_test` |
+| `python -m muse_qc.hover_move` | `python -m muse_qc.bringup.hover_move` |
+| `python -m muse_qc.model_check` | `python -m muse_qc.checks.model_check` |
+| `python -m muse_qc.preflight` | `python -m muse_qc.checks.preflight` |
+| `python -m muse_qc.gripper` | `python -m muse_qc.gripper.gripper` |
+| `python -m muse_qc.gripper_grip` | `python -m muse_qc.gripper.gripper_grip` |
+| `python -m muse_qc.gripper_motor` | `python -m muse_qc.gripper.gripper_motor` |
+| `python -m muse_qc.gripper_watch` | `python -m muse_qc.gripper.gripper_watch` |
+| `python -m muse_qc.count_clips` | `python -m muse_qc.inspection.count_clips` |
+| `python -m muse_qc.count_retry` | `python -m muse_qc.inspection.count_retry` |
+| `python -m muse_qc.inspection.report` | `python -m muse_qc.inspection.report` (unchanged) |
+| `python -m muse_qc.pick_test` | `python -m muse_qc.pick.pick_test` |
+| `python -m muse_qc.calibrate_camera` | `python -m muse_qc.vision.calibrate_camera` |
+| `python -m muse_qc.camera_arm` | `python -m muse_qc.vision.camera_arm` |
+| `python -m muse_qc.camera_top` | `python -m muse_qc.vision.camera_top` |
+| `python -m muse_qc.capture_calibration` | `python -m muse_qc.vision.capture_calibration` |
+| `python -m muse_qc.checkerboard` | `python -m muse_qc.vision.checkerboard` |
+| `python -m muse_qc.detect_markers` | `python -m muse_qc.vision.detect_markers` |
+| `python -m muse_qc.find_parts` | `python -m muse_qc.vision.find_parts` |
+| `python -m muse_qc.make_markers` | `python -m muse_qc.vision.make_markers` |
+| `python -m muse_qc.table_coords` | `python -m muse_qc.vision.table_coords` |
+| `python -m muse_qc.vision_sam` | `python -m muse_qc.vision.vision_sam` |
+
 ## Prerequisites
 
 - `uv` (install from https://astral.sh/uv/install.sh)
@@ -92,16 +130,16 @@ uv run python --version  # must report Python 3.11.x
 it runs every file in `tests/`.
 All tests run without the Seeed SDK; one test in tests/test_safety.py reads the real joint limits and is skipped when the SDK is not installed.
 
-## 7. Trying muse_qc/arm.py on the real arm (by hand only)
+## 7. Trying muse_qc/arm/arm.py on the real arm (by hand only)
 
 This step touches hardware, so only the human runs it, never CI and
-never an agent. `muse_qc/arm.py` only reads: it cannot enable, zero or move
+never an agent. `muse_qc/arm/arm.py` only reads: it cannot enable, zero or move
 the arm (enable, zero, mode and send commands are unreachable through
 it), but `connect()` still opens the real bus. From the project root:
 
 ```bash
 uv run python -c "
-from muse_qc.arm import Arm
+from muse_qc.arm.arm import Arm
 arm = Arm()
 arm.connect()
 try:
@@ -116,14 +154,14 @@ finally:
 
 A `JointStateUnavailable` error means a joint reported exactly `0.0`
 (or a non-finite value): the SDK substitutes `0.0` for missing
-feedback, so `muse_qc/arm.py` never reports `0.0` as an angle. Check the bus
+feedback, so `muse_qc/arm/arm.py` never reports `0.0` as an angle. Check the bus
 connection and the motor power, then retry.
 
 ## 8. Finding the arm by USB ID (by hand only)
 
 This step is run by the human only, never by an agent. The arm port is
-never a fixed `/dev/ttyACM0`: `muse_qc/preflight.py` finds it by USB vendor and
-product ID through `muse_qc/usb_devices.py` (read-only sysfs lookup, the serial
+never a fixed `/dev/ttyACM0`: `muse_qc/checks/preflight.py` finds it by USB vendor and
+product ID through `muse_qc/checks/usb_devices.py` (read-only sysfs lookup, the serial
 port itself is never opened).
 
 How to read the IDs (arm power supply off, only USB connected):
@@ -140,15 +178,15 @@ ignored by the lookup.)
 How to run the check, from the project root:
 
 ```bash
-uv run python -m muse_qc.preflight
+uv run python -m muse_qc.checks.preflight
 ```
 
 Expected result: `arm-usb: OK` with the found path. With the USB cable
 unplugged: `arm-usb: FAIL` (`arm not found by USB ID 2e88:4603`), and the
 port checks report `skipped: no arm port` instead of probing.
 
-`muse_qc/preflight.py` now also checks that the SDK opens the same device:
-`sdk-port` compares the SDK channel from `muse_qc/sdk_config.py`
+`muse_qc/checks/preflight.py` now also checks that the SDK opens the same device:
+`sdk-port` compares the SDK channel from `muse_qc/arm/sdk_config.py`
 (`config/rebotarm.yaml` via `hardware_yaml`) with the arm port found by
 USB ID. Expected: `sdk-port: OK`. It FAILs when the channel is
 unreadable, is not a `/dev` path (for example `can0`), or points to a
@@ -159,8 +197,8 @@ Never write the device serial number into the repository.
 ## 9. Table camera test (by hand only)
 
 This step opens the real camera, so only the human runs it, never CI
-and never an agent. `muse_qc/camera_top.py` finds the table camera by
-USB vendor and product ID through `muse_qc/usb_devices.py`
+and never an agent. `muse_qc/vision/camera_top.py` finds the table camera by
+USB vendor and product ID through `muse_qc/checks/usb_devices.py`
 (read-only sysfs lookup under `/sys/class/video4linux`, capture nodes
 only), opens exactly one matching device with the V4L2 backend, requests
 MJPG at 1920x1080, discards 45 warm-up frames (a short settle time,
@@ -169,7 +207,7 @@ the returned frame and saves it. It
 imports no arm code and moves nothing. From the project root:
 
 ```bash
-uv run python -m muse_qc.camera_top
+uv run python -m muse_qc.vision.camera_top
 ```
 
 Expected result: one new file `recordings/table_<YYYYmmdd_HHMMSS>.png`
@@ -208,12 +246,12 @@ v4l2-ctl -d /dev/video10 --get-ctrl=auto_exposure,exposure_time_absolute,gain,br
 ## 10. Table markers (print by hand)
 
 This step uses only the printer, so the human runs it by hand, never CI
-and never an agent. `muse_qc/make_markers.py` writes one A4 page with
+and never an agent. `muse_qc/vision/make_markers.py` writes one A4 page with
 the four ArUco table markers (IDs 0 to 3, shared constants in
-`muse_qc/table_markers.py`). From the project root:
+`muse_qc/vision/table_markers.py`). From the project root:
 
 ```bash
-uv run python -m muse_qc.make_markers
+uv run python -m muse_qc.vision.make_markers
 ```
 
 Expected result: one printed line with the path `docs/table_markers.svg`.
@@ -230,17 +268,17 @@ origin), ID 1 bottom right, ID 2 top left, ID 3 top right.
 ## 11. Table marker detection (by hand only)
 
 This step opens the real camera, so only the human runs it, never CI
-and never an agent. `muse_qc/detect_markers.py` takes one frame with
-`open_table_camera()` from `muse_qc/camera_top.py`, finds the four
+and never an agent. `muse_qc/vision/detect_markers.py` takes one frame with
+`open_table_camera()` from `muse_qc/vision/camera_top.py`, finds the four
 ArUco table markers (IDs 0 to 3, shared constants in
-`muse_qc/table_markers.py`) with `cv2.aruco.ArucoDetector`, and
+`muse_qc/vision/table_markers.py`) with `cv2.aruco.ArucoDetector`, and
 requires each ID exactly once: a missing marker raises naming the
 missing IDs, a marker seen twice raises naming the duplicated IDs.
 Detected IDs outside 0 to 3 are ignored and reported under
 `ignored_ids`. From the project root:
 
 ```bash
-uv run python -m muse_qc.detect_markers
+uv run python -m muse_qc.vision.detect_markers
 ```
 
 Expected result: one line per ID with image corner, center in pixels
@@ -261,9 +299,9 @@ corner. The scale is the mean marker side in pixels divided by 40 mm.
 ## 12. Table coordinates (by hand only)
 
 This step opens the real camera, so only the human runs it, never CI
-and never an agent. `muse_qc/table_coords.py` converts table camera
+and never an agent. `muse_qc/vision/table_coords.py` converts table camera
 pixels into table millimeters. The frame is defined in
-`muse_qc/table_markers.py` as `TABLE_MARKER_LAYOUT_MM`: origin at the
+`muse_qc/vision/table_markers.py` as `TABLE_MARKER_LAYOUT_MM`: origin at the
 center of marker 0, +x towards the center of marker 1, units mm. The
 four points are a least-squares fit (residuals under 0.5 mm) to all
 six hand-measured center-to-center distances of the black marker
@@ -273,7 +311,7 @@ markers form a slightly skewed quadrilateral, not a rectangle. From
 the project root:
 
 ```bash
-uv run python -m muse_qc.table_coords
+uv run python -m muse_qc.vision.table_coords
 ```
 
 Expected result: one line per ID with center in pixels, center in
@@ -326,13 +364,13 @@ before a grasp.
 ## 13. Calibration checkerboard (print by hand)
 
 This step uses only the printer, so the human runs it by hand, never CI
-and never an agent. `muse_qc/checkerboard.py` writes one A4 landscape
+and never an agent. `muse_qc/vision/checkerboard.py` writes one A4 landscape
 page with the calibration checkerboard (shared constants in
-`muse_qc/checkerboard.py`: 10 by 7 squares of 25 mm, 9 by 6 inner
+`muse_qc/vision/checkerboard.py`: 10 by 7 squares of 25 mm, 9 by 6 inner
 corners). From the project root:
 
 ```bash
-uv run python -m muse_qc.checkerboard
+uv run python -m muse_qc.vision.checkerboard
 ```
 
 Expected result: one printed line with the path `docs/checkerboard.svg`.
@@ -348,8 +386,8 @@ stays plane for the calibration.
 
 This step opens the real camera, so only the human runs it, never CI
 and never an agent. The arm stays powered off so it cannot move into
-the frame. `muse_qc/capture_calibration.py` takes the photos and
-`muse_qc/calibrate_camera.py` computes the calibration offline from
+the frame. `muse_qc/vision/capture_calibration.py` takes the photos and
+`muse_qc/vision/calibrate_camera.py` computes the calibration offline from
 the saved PNGs. Both import no arm code and move nothing.
 
 Photo plan: take about 16 photos of the flat board, always fully
@@ -362,12 +400,12 @@ never the camera.
 Capture, from the project root:
 
 ```bash
-uv run python -m muse_qc.capture_calibration
+uv run python -m muse_qc.vision.capture_calibration
 ```
 
 Expected result: a terminal loop with `Enter = take photo, q =
 quit`. Each photo is taken with `open_table_camera()` from
-`muse_qc/camera_top.py` and checked with
+`muse_qc/vision/camera_top.py` and checked with
 `cv2.findChessboardCornersSB` (9 by 6 inner corners). Photos with a
 found board print `board found` and are saved to
 `recordings/calibration/calib_<timestamp>.png`, the others print
@@ -377,7 +415,7 @@ running count.
 Calibrate, from the project root:
 
 ```bash
-uv run python -m muse_qc.calibrate_camera
+uv run python -m muse_qc.vision.calibrate_camera
 ```
 
 Expected result: one line per used image (`images used: <n>`),
@@ -400,7 +438,7 @@ Expected first line of table_coords with the file present:
 ## 15. Model API connection check (by hand only)
 
 This step contacts the Meta Model API over the network, so only the
-human runs it, never CI and never an agent. `muse_qc/model_check.py`
+human runs it, never CI and never an agent. `muse_qc/checks/model_check.py`
 reads `MODEL_API_KEY` from `.env` or the environment (the key is never
 printed, not even partly), calls `GET /v1/models` once through the
 `openai` SDK with the base URL `https://api.meta.ai/v1`, prints the
@@ -409,7 +447,7 @@ and `sam-3.1`. The exit code is 0 only when both are listed. From the
 project root:
 
 ```bash
-uv run python -m muse_qc.model_check
+uv run python -m muse_qc.checks.model_check
 ```
 
 Real human run with a valid key (recorded output, never edited):
@@ -432,17 +470,17 @@ a stack trace or the key.
 
 This step opens the real table camera and contacts the Meta Model API
 over the network, so only the human runs it, never CI and never an
-agent. `muse_qc/vision_sam.py` takes one frame with
-`open_table_camera()` from `muse_qc/camera_top.py` (or a saved image
+agent. `muse_qc/vision/vision_sam.py` takes one frame with
+`open_table_camera()` from `muse_qc/vision/camera_top.py` (or a saved image
 with `--image`), sends it with a noun phrase to SAM 3.1 through the
 `openai` SDK in one `POST /v1/responses` call, parses the box records
 from the output text (masks are ignored) and draws the boxes with IDs
 onto a copy of the image. The key is read with
-`muse_qc/model_check.py` and never printed. From the project root:
+`muse_qc/checks/model_check.py` and never printed. From the project root:
 
 ```bash
-uv run python -m muse_qc.vision_sam "small part"
-uv run python -m muse_qc.vision_sam "small part" --image path.png
+uv run python -m muse_qc.vision.vision_sam "small part"
+uv run python -m muse_qc.vision.vision_sam "small part" --image path.png
 ```
 
 Result format: one line per box with id, box corners, center in
@@ -453,7 +491,7 @@ calibration file) or `unavailable (<reason>)`, and each box line ends
 with `table_mm=(x, y)` in millimeters (the box center mapped onto the
 table frame on the same frame sent to SAM) when the mapping works.
 
-Real human run of `uv run python -m muse_qc.vision_sam "small part"`
+Real human run of `uv run python -m muse_qc.vision.vision_sam "small part"`
 on the live table camera with two connectors and one white 25 mm cube
 on the table, all four table markers visible (recorded output, never
 edited):
@@ -480,8 +518,8 @@ prints a stack trace or the key.
 ## 17. Forward kinematics check (by hand only)
 
 This step opens the real arm bus for reading, so only the human
-runs it, never CI and never an agent. `muse_qc/fk_check.py` reads
-the six joint angles once through `muse_qc/arm.py` (read only: it
+runs it, never CI and never an agent. `muse_qc/bringup/fk_check.py` reads
+the six joint angles once through `muse_qc/arm/arm.py` (read only: it
 never enables, zeroes or sends anything), computes the `end_link`
 pose with the Seeed SDK kinematics (meters and radians in the SDK,
 printed as mm and degrees) and projects the finger-tip position
@@ -492,7 +530,7 @@ from the joint 6 mounting face to the finger tips, minus the
 From the project root:
 
 ```bash
-uv run python -m muse_qc.fk_check
+uv run python -m muse_qc.bringup.fk_check
 ```
 
 Expected result: one line per joint with the angle in degrees, one
@@ -531,8 +569,8 @@ tip: x=+286.5 y=-20.1 z=+198.8 mm (offset 30 mm along tool axis)
 
 ## 18. First arm motion (by hand only)
 
-Program: `muse_qc/first_move.py` with the plan in
-`muse_qc/first_move_plan.py`, checked by
+Program: `muse_qc/bringup/first_move.py` with the plan in
+`muse_qc/bringup/first_move_plan.py`, checked by
 `tests/test_first_move.py` (fake arm only). Default is a dry run:
 connect, read the six joints, set J6_REF from the fresh joint 6
 reading, then check every waypoint through `safety.check_target`
@@ -620,14 +658,14 @@ Safety steps for the human:
 3. Only then `--execute`, confirm with `yes`, watch the arm.
 
 ```bash
-uv run python -m muse_qc.first_move
-uv run python -m muse_qc.first_move --execute
+uv run python -m muse_qc.bringup.first_move
+uv run python -m muse_qc.bringup.first_move --execute
 ```
 
 ## 19. Arm camera test (by hand only)
 
 This step opens the real arm camera, so only the human runs it, never CI
-and never an agent. `muse_qc/camera_arm.py` finds the color stream of
+and never an agent. `muse_qc/vision/camera_arm.py` finds the color stream of
 the Orbbec Gemini 305 on the gripper by USB vendor and product ID
 (2bc5:0840) plus USB interface 4 (`find_arm_color_node` in the same
 module: the interface directory behind the `device` link must carry
@@ -640,7 +678,7 @@ The Orbbec SDK is not used and is not a dependency. From the project
 root:
 
 ```bash
-uv run python -m muse_qc.camera_arm
+uv run python -m muse_qc.vision.camera_arm
 ```
 
 Expected result: one new file `recordings/armcam_<YYYYmmdd_HHMMSS>.png`
@@ -664,10 +702,10 @@ The last line is the shell exit code.
 ## 20. Count levers on an arm camera image (by hand only)
 
 This step contacts the Meta Model API, so only the human runs it,
-never CI and never an agent. `muse_qc/count_clips.py` works in two
+never CI and never an agent. `muse_qc/inspection/count_clips.py` works in two
 steps on a saved arm camera image (for example from section 19).
 First it sends the full image with `PART_PROMPT` ("small part") to
-SAM 3.1 through the `muse_qc/vision_sam.py` request code, ignores
+SAM 3.1 through the `muse_qc/vision/vision_sam.py` request code, ignores
 boxes in the gripper zone (box center y at or above
 `GRIPPER_ZONE_Y` = 380 px; the gripper is fixed in the arm camera
 image) and picks the remaining box with the highest confidence at
@@ -692,14 +730,14 @@ levers), and saves two annotated copies under one timestamp:
 box and `levers: N`) and
 `recordings/count_<YYYYmmdd_HHMMSS>_crop.png` (enlarged crop with
 the lever boxes), checking both write results. With `--image`,
-`muse_qc/vision_sam.py` skips the table mapping and prints
+`muse_qc/vision/vision_sam.py` skips the table mapping and prints
 `table mapping: skipped (image file)`. The API key comes only from
 the existing `.env` loading code and is never printed. From the
 project root:
 
 ```bash
-uv run python -m muse_qc.count_clips --image recordings/armcam_test.png
-uv run python -m muse_qc.count_clips --image recordings/armcam_test.png --prompt "brown bar"
+uv run python -m muse_qc.inspection.count_clips --image recordings/armcam_test.png
+uv run python -m muse_qc.inspection.count_clips --image recordings/armcam_test.png --prompt "brown bar"
 ```
 
 `--prompt` overrides only the lever prompt; the part prompt is
@@ -709,11 +747,11 @@ always `PART_PROMPT`. With `--expect-target` only the part near
 does, so a saved gripper image can be re-checked the same way:
 
 ```bash
-uv run python -m muse_qc.count_clips --image recordings/armcam_test.png --expect-target
+uv run python -m muse_qc.inspection.count_clips --image recordings/armcam_test.png --expect-target
 ```
 
 All values above are constants at the top of
-`muse_qc/count_clips.py`.
+`muse_qc/inspection/count_clips.py`.
 
 Exit codes: 0 done, 1 image not readable (or the crop or an
 annotated copy cannot be written), 2 API error (missing key or
@@ -787,10 +825,10 @@ The page showed "parts inspected: 2, good: 1, bad: 1" with the BAD card first an
 ## 22. Target pose dry run (by hand only)
 
 This step turns a part position in table millimeters (as printed by
-`muse_qc/vision_sam.py`, table frame of `muse_qc/table_coords.py`:
+`muse_qc/vision/vision_sam.py`, table frame of `muse_qc/vision/table_coords.py`:
 origin at the center of marker 0, +x towards marker 1, +y towards
 marker 2 away from the arm) into an arm pose with the gripper tip
-straight above the part at a hover height. `muse_qc/target_pose.py`
+straight above the part at a hover height. `muse_qc/arm/target_pose.py`
 converts the table target to the arm base frame (joint 1 axis at
 table (495.9, 22.7) mm from the human tape measurement of
 2026-10-28), places `end_link` 30 mm above the tip with the tool
@@ -804,14 +842,14 @@ is enabled, nothing is sent, and the module offers no motion flag.
 From the project root, offline first (needs no hardware):
 
 ```bash
-uv run python -m muse_qc.target_pose --table-mm 495.9 322.7 --start home
+uv run python -m muse_qc.arm.target_pose --table-mm 495.9 322.7 --start home
 ```
 
 Then with the arm power supply on (still no motion, reads the
-current joints once through the read-only `muse_qc/arm.py`):
+current joints once through the read-only `muse_qc/arm/arm.py`):
 
 ```bash
-uv run python -m muse_qc.target_pose --table-mm 495.9 322.7 --start arm
+uv run python -m muse_qc.arm.target_pose --table-mm 495.9 322.7 --start arm
 ```
 
 Exit codes: 0 plan ok, 1 unreachable or a waypoint rejected,
@@ -843,11 +881,11 @@ exit 0
 
 ## 23. Hover move (by hand only)
 
-Program: `muse_qc/hover_move.py`, checked by
+Program: `muse_qc/bringup/hover_move.py`, checked by
 `tests/test_hover_move.py` (fake arm only). It moves the gripper
 tip from the current rest pose to the hover pose above a table
-target (the same pose `muse_qc/target_pose.py` already solves and
-checks: table frame of `muse_qc/table_coords.py`, IK seeded with
+target (the same pose `muse_qc/arm/target_pose.py` already solves and
+checks: table frame of `muse_qc/vision/table_coords.py`, IK seeded with
 the start joints), holds it for 2 s, ramps back to the rest
 reading clamped into its URDF limits, holds it for 1 s, and only
 then lets `first_move` disable the motors. The arm is never
@@ -869,8 +907,8 @@ Safety steps for the human:
    then disables; the arm can drop.
 
 ```bash
-uv run python -m muse_qc.hover_move --table-mm 495.9 322.7
-uv run python -m muse_qc.hover_move --table-mm 495.9 322.7 --execute
+uv run python -m muse_qc.bringup.hover_move --table-mm 495.9 322.7
+uv run python -m muse_qc.bringup.hover_move --table-mm 495.9 322.7 --execute
 ```
 
 Recorded output (--execute, 2026-10-28, arm power supply on, hand on the power supply switch, nothing on the table; per-waypoint lines cut, recorded output is never edited):
@@ -899,24 +937,24 @@ In this first run joint 4 moved in small steps and joint 5 jittered slightly; th
 
 In a second run the human measured the tip at about 65 mm above the table for an FK hover of 100 mm; until this is explained, no target below 100 mm FK hover. Further measurements on 2026-10-28 located the error between joint 3 and joint 4 (about 5 deg at the hover pose); see docs/DEVLOG.md. The correction below fixes it. After the motion, `--execute` prints three `hold ...` lines showing the commanded hold joints, the measured hold joints and the measured tip position in mm.
 
-Arm tip correction (`muse_qc/arm_calibration.py`, checked by `tests/test_arm_calibration.py`): from the human hold measurements of 2026-10-28 (docs/DEVLOG.md) the code corrects three small errors, so a planned target lands where the real tip goes. The base sits 5 mm lower (`BASE_Z_MM = -5.0`), the gripper reaches 190 mm from the end of motor 6 (tip offset beyond end_link derived from the model, 155.39 mm), and joint 3 gets `true_q3 = reported_q3 + k * q3` with `k = -0.0556` (ratio form, fit RMS 5.45 mm; load form RMS 6.76 mm). `first_move_plan.real_tip_m` returns this corrected tip, so every `safety.check_target` sees the real height above the table. `target_pose.solve_hover` iterates the existing IK (`solve_corrected`: solve nominal, shift by the corrected error, stop below 0.5 mm or after 10 iterations), and `target_pose.run` plus `hover_move` print one extra `corrected tip table mm: ... (iterations n)` line. The 80 mm hover floor in `hover_move` stays. On 2026-10-28 the human verified the correction at (495.9, 322.7) and (495.9, 242.7) at 100 mm: both measured 100 mm (docs/DEVLOG.md). Heights below 100 mm are not verified yet. The nominal 150 mm hover at (495.9, 322.7) is unreachable once corrected (joint 4 limit).
+Arm tip correction (`muse_qc/arm/arm_calibration.py`, checked by `tests/test_arm_calibration.py`): from the human hold measurements of 2026-10-28 (docs/DEVLOG.md) the code corrects three small errors, so a planned target lands where the real tip goes. The base sits 5 mm lower (`BASE_Z_MM = -5.0`), the gripper reaches 190 mm from the end of motor 6 (tip offset beyond end_link derived from the model, 155.39 mm), and joint 3 gets `true_q3 = reported_q3 + k * q3` with `k = -0.0556` (ratio form, fit RMS 5.45 mm; load form RMS 6.76 mm). `first_move_plan.real_tip_m` returns this corrected tip, so every `safety.check_target` sees the real height above the table. `target_pose.solve_hover` iterates the existing IK (`solve_corrected`: solve nominal, shift by the corrected error, stop below 0.5 mm or after 10 iterations), and `target_pose.run` plus `hover_move` print one extra `corrected tip table mm: ... (iterations n)` line. The 80 mm hover floor in `hover_move` stays. On 2026-10-28 the human verified the correction at (495.9, 322.7) and (495.9, 242.7) at 100 mm: both measured 100 mm (docs/DEVLOG.md). Heights below 100 mm are not verified yet. The nominal 150 mm hover at (495.9, 322.7) is unreachable once corrected (joint 4 limit).
 
 ## 24. Gripper touch sensors (by hand only)
 
 The gripper is pre-existing hardware: Fin-Ray fingers on the reBot
 gripper jaws with four magnet-plus-magnetometer sensors (L1, L2 left,
 R1, R2 right), read by a Raspberry Pi Pico over USB serial. Only the
-reader (`muse_qc/gripper.py`, checked by `tests/test_gripper.py`) is
+reader (`muse_qc/gripper/gripper.py`, checked by `tests/test_gripper.py`) is
 new in this hackathon; hardware and firmware are not part of it. No
 firmware code is used, only the documented serial line protocol, so
 this MIT repository stays clear of the gripper project's GPL-3.0 code.
 
 Run (human only, moves nothing; the tool never commands the arm;
-the reader is `muse_qc/gripper.py`, the watch CLI moved to
-`muse_qc/gripper_watch.py` so the reader stays at or below 300 lines):
+the reader is `muse_qc/gripper/gripper.py`, the watch CLI moved to
+`muse_qc/gripper/gripper_watch.py` so the reader stays at or below 300 lines):
 
 ```bash
-uv run python -m muse_qc.gripper --watch 10
+uv run python -m muse_qc.gripper.gripper --watch 10
 ```
 
 What happens: the Pico is matched by USB vendor ID 2e8a (never by
@@ -962,7 +1000,7 @@ max magnitude uT: L1=7782.0 L2=10365.0 R1=8277.0 R2=7601.0
 ## 25. Gripper motor direction test (by hand only)
 
 This step moves the gripper motor, so only the human runs it, never CI
-and never an agent. `muse_qc/gripper_motor.py` (checked by
+and never an agent. `muse_qc/gripper/gripper_motor.py` (checked by
 `tests/test_gripper_motor.py`, fake SDK only) needs `--delta-deg D`
 with D between -20 and +20 deg and not 0; anything else is an argparse
 error (exit 2) before anything connects. No gripper-project code is
@@ -971,18 +1009,18 @@ used, only the SDK motor protocol.
 Dry run first (connects, reads, moves nothing):
 
 ```bash
-uv run python -m muse_qc.gripper_motor --delta-deg 10
+uv run python -m muse_qc.gripper.gripper_motor --delta-deg 10
 ```
 
 It prints the six arm joints and the gripper reading through
-`muse_qc/arm.py`, the plan (ramp out at 5 deg/s, hold 2 s, ramp back,
+`muse_qc/arm/arm.py`, the plan (ramp out at 5 deg/s, hold 2 s, ramp back,
 hold 1 s at 100 Hz) and the expectation: 0 deg = closed, more negative
 = more open, about 0.32 mm total jaw opening per motor degree, so
 +10 deg should close the jaws by about 3 mm. Then, with the hand on
 the power supply switch and nothing between the jaws:
 
 ```bash
-uv run python -m muse_qc.gripper_motor --delta-deg 10 --execute
+uv run python -m muse_qc.gripper.gripper_motor --delta-deg 10 --execute
 ```
 
 After the human types `yes`, the arm and gripper groups switch to
@@ -1008,11 +1046,11 @@ plan sign must be flipped before any grasp code is built on it.
 ## 26. First grip with touch feedback (by hand only)
 
 This step closes the jaws onto a part the human holds, so only the
-human runs it, never CI and never an agent. `muse_qc/gripper_grip.py`
+human runs it, never CI and never an agent. `muse_qc/gripper/gripper_grip.py`
 (checked by `tests/test_gripper_grip.py`, fake SDK and fake serial
-only; the loop lives in the shared `muse_qc/gripper_stream.py`, which
+only; the loop lives in the shared `muse_qc/gripper/gripper_stream.py`, which
 also hosts the `GripperStream` moved over from
-`muse_qc/gripper_motor.py` so that module stays at or below 300
+`muse_qc/gripper/gripper_motor.py` so that module stays at or below 300
 lines) needs `--open-mm W` with W between 20 and 50 mm (default 40),
 `--squeeze-deg S` with S between 0 and 5 deg (default 2), and
 `--speed-deg-s V` with V between 2 and 15 deg/s (default 15);
@@ -1039,14 +1077,14 @@ Dry run first (connects, reads arm and gripper, opens the touch
 sensor, moves nothing):
 
 ```bash
-uv run python -m muse_qc.gripper_grip --open-mm 40
+uv run python -m muse_qc.gripper.gripper_grip --open-mm 40
 ```
 
 Then, with the arm resting on its support and the hand on the power
 supply switch:
 
 ```bash
-uv run python -m muse_qc.gripper_grip --open-mm 40 --execute
+uv run python -m muse_qc.gripper.gripper_grip --open-mm 40 --execute
 ```
 
 After the human types `yes`, the gripper ramps open to the open width
@@ -1078,9 +1116,9 @@ above) and reaches FURTHER OUT than commanded, and the reach error
 grows with the distance.
 
 Method: the human placed the white 25 mm cube, the table camera
-measured it (`python -m muse_qc.vision_sam "white cube"` gives
+measured it (`python -m muse_qc.vision.vision_sam "white cube"` gives
 table_mm A), the arm hovered at 100 mm over A
-(`python -m muse_qc.hover_move --table-mm A --hold-s 30 --execute`),
+(`python -m muse_qc.bringup.hover_move --table-mm A --hold-s 30 --execute`),
 the human slid the cube exactly under the center between the finger
 tips while the arm held, and after the return the camera measured the
 cube again (table_mm B). B is where the real tip was when commanded
@@ -1095,14 +1133,14 @@ Data (table mm):
 | P2 | (505.0, 348.7) | (491.6, 371.8) |
 | P3 | (690.4, 307.6) | (698.2, 333.4) |
 
-`muse_qc/xy_correction.py` (140 lines) models this in base polar
+`muse_qc/arm/xy_correction.py` (140 lines) models this in base polar
 coordinates: real_angle = cmd_angle + YAW_DEG, real_r = cmd_r plus a
 radial error R_ERR linear in cmd_r. YAW_DEG is the mean of the three
 yaw errors; R_ERR is the least-squares line over the three radial
 errors. Outside the fitted radius range R_ERR holds the end value
 and never extrapolates. `correct_base_target_mm` inverts the model,
 so commanding its output puts the real tip on the part. Offline fit
-report (`python -m muse_qc.xy_correction`):
+report (`python -m muse_qc.arm.xy_correction`):
 
 ```text
 yaw: YAW_DEG=1.94 deg (mean of +2.25, +2.30, +1.25)
@@ -1122,7 +1160,7 @@ the uncorrected target for A/B tests. Covered by
 ## 28. First pick with the arm (by hand only)
 
 One part (connector, 17 mm wide, 14.5 mm high) lies flat on the table
-at a table position the human got from `python -m muse_qc.vision_sam`.
+at a table position the human got from `python -m muse_qc.vision.vision_sam`.
 The arm hovers 100 mm over it, opens the gripper, lowers the tip
 slowly while watching the finger sensors, closes until the left and
 right fingers report contact, lifts the part to the hover height,
@@ -1130,14 +1168,14 @@ holds, puts it back down, opens, lifts and returns to rest. Only the
 human runs it, never CI and never an agent.
 
 Three modules share the work (`tests/test_pick.py`, fake SDK, fake
-sensor and fake IK only): `muse_qc/pick_plan.py` builds the labeled
+sensor and fake IK only): `muse_qc/pick/pick_plan.py` builds the labeled
 arm waypoint plan (trapezoid hover ramp at the CLI speed with
 the CLI accel plus a 0.5 s hover settle, 1 mm ladder fast at
 40 mm/s above the slow zone and 20 mm/s near the part, lift slow
 for the first 10 mm then fast, put-down 2 mm higher, fast raise,
 trapezoid return ramp plus 1 s settle, all at 100 Hz),
-`muse_qc/pick_loop.py` flies it in one control loop, and
-`muse_qc/pick_test.py` is the CLI. The trapezoid ramps start and
+`muse_qc/pick/pick_loop.py` flies it in one control loop, and
+`muse_qc/pick/pick_test.py` is the CLI. The trapezoid ramps start and
 stop smoothly instead of jumping to full speed, and the 0.5 s
 hover settle lets the joints rest after the ramp before the tip
 dives; both soften the visible tip swing, which happens behind
@@ -1146,7 +1184,7 @@ the motor encoders and no gain can see. The gripper opens to
 open) instead of in a separate phase afterwards, at 40 deg/s;
 closing runs at 40 deg/s until the jaw width reaches 22.0 mm,
 then at the old 15 deg/s until contact, so contact detection and
-the squeeze behave exactly as before (`muse_qc/grip_speed.py`;
+the squeeze behave exactly as before (`muse_qc/gripper/grip_speed.py`;
 the 22.0 mm switch sits just above the 17 x 20.5 mm part). The
 gripper POS_VEL vlim runs at 25 % of the config value
 (0.75 rad/s, about 43 deg/s) so the fast rate fits; the arm vlim
@@ -1188,10 +1226,10 @@ test.
 Order, with the hand on the power supply switch:
 
 ```bash
-uv run python -m muse_qc.pick_test --table-mm X Y
-uv run python -m muse_qc.pick_test --table-mm X Y --no-grip --grip-z-mm 40 --execute
-uv run python -m muse_qc.pick_test --table-mm X Y --no-grip --grip-z-mm 20 --execute
-uv run python -m muse_qc.pick_test --table-mm X Y --execute
+uv run python -m muse_qc.pick.pick_test --table-mm X Y
+uv run python -m muse_qc.pick.pick_test --table-mm X Y --no-grip --grip-z-mm 40 --execute
+uv run python -m muse_qc.pick.pick_test --table-mm X Y --no-grip --grip-z-mm 20 --execute
+uv run python -m muse_qc.pick.pick_test --table-mm X Y --execute
 ```
 
 The height correction is verified only at 100 mm so far, hence the
@@ -1234,7 +1272,7 @@ The dry run prints the MIT gains plus one gravity block each for the
 hover pose, the grip pose and the drop pose:
 
 ```bash
-uv run python -m muse_qc.pick_test --table-mm 500 335 --inspect --arm-mode mit-ff
+uv run python -m muse_qc.pick.pick_test --table-mm 500 335 --inspect --arm-mode mit-ff
 ```
 
 Human result 2026-10-30: with the position trim a mit-ff hold at
@@ -1257,7 +1295,7 @@ reliably, but not the grey/orange connector parts (about 25 px wide,
 low contrast on light wood): on 2026-10-29 the phrases "small part",
 "connector", "terminal block", "electrical connector" and "object"
 all returned 0 boxes on the zoomed 640 px crop, while "grey object"
-confirmed the part. `muse_qc/find_parts.py` therefore works in two
+confirmed the part. `muse_qc/vision/find_parts.py` therefore works in two
 steps: it compares the frame with a reference photo of the empty
 table (arm in its rest pose) and takes every new blob as a candidate,
 then sends a zoomed crop around each candidate to SAM 3.1 to confirm
@@ -1268,9 +1306,9 @@ API over the network).
 Order, from the project root:
 
 ```bash
-uv run python -m muse_qc.find_parts --save-empty
-uv run python -m muse_qc.find_parts --no-sam
-uv run python -m muse_qc.find_parts
+uv run python -m muse_qc.vision.find_parts --save-empty
+uv run python -m muse_qc.vision.find_parts --no-sam
+uv run python -m muse_qc.vision.find_parts
 ```
 
 First store the reference with the table empty and the arm in its
@@ -1339,7 +1377,7 @@ close, and external contours; a blob counts only when its area
 (through the marker scale) is between 150 and 3000 mm2 and its
 center maps inside the table rectangle (0 to 990 mm in x, 0 to
 540 mm in y). The table position uses the same calibration and
-marker homography as `muse_qc/vision_sam.py`, and the key handling
+marker homography as `muse_qc/vision/vision_sam.py`, and the key handling
 and error messages match it (the key is never printed).
 
 Take a new reference with `--save-empty` whenever the light or the
@@ -1355,7 +1393,7 @@ and 2026-10-29, also during the x/y measurements). The arm still
 reaches its commanded joints within about 0.2 deg on average, so
 this looks like a limit cycle of the motor position loop (integral
 term plus friction/backlash on the small 4310 motors), not a
-planning error. `muse_qc/hold_test.py` measures it: it flies the
+planning error. `muse_qc/bringup/hold_test.py` measures it: it flies the
 `hover_move` plan (100 mm over the corrected target, same safety
 checks per cycle, same 5 deg/s ramp, return to rest and settle,
 disable in finally), reads all six joints every cycle while
@@ -1366,8 +1404,8 @@ samples as `recordings/hold_<YYYYmmdd_HHMMSS>.csv`. Only the human
 runs it, never CI and never an agent. From the project root:
 
 ```bash
-uv run python -m muse_qc.hold_test --table-mm X Y --hold-s 20
-uv run python -m muse_qc.hold_test --table-mm X Y --hold-s 20 --gains soft --execute
+uv run python -m muse_qc.bringup.hold_test --table-mm X Y --hold-s 20
+uv run python -m muse_qc.bringup.hold_test --table-mm X Y --hold-s 20 --gains soft --execute
 ```
 
 `--hold-s` takes 5 to 60 s (default 20); anything else is an
@@ -1376,7 +1414,7 @@ argparse error (exit 2) before anything connects. The dry run
 nothing. With `--execute` the human confirms with `yes`, then the
 arm holds the hover pose for the given time.
 
-`--gains soft` was the first A/B candidate: `muse_qc/arm_gains.py`
+`--gains soft` was the first A/B candidate: `muse_qc/arm/arm_gains.py`
 keeps the position integral off (pos_ki 0.0) and lowers pos_kp by
 30 % for joints 4 and 5 only (70 to 49, 60 to 42; velocity loop
 unchanged). The 2026-10-29 A/B (same point, first `--gains
@@ -1411,7 +1449,7 @@ frequency any more) with no buzzing; with the gentle hand push
 the numbers mostly show how far the hand pushed (not
 repeatable) and the joints came back exactly (see
 docs/DEVLOG.md). Vel2 is therefore the best profile so far and
-is now the default of `muse_qc/pick_test.py`; `hold_test` keeps
+is now the default of `muse_qc/pick/pick_test.py`; `hold_test` keeps
 `default` so A/B runs stay explicit.
 
 `--gains vel3` is the next A/B candidate (vel_kp x3.0 for joints
@@ -1428,7 +1466,7 @@ The soft gains live only in a runtime copy:
 `write_runtime_yaml` copies the SDK hardware yaml into a
 temporary directory (never into the repo, never into the SDK
 package) and `make_arm` passes it as `RebotArm(hw_yaml=...)`;
-`--gains` exists on `muse_qc/pick_test.py` too (default
+`--gains` exists on `muse_qc/pick/pick_test.py` too (default
 `vel2`, same describe lines). The SDK file stays untouched,
 and a normal run restores the default gains by itself: the SDK
 writes vel_kp/vel_ki/pos_kp/pos_ki into the Damiao registers 25
@@ -1437,7 +1475,7 @@ to 28 on every `mode_pos_vel` call from the loaded yaml values.
 `--hold-mode mit-ff` is the second A/B candidate after vel2: the
 whole run (start, hover, hold, return, settle) uses the SDK MIT
 interface with gravity feed-forward instead of the POS_VEL loop
-(`muse_qc/mit_hold.py`). Every arm command is `send_mit(q, vel=0,
+(`muse_qc/arm/mit_hold.py`). Every arm command is `send_mit(q, vel=0,
 kp, kd, tau)` with the DM config gains (joints 1-3 kp 120 kd 8,
 joints 4-6 kp 18 kd 2, from `config/rebotarm_dm.yaml` in the SDK
 checkout) and `tau = 1.0 * g(q)` from the SDK
@@ -1456,15 +1494,15 @@ per joint in N*m, so the human checks values and signs before
 moving. Check first without moving:
 
 ```bash
-uv run python -m muse_qc.hold_test --table-mm 506.4 338.1 --hold-s 20 --gains vel2 --hold-mode mit-ff
+uv run python -m muse_qc.bringup.hold_test --table-mm 506.4 338.1 --hold-s 20 --gains vel2 --hold-mode mit-ff
 ```
 
 The comparison run is one human hardware run per mode, same
 point, same gains, 20 s hold each:
 
 ```bash
-uv run python -m muse_qc.hold_test --table-mm 506.4 338.1 --hold-s 20 --gains vel2 --hold-mode mit-ff --execute
-uv run python -m muse_qc.hold_test --table-mm 506.4 338.1 --hold-s 20 --gains vel2 --hold-mode posvel --execute
+uv run python -m muse_qc.bringup.hold_test --table-mm 506.4 338.1 --hold-s 20 --gains vel2 --hold-mode mit-ff --execute
+uv run python -m muse_qc.bringup.hold_test --table-mm 506.4 338.1 --hold-s 20 --gains vel2 --hold-mode posvel --execute
 ```
 
 Recorded runs (2026-10-30, same point 506.4 338.1, `--gains vel2`, 20 s hold each; recorded output, never edited):
@@ -1511,19 +1549,19 @@ commanded tip z) next to the tip line. First candidate against the
 joint 3 offset above:
 
 ```bash
-uv run python -m muse_qc.hold_test --table-mm 506.4 338.1 --hold-s 20 --gains vel2 --hold-mode mit-ff --tau-scale 1.0 1.0 1.4 1.0 1.0 1.0
+uv run python -m muse_qc.bringup.hold_test --table-mm 506.4 338.1 --hold-s 20 --gains vel2 --hold-mode mit-ff --tau-scale 1.0 1.0 1.4 1.0 1.0 1.0
 ```
 
-Recorded runs (2026-10-30, same point 506.4 338.1, `--gains vel2`, 20 s hold each; recorded output, never edited; see docs/DEVLOG.md for the full blocks): with `--tau-scale 1.0 1.0 1.4 1.0 1.0 1.0` the tip z offset was -2.0 mm (joint 3 mean err +0.23 deg); with `--tau-scale 1.0 1.05 1.45 0.25 1.0 1.0` the hold was close but joint 4 sagged on the way back and the tracking guard stopped the run after 5203 of 6229 cycles, so a joint 4 factor below 1.0 only fits the hover pose; with `--tau-scale 1.0 1.05 1.45 1.0 1.0 1.0` the tip z offset was +0.0 mm with no joint 4 swing and no guard stop. The last set is now the default `TAU_SCALE` in `muse_qc/mit_hold.py` (joint 4 stays at 1.0 because its model error depends on the pose), so the dry run prints the scaled lines by default.
+Recorded runs (2026-10-30, same point 506.4 338.1, `--gains vel2`, 20 s hold each; recorded output, never edited; see docs/DEVLOG.md for the full blocks): with `--tau-scale 1.0 1.0 1.4 1.0 1.0 1.0` the tip z offset was -2.0 mm (joint 3 mean err +0.23 deg); with `--tau-scale 1.0 1.05 1.45 0.25 1.0 1.0` the hold was close but joint 4 sagged on the way back and the tracking guard stopped the run after 5203 of 6229 cycles, so a joint 4 factor below 1.0 only fits the hover pose; with `--tau-scale 1.0 1.05 1.45 1.0 1.0 1.0` the tip z offset was +0.0 mm with no joint 4 swing and no guard stop. The last set is now the default `TAU_SCALE` in `muse_qc/arm/mit_hold.py` (joint 4 stays at 1.0 because its model error depends on the pose), so the dry run prints the scaled lines by default.
 
 ## 31. Sorting into the good and bad box
 
 Two open boxes (100 x 100 mm, 70 mm high, open on top) stand on the
 table: the left box takes good parts, the right box takes rejects.
 Their centers (top rim in the camera view) were measured by the
-human with `python -m muse_qc.vision_sam "box"` as table mm
+human with `python -m muse_qc.vision.vision_sam "box"` as table mm
 (376.4, 423.8) for good and (675.4, 420.3) for bad.
-`muse_qc/drop_plan.py` keeps these positions plus the nominal
+`muse_qc/pick/drop_plan.py` keeps these positions plus the nominal
 170 mm IK tip height and the 30 deg tool tilt. The arm correction
 puts the real tip about 40 mm lower, about 130 mm above the table,
 i.e. about 60 mm above the rim; below 110 mm real tip height
@@ -1556,9 +1594,9 @@ the part dropped into the box, contacts left mean it is still held
 Order, with the hand on the power supply switch:
 
 ```bash
-uv run python -m muse_qc.find_parts --save-empty
-uv run python -m muse_qc.pick_test --table-mm X Y --drop good
-uv run python -m muse_qc.pick_test --table-mm X Y --drop good --execute
+uv run python -m muse_qc.vision.find_parts --save-empty
+uv run python -m muse_qc.pick.pick_test --table-mm X Y --drop good
+uv run python -m muse_qc.pick.pick_test --table-mm X Y --drop good --execute
 ```
 
 Save the empty-table reference again with the boxes in place first:
@@ -1582,8 +1620,8 @@ never printed).
 Order, with the hand on the power supply switch:
 
 ```bash
-uv run python -m muse_qc.pick_test --table-mm 513.3 340.7 --inspect
-uv run python -m muse_qc.pick_test --table-mm 513.3 340.7 --inspect --execute
+uv run python -m muse_qc.pick.pick_test --table-mm 513.3 340.7 --inspect
+uv run python -m muse_qc.pick.pick_test --table-mm 513.3 340.7 --inspect --execute
 ```
 
 Recorded lines (2026-10-29, good part, from the earlier hover
@@ -1656,7 +1694,7 @@ second camera open, so the inspect timeout is 60 s; the arm
 keeps holding the part meanwhile.
 
 A saved image can be rechecked by hand with
-`uv run python -m muse_qc.count_retry --image <file>` (not yet
+`uv run python -m muse_qc.inspection.count_retry --image <file>` (not yet
 run on hardware): it always uses --expect-target behavior,
 never grabs a fresh frame, and prints one line per attempt
 ("attempt N: prompt P scale S margin M levers L") plus
@@ -1664,7 +1702,7 @@ never grabs a fresh frame, and prints one line per attempt
 
 ## 33. Agent loop with Muse Spark (by hand only)
 
-`muse_qc/agent.py` runs the quality inspection cell on its own
+`muse_qc/agent/agent.py` runs the quality inspection cell on its own
 through Meta Muse Spark (model `muse-spark-1.3`, Responses API,
 tool calling): the model decides which tool to call next; our code
 only executes the tools and enforces safety. The model never sends
@@ -1672,7 +1710,7 @@ coordinates and never moves the arm directly: positions always
 come from our own latest scan (the model only passes part IDs),
 and every motion goes through the `pick_test --inspect --execute`
 path with its safety checks. Each sort runs as its own
-`python -m muse_qc.pick_test` child process, so the operating
+`python -m muse_qc.pick.pick_test` child process, so the operating
 system frees the serial port when the sort exits. The pick
 confirmation is passed through only after the human typed "yes"
 once for the whole run.
@@ -1733,7 +1771,7 @@ uv run python -m muse_qc.agent --execute
 
 `--execute` asks once `Type yes to let the agent move the arm:`
 and only `yes` starts; anything else moves nothing. The Responses
-API function-calling format in `muse_qc/agent.py` was confirmed by the human runs on 2026-10-29 and 2026-10-30 (see DEVLOG). Every response item is converted
+API function-calling format in `muse_qc/agent/agent.py` was confirmed by the human runs on 2026-10-29 and 2026-10-30 (see DEVLOG). Every response item is converted
 to a plain dict and sent back for the next call, including
 reasoning items with their encrypted content (the transcript
 holds no reasoning blobs). Only the human runs it, never CI
@@ -1743,7 +1781,7 @@ and never an agent.
 
 The human places parts at any angle; later the arm should turn
 joint 6 so it grips every part the same way as a straight part.
-`muse_qc/part_angle.py` measures the lever direction first,
+`muse_qc/vision/part_angle.py` measures the lever direction first,
 vision only (moves nothing): the precise angle comes from the
 part outline (`minAreaRect` of the diff-mask blob contour), and
 a stripe cue inside the part only picks which of the two
@@ -1769,7 +1807,7 @@ first, then the stripe cue, then the long outline side when its
 aspect ratio reaches `FALLBACK_ASPECT_MIN` = 1.1, else the
 direction is unknown.
 
-`muse_qc/find_parts.py` prints the direction on each unskipped
+`muse_qc/vision/find_parts.py` prints the direction on each unskipped
 part line (`lever_deg=NN.N (levers|slot|outline)`, or
 `lever_deg=? (reason)` when unknown, for example
 `lever_deg=? (bars unclear)`), with `--no-sam` and `--image`
@@ -1777,8 +1815,8 @@ too, so the human can test on saved images and live without
 SAM cost:
 
 ```bash
-uv run python -m muse_qc.find_parts --no-sam
-uv run python -m muse_qc.find_parts --image recordings/frame.png --no-sam
+uv run python -m muse_qc.vision.find_parts --no-sam
+uv run python -m muse_qc.vision.find_parts --image recordings/frame.png --no-sam
 ```
 
 First hardware run 2026-10-30 (see docs/DEVLOG.md): the old
@@ -1791,7 +1829,7 @@ parts the lever-end and edge gradients can push the stripe cue
 past `MIN_STRENGTH` in the wrong direction (see docs/DEVLOG.md
 2026-10-30 ~13:30), while the slot was right on all three parts.
 Since 2026-10-31 the slot long axis is tried before that
-(`muse_qc/slot_axis.py`: dark V at most 60 inside the filled
+(`muse_qc/vision/slot_axis.py`: dark V at most 60 inside the filled
 contour, 8-connected components of 5 to 40 px with elongation
 1.6 to 4.5, nearest the part center; long axis + 90 deg is the
 lever estimate, the agreeing outline direction within 15 deg
@@ -1803,7 +1841,7 @@ elongation limit.
 
 ## 35. Grip yaw from the lever direction (run on hardware 2026-10-30)
 
-`muse_qc/grip_yaw.py` turns the `lever_deg` of section 34 into a
+`muse_qc/pick/grip_yaw.py` turns the `lever_deg` of section 34 into a
 grip yaw offset: the lever direction is mapped into the arm base
 frame (`table_to_base_mm` on the part center and center plus the
 unit lever direction), compared with the radial yaw
@@ -1811,7 +1849,7 @@ unit lever direction), compared with the radial yaw
 [-90, 90), so a 180 deg turn of the part does not matter. The
 offset is clamped to +/- `MAX_GRIP_YAW_DEG` = 70 (joint 6 camera
 cable; `safety.check_target` still checks every waypoint against
-the 75 deg J6 limit). `muse_qc/pick_test.py` takes it as
+the 75 deg J6 limit). `muse_qc/pick/pick_test.py` takes it as
 `--lever-deg DEG` (0 to 180, optional; without it nothing
 changes): the dry run prints
 `grip yaw: lever NN.N deg, offset +NN.N deg` (plus ` (clamped)`
@@ -1822,12 +1860,12 @@ scan to `real_sort`, which adds `--lever-deg` to the `pick_test`
 child command only when it is known. Dry run for the human:
 
 ```bash
-uv run python -m muse_qc.pick_test --table-mm 643.9 297.2 --lever-deg 31.9 --inspect
+uv run python -m muse_qc.pick.pick_test --table-mm 643.9 297.2 --lever-deg 31.9 --inspect
 ```
 
 ## 36. Live page (run on hardware 2026-10-30)
 
-`muse_qc/live_page.py` (`LivePage`, 256 lines) shows the agent
+`muse_qc/agent/live_page.py` (`LivePage`, 256 lines) shows the agent
 run while it happens, for the human watching and for the demo
 video. It keeps the run state (status, counters, latest table
 image, part list, sorted part cards newest first, last 15
@@ -1841,7 +1879,7 @@ text is html-escaped and image paths are relative to the page
 folder (as in `report.py`); the GOOD/BAD badges reuse
 `report._badge`. A failed write prints one short
 `live page: <error>` line and the run goes on.
-`muse_qc/agent.py` (399 lines) takes `live=None`: when given,
+`muse_qc/agent/agent.py` (399 lines) takes `live=None`: when given,
 every printed line also goes to `live.line`, the status reads
 "scanning the table" / "sorting part N" / "writing the report"
 before each tool call, `live.scan` follows a successful scan,
@@ -1870,7 +1908,7 @@ order in plain words; with `--chat`, `main` asks
 non-empty line continues the same run with that line as a new
 user message (same history, same `RunState`, same limits and
 safety; the `yes` confirmation is asked only once at the start).
-The chat logic lives in `muse_qc/agent_chat.py` (the transcript
+The chat logic lives in `muse_qc/agent/agent_chat.py` (the transcript
 writer moved there from `agent.py` to keep it within 400 lines).
 Each human order and the final summary go through the console
 output, hence onto the live page. The tools and their refusals
@@ -1895,7 +1933,7 @@ joint 6 to one fixed angle and holds there while the main
 thread inspects, so every part is seen under the same light
 against the same background; both drop branches then start
 from the station instead of the lift top. The constants live
-in `muse_qc/inspect_station.py`: `STATION_TABLE_MM` =
+in `muse_qc/pick/inspect_station.py`: `STATION_TABLE_MM` =
 (235.0, 150.0) table mm (human chosen 2026-10-30, about 290 mm
 from the joint 1 axis), `STATION_TIP_Z_MM` = the hover height
 (100 mm), `STATION_J6_DEG` = 0.0 (absolute joint 6 angle, the
@@ -1908,25 +1946,25 @@ above the table). Dry run first, then one part with the
 hand on the power supply switch:
 
 ```bash
-uv run python -m muse_qc.pick_test --table-mm X Y --inspect --station
-uv run python -m muse_qc.pick_test --table-mm X Y --inspect --station --execute
+uv run python -m muse_qc.pick.pick_test --table-mm X Y --inspect --station
+uv run python -m muse_qc.pick.pick_test --table-mm X Y --inspect --station --execute
 ```
 
 The dry run prints
 `station: table mm (235.0, 150.0), tip z 100.0 mm, joint 6 +0.0 deg`
 plus the to-station length in the segments line. Only the
 human runs it, never CI and never an agent.
-To tune the joint 6 angle without editing code, pass `--station-j6 DEG` together with `--station` (refused without it); the dry run then prints the angle actually used, and the angle that looks best is written into `STATION_J6_DEG` in `muse_qc/inspect_station.py`:
+To tune the joint 6 angle without editing code, pass `--station-j6 DEG` together with `--station` (refused without it); the dry run then prints the angle actually used, and the angle that looks best is written into `STATION_J6_DEG` in `muse_qc/pick/inspect_station.py`:
 
 ```bash
-uv run python -m muse_qc.pick_test --table-mm X Y --lever-deg L --inspect --station --station-j6 15 --execute
+uv run python -m muse_qc.pick.pick_test --table-mm X Y --lever-deg L --inspect --station --station-j6 15 --execute
 ```
 
 ## Safety notes
 
 Read-only review of the SDK file
 `reBotArm_control_py/actuator/rebotarm.py` (SDK clone at
-`~/meta-hackathon/seeed-sdk`) and of `muse_qc/arm.py`. No hardware was touched.
+`~/meta-hackathon/seeed-sdk`) and of `muse_qc/arm/arm.py`. No hardware was touched.
 
 - The constructor `RebotArm.__init__` (`rebotarm.py:529-550`) starts no
   thread and sends nothing. It only loads the config, stores channel,
@@ -1947,7 +1985,7 @@ Read-only review of the SDK file
 - `get_positions()` (`rebotarm.py:465-485`) sends only explicit feedback
   request frames plus receive-queue polling (`_request_feedback`,
   `rebotarm.py:456-463`; `_poll_feedback`, `rebotarm.py:445-454`). It
-  starts no thread and commands no motion. This is the path `muse_qc/arm.py`
+  starts no thread and commands no motion. This is the path `muse_qc/arm/arm.py`
   uses for `read_joints()` and `read_gripper()`.
 - `disconnect()` (`rebotarm.py:738-750`) stops the control loop
   (`stop_control_loop`, `rebotarm.py:816-820`), then calls
@@ -1956,7 +1994,7 @@ Read-only review of the SDK file
   (`shutdown()` / `close()`, `rebotarm.py:744-747`). After
   `disable_all()` the motors no longer hold position, so the arm can sag
   under its own weight.
-- The `muse_qc/arm.py` wrapper adds no thread and no bus traffic of its own:
+- The `muse_qc/arm/arm.py` wrapper adds no thread and no bus traffic of its own:
   `Arm.__init__` only stores the factory,
   `Arm.connect` only calls `sdk.connect()`, and
   `Arm.disconnect` only calls `sdk.disconnect()`.

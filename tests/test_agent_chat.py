@@ -11,9 +11,9 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-import muse_qc.agent as agent_mod
-from muse_qc import agent_tools
-from muse_qc.agent import main
+import muse_qc.agent.agent as agent_mod
+from muse_qc.agent import agent_tools
+from muse_qc.agent.agent import main
 
 SECRET = "fake-test-key-abc123"
 

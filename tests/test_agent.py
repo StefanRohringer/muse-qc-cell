@@ -16,9 +16,9 @@ from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
-import muse_qc.agent as agent_mod
-from muse_qc import agent_tools
-from muse_qc.agent import main, run_agent
+import muse_qc.agent.agent as agent_mod
+from muse_qc.agent import agent_tools
+from muse_qc.agent.agent import main, run_agent
 
 SECRET = "fake-test-key-abc123"
 P0 = [500.0, 360.0]
@@ -591,7 +591,7 @@ def test_find_parts_main_output_unchanged(monkeypatch, tmp_path, capsys):
     import cv2
     import numpy
 
-    import muse_qc.find_parts as find_parts
+    import muse_qc.vision.find_parts as find_parts
 
     width, height = 640, 480
     rng = numpy.random.default_rng(7)
@@ -748,7 +748,7 @@ def test_real_sort_child_streams_and_parses(capsys):
 
     result = agent_tools.real_sort([478.7, 344.7], popen_factory=factory)
     cmd, proc = made[0]
-    assert cmd[:3] == [sys.executable, "-m", "muse_qc.pick_test"]
+    assert cmd[:3] == [sys.executable, "-m", "muse_qc.pick.pick_test"]
     assert cmd[cmd.index("--table-mm") + 1:][:2] == ["478.7", "344.7"]
     assert "--inspect" in cmd and "--execute" in cmd
     assert proc.stdin.written == ["yes\n"]
@@ -965,7 +965,7 @@ def test_missed_grip_expires_whole_scan(tmp_path):
 
 
 def test_fake_table_run_ends_with_expected_counts(tmp_path):
-    from muse_qc.agent_tools import FakeTable
+    from muse_qc.agent.agent_tools import FakeTable
 
     fake = FakeTable()
     script = [

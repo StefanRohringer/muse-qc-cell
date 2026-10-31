@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from muse_qc import hold_test, hover_move
-from muse_qc.first_move_plan import LOOP_RATE_HZ
-from muse_qc.hold_test import HoldStream, hold_lines, swing_hz
+from muse_qc.bringup import hold_test, hover_move
+from muse_qc.bringup.first_move_plan import LOOP_RATE_HZ
+from muse_qc.bringup.hold_test import HoldStream, hold_lines, swing_hz
 
 REST_DEG = [-3.33, 0.69, -1.45, 2.72, 0.91, -3.97]
 GOAL_DEG = [-5.0, -97.0, -82.0, 75.0, 1.0, -4.0]

@@ -1213,3 +1213,4 @@ Result: 9 of 9 gripped on the first try, every part counted (no "levers 0", no "
 ![good part with 3 closed levers at the station](media/inspect_good_3_levers.png)
 ![bad part with the right lever open at the station](media/inspect_bad_right_lever_open.png)
 ![bad part with the middle lever open at the station](media/inspect_bad_middle_lever_open.png)
+- Restructure only, no behaviour change: the flat modules of muse_qc/ moved into subpackages (agent/, vision/, inspection/, arm/, gripper/, pick/, checks/, bringup/). Commands before this entry use the old flat names, see the table in docs/SETUP.md.

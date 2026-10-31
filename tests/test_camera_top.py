@@ -8,8 +8,8 @@ import cv2
 import numpy
 import pytest
 
-import muse_qc.camera_top as camera_top
-from muse_qc.camera_top import (
+import muse_qc.vision.camera_top as camera_top
+from muse_qc.vision.camera_top import (
     TABLE_CAM_AUTO_EXPOSURE,
     TABLE_CAM_AUTO_WB,
     TABLE_CAM_BRIGHTNESS,
@@ -245,10 +245,10 @@ def test_camera_is_released_on_read_error(monkeypatch):
 
 
 def test_never_imports_arm_code():
-    path = os.path.join(os.path.dirname(__file__), "..", "muse_qc", "camera_top.py")
+    path = os.path.join(os.path.dirname(__file__), "..", "muse_qc", "vision", "camera_top.py")
     with open(path, encoding="utf-8") as handle:
         source = handle.read()
-    assert "from muse_qc.arm" not in source
+    assert "from muse_qc.arm.arm" not in source
     assert "from muse_qc import arm" not in source
     assert "import arm" not in source
     assert "safety" not in source

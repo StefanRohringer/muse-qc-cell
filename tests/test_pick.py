@@ -11,9 +11,10 @@ import time
 
 import pytest
 
-from muse_qc import pick_loop, pick_plan, pick_test, safety
-from muse_qc.first_move_plan import LOOP_RATE_HZ
-from muse_qc.gripper_grip import CLOSED_DEG, width_to_deg
+from muse_qc.pick import pick_loop, pick_plan, pick_test
+from muse_qc.arm import safety
+from muse_qc.bringup.first_move_plan import LOOP_RATE_HZ
+from muse_qc.gripper.gripper_grip import CLOSED_DEG, width_to_deg
 
 TABLE = (495.9, 322.7)
 REST = [-3.33, -99.0, -79.0, 74.0, 0.91, -3.97]
@@ -355,7 +356,7 @@ def test_pick_plan_segments_counts_and_flags():
 
 
 def test_pick_plan_lift_mirrors_lower_and_return_settles():
-    from muse_qc.first_move_plan import SETTLE_HOLD_CYCLES, clamp_to_limits
+    from muse_qc.bringup.first_move_plan import SETTLE_HOLD_CYCLES, clamp_to_limits
     built = _built()
     plan, ranges = built["plan"], built["ranges"]
     lower = [wp for seg, wp, _ in plan[ranges["lower"][0]:ranges["lower"][1]]]
@@ -842,7 +843,7 @@ def test_gains_explicit_default_calls_factory_without_args():
 
 
 def test_hover_ramp_smooth_start_stop_and_capped():
-    from muse_qc.pick_plan import FREE_STEP_DEG, SETTLE_AT_HOVER_CYCLES
+    from muse_qc.pick.pick_plan import FREE_STEP_DEG, SETTLE_AT_HOVER_CYCLES
     built = _built()
     plan, ranges = built["plan"], built["ranges"]
     low, high = ranges["hover"]
@@ -861,7 +862,7 @@ def test_hover_ramp_smooth_start_stop_and_capped():
 
 
 def test_lower_fast_above_slow_zone_and_slow_below():
-    from muse_qc.pick_plan import SLOW_ZONE_MM
+    from muse_qc.pick.pick_plan import SLOW_ZONE_MM
     built = _built()
     plan, ranges = built["plan"], built["ranges"]
     low, high = ranges["lower"]
@@ -882,7 +883,7 @@ def test_lower_fast_above_slow_zone_and_slow_below():
 
 
 def test_lift_slow_watch_then_fast():
-    from muse_qc.pick_plan import LIFT_SLOW_MM
+    from muse_qc.pick.pick_plan import LIFT_SLOW_MM
     built = _built()
     plan, ranges = built["plan"], built["ranges"]
     low, high = ranges["lift"]
@@ -896,7 +897,7 @@ def test_lift_slow_watch_then_fast():
 
 
 def test_contact_in_fast_lower_stops_within_one_cycle_and_climbs():
-    from muse_qc.pick_plan import SLOW_ZONE_MM
+    from muse_qc.pick.pick_plan import SLOW_ZONE_MM
     built = _built()
     hover, catchup, _ = _cycle_counts(built)
     stop_at = hover + catchup + 5  # still in the fast part of lower
@@ -1039,7 +1040,7 @@ def test_80_160_passes_real_chained_safety():
 
 
 def test_grip_speed_profile():
-    from muse_qc import grip_speed
+    from muse_qc.gripper import grip_speed
     assert grip_speed.OPEN_STEP_DEG == pytest.approx(0.4)
     assert grip_speed.FAST_CLOSE_STEP_DEG == pytest.approx(0.4)
     assert grip_speed.SLOW_CLOSE_STEP_DEG == pytest.approx(0.15)
@@ -1077,7 +1078,7 @@ def test_gripper_opens_at_fast_rate():
 
 
 def test_closing_fast_above_22mm_then_slow():
-    from muse_qc.gripper_grip import deg_to_width
+    from muse_qc.gripper.gripper_grip import deg_to_width
     sdk = FakeSdk()
     code, _, _ = _run(sdk, lambda n: "-")  # missed grip: closes fully
     assert code == 0

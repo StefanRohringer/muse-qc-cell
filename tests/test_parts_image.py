@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy
 
-from muse_qc.parts_image import CROP_MARGIN_PX, crop_to_markers
+from muse_qc.vision.parts_image import CROP_MARGIN_PX, crop_to_markers
 
 
 def _markers(boxes):

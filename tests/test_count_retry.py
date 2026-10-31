@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import cv2
 import numpy
 
-from muse_qc import count_clips, count_retry, inspect_step
+from muse_qc.inspection import count_clips, count_retry, inspect_step
 
 SECRET = "[REDACTED]"
 

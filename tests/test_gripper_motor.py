@@ -6,8 +6,9 @@ import math
 
 import pytest
 
-from muse_qc import gripper_motor, safety
-from muse_qc.first_move_plan import (
+from muse_qc.gripper import gripper_motor
+from muse_qc.arm import safety
+from muse_qc.bringup.first_move_plan import (
     HOLD_CYCLES,
     LOOP_RATE_HZ,
     SEG_BACK,
@@ -16,8 +17,8 @@ from muse_qc.first_move_plan import (
     SEG_SETTLE,
     SETTLE_HOLD_CYCLES,
 )
-from muse_qc.gripper_motor import build_gripper_plan
-from muse_qc.first_move_plan import clamp_to_limits
+from muse_qc.gripper.gripper_motor import build_gripper_plan
+from muse_qc.bringup.first_move_plan import clamp_to_limits
 
 REST_DEG = [-3.33, -1.58, -1.45, 2.72, 0.91, -3.97]
 REST_TIP_M = (0.2865, -0.0201, 0.1988)
@@ -354,7 +355,7 @@ def test_hold_clamps_real_rest_above_limit():
 def test_source_avoids_homing_primitives():
     from pathlib import Path
 
-    text = Path("muse_qc/gripper_motor.py").read_text(encoding="utf-8")
+    text = Path("muse_qc/gripper/gripper_motor.py").read_text(encoding="utf-8")
     # The docstring names RebotArmEndPose only to document why its
     # open/close direction must be confirmed on the real arm; the code
     # itself must never home, zero or stop the arm this way.

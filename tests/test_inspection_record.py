@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import numpy
 
-import muse_qc.count_clips as count_clips
+import muse_qc.inspection.count_clips as count_clips
 from muse_qc.inspection.record import build_record, load_records, write_record
 
 SECRET = "[REDACTED]"

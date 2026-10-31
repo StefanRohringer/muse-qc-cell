@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from muse_qc.usb_devices import (
+from muse_qc.checks.usb_devices import (
     ARM_USB_PID,
     ARM_USB_VID,
     TABLE_CAM_USB_PID,
@@ -80,7 +80,7 @@ def test_entry_without_device_link_is_skipped(tmp_path):
 
 def test_never_opens_a_serial_port(tmp_path):
     _make_tty(tmp_path, "ttyACM0", "2e88", "4603")
-    path = os.path.join(os.path.dirname(__file__), "..", "muse_qc", "usb_devices.py")
+    path = os.path.join(os.path.dirname(__file__), "..", "muse_qc", "checks", "usb_devices.py")
     with open(path, encoding="utf-8") as handle:
         source = handle.read()
     assert "import serial" not in source

@@ -1,7 +1,7 @@
 """Tests for the grip yaw from the lever direction. Offline, fakes only.
 
-Pure math in muse_qc.grip_yaw, the --lever-deg wiring in
-muse_qc.pick_test (fake solver, stubbed arm read and sensor) and
+Pure math in muse_qc.pick.grip_yaw, the --lever-deg wiring in
+muse_qc.pick.pick_test (fake solver, stubbed arm read and sensor) and
 the --lever-deg flag in agent_tools.real_sort (fake child). No bus,
 no camera, no network.
 """
@@ -12,8 +12,9 @@ import sys
 
 import pytest
 
-from muse_qc import agent_tools, pick_test
-from muse_qc.grip_yaw import MAX_GRIP_YAW_DEG, grip_yaw_offset_deg
+from muse_qc.agent import agent_tools
+from muse_qc.pick import pick_test
+from muse_qc.pick.grip_yaw import MAX_GRIP_YAW_DEG, grip_yaw_offset_deg
 
 STRAIGHT = (495.9, 322.7)  # base (300, 0): radial yaw 0, radial is table +y
 HUMAN_STRAIGHT = (506.1, 346.3)  # human 2026-10-30 straight part
@@ -86,7 +87,7 @@ def _need_sdk_kinematics():
 
 def test_nominal_offset_zero_matches_default():
     _need_sdk_kinematics()
-    from muse_qc.target_pose import _solve_nominal
+    from muse_qc.arm.target_pose import _solve_nominal
 
     seed = [0.0] * 6
     default = _solve_nominal(STRAIGHT, 100.0, seed)
@@ -97,7 +98,7 @@ def test_nominal_offset_zero_matches_default():
 
 def test_nominal_offset_turns_the_tool():
     _need_sdk_kinematics()
-    from muse_qc.target_pose import _solve_nominal
+    from muse_qc.arm.target_pose import _solve_nominal
 
     seed = [0.0] * 6
     plain = _solve_nominal(STRAIGHT, 100.0, seed)
@@ -258,11 +259,11 @@ def test_real_sort_adds_lever_deg_only_when_not_none():
     assert with_lever[with_lever.index("--lever-deg") + 1] == "31.9"
     without = _child_result(None)
     assert "--lever-deg" not in without
-    assert without[:3] == [sys.executable, "-m", "muse_qc.pick_test"]
+    assert without[:3] == [sys.executable, "-m", "muse_qc.pick.pick_test"]
 
 
 def test_run_state_keeps_lever_deg_per_id():
-    from muse_qc.agent_tools import RunState
+    from muse_qc.agent.agent_tools import RunState
 
     state = RunState()
     state.new_scan([[500.0, 360.0], [540.0, 330.0]], [89.8, None])

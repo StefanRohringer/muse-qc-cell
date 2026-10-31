@@ -6,8 +6,8 @@ import ast
 from pathlib import Path
 from types import SimpleNamespace
 
-import muse_qc.model_check as model_check
-from muse_qc.model_check import evaluate, extract_model_ids, read_api_key, run_check
+import muse_qc.checks.model_check as model_check
+from muse_qc.checks.model_check import evaluate, extract_model_ids, read_api_key, run_check
 
 SECRET = "sk-test-secret-never-print-abc123xyz"
 

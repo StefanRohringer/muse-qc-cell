@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-FK_PATH = Path(__file__).resolve().parent.parent / "muse_qc" / "fk_check.py"
+FK_PATH = Path(__file__).resolve().parent.parent / "muse_qc" / "bringup" / "fk_check.py"
 
 FORBIDDEN_CALLS = [
     ".enable",
@@ -34,7 +34,7 @@ def _need_sdk_kinematics():
 
 def test_pose_mm_zero_is_finite_and_tip_is_offset_away():
     _need_sdk_kinematics()
-    from muse_qc.fk_check import TIP_OFFSET_MM, pose_mm, tip_mm
+    from muse_qc.bringup.fk_check import TIP_OFFSET_MM, pose_mm, tip_mm
 
     pose = pose_mm([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     for key in ("x_mm", "y_mm", "z_mm", "roll_deg", "pitch_deg", "yaw_deg"):
@@ -50,7 +50,7 @@ def test_pose_mm_zero_is_finite_and_tip_is_offset_away():
 
 def test_tip_stays_offset_away_from_end_link_off_home():
     _need_sdk_kinematics()
-    from muse_qc.fk_check import TIP_OFFSET_MM, pose_mm, tip_mm
+    from muse_qc.bringup.fk_check import TIP_OFFSET_MM, pose_mm, tip_mm
 
     pose = pose_mm(
         [math.radians(v) for v in (10.0, -20.0, 15.0, 5.0, -10.0, 30.0)]
@@ -65,7 +65,7 @@ def test_tip_stays_offset_away_from_end_link_off_home():
 
 def test_tool_axis_runs_link6_to_end_link_and_spans_155mm():
     _need_sdk_kinematics()
-    from muse_qc.fk_check import TIP_OFFSET_MM, pose_mm, tip_mm
+    from muse_qc.bringup.fk_check import TIP_OFFSET_MM, pose_mm, tip_mm
 
     pose = pose_mm([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     end = (pose["x_mm"], pose["y_mm"], pose["z_mm"])
@@ -80,7 +80,7 @@ def test_tool_axis_runs_link6_to_end_link_and_spans_155mm():
 
 def test_tip_does_not_follow_end_link_z():
     _need_sdk_kinematics()
-    from muse_qc.fk_check import pose_mm, tip_mm
+    from muse_qc.bringup.fk_check import pose_mm, tip_mm
 
     pose = pose_mm([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     end = (pose["x_mm"], pose["y_mm"], pose["z_mm"])
@@ -98,7 +98,7 @@ def test_tip_does_not_follow_end_link_z():
 
 def test_pose_mm_rejects_bad_input():
     _need_sdk_kinematics()
-    from muse_qc.fk_check import pose_mm
+    from muse_qc.bringup.fk_check import pose_mm
 
     with pytest.raises(ValueError):
         pose_mm([0.0, 0.0, 0.0])
@@ -110,5 +110,5 @@ def test_fk_check_never_calls_motion_methods():
     source = FK_PATH.read_text(encoding="utf-8")
     for token in FORBIDDEN_CALLS:
         assert token not in source, token
-    assert "muse_qc.arm" in source
+    assert "muse_qc.arm.arm" in source
     assert "compute_fk" in source or "joint_to_pose" in source

@@ -10,10 +10,10 @@ import cv2
 import numpy
 import pytest
 
-import muse_qc.count_clips as count_clips
-import muse_qc.vision_sam as vision_sam
-from muse_qc.count_clips import count_levers, drop_short_bars, find_part, verdict
-from muse_qc.vision_sam import parse_output_text, run_detection
+import muse_qc.inspection.count_clips as count_clips
+import muse_qc.vision.vision_sam as vision_sam
+from muse_qc.inspection.count_clips import count_levers, drop_short_bars, find_part, verdict
+from muse_qc.vision.vision_sam import parse_output_text, run_detection
 
 SECRET = "[REDACTED]"
 

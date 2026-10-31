@@ -7,8 +7,8 @@ from types import SimpleNamespace
 import cv2
 import numpy
 
-import muse_qc.find_parts as find_parts
-from muse_qc.find_parts import crop_box_to_frame, crop_for_blob, detect_changes
+import muse_qc.vision.find_parts as find_parts
+from muse_qc.vision.find_parts import crop_box_to_frame, crop_for_blob, detect_changes
 
 SECRET = "[REDACTED]"
 WIDTH, HEIGHT = 640, 480
@@ -75,7 +75,7 @@ def _rect_at(table_xy, half=(20, 13)):
     """Filled rect centred on the pixel mapping to table_xy."""
     import numpy
 
-    from muse_qc.table_coords import table_homography
+    from muse_qc.vision.table_coords import table_homography
 
     homography = table_homography(_fake_markers(), None)
     inv = numpy.linalg.inv(numpy.array(homography, dtype=float))
@@ -483,7 +483,7 @@ def _scan_direct(monkeypatch, tmp_path, parts, texts=None, seen=None,
 
 
 def test_known_match_limit_is_10_mm():
-    from muse_qc.known_match import KNOWN_MATCH_MM, match_known
+    from muse_qc.vision.known_match import KNOWN_MATCH_MM, match_known
 
     assert KNOWN_MATCH_MM == 10.0
     assert match_known([{"table_mm": [505.0, 360.0], "confidence": 0.77}],

@@ -8,7 +8,8 @@ it while leaving commanded waypoints untouched.
 
 import pytest
 
-from muse_qc import pick_plan, safety
+from muse_qc.pick import pick_plan
+from muse_qc.arm import safety
 
 REST = [-2.79, 1.10, -1.72, 2.72, 2.44, -1.91]
 TABLE = (495.9, 330.0)

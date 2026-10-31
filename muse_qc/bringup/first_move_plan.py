@@ -1,0 +1,363 @@
+"""Joint-space plan for the first arm motion. Pure, moves nothing.
+
+Builds the waypoint list for muse_qc/first_move.py: ramp from the
+measured rest position to home (all joints zero), joint1 to +5 deg,
+joint1 back to zero, then a hold. Ramps are linear in joint space so
+every step stays within the per-cycle speed budget. Also reads the
+per-joint speed caps from the Seeed SDK config (values only, the SDK
+package itself is located but never imported).
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import math
+import re
+import time
+from pathlib import Path
+
+from muse_qc.arm import arm_calibration, safety
+from muse_qc.bringup.cycle_timing import summarize_ms
+from muse_qc.arm.sdk_config import _scalar
+
+LOOP_RATE_HZ = 100.0
+JOINT_SPEED_DEG_S = 5.0
+STEP_DEG = JOINT_SPEED_DEG_S / LOOP_RATE_HZ  # 0.05 deg per command.
+J1_TEST_DEG = 5.0
+HOLD_S = 2.0
+HOLD_CYCLES = int(HOLD_S * LOOP_RATE_HZ)
+SETTLE_HOLD_S = 1.0
+SETTLE_HOLD_CYCLES = int(SETTLE_HOLD_S * LOOP_RATE_HZ)
+SETTLE_CYCLES = HOLD_CYCLES // 2
+SIM_ZERO_DEG = 1e-6  # Stand-in for exact 0.0 in a chained current state.
+SEG_HOME = "home"  # ramp from the rest reading to home
+SEG_OUT = "out"  # ramp from home to joint1 +5 deg
+SEG_BACK = "back"  # ramp from joint1 +5 deg back to home
+SEG_HOLD = "hold"  # hold home for 2 s
+SEG_SETTLE = "settle"  # ramp home to the clamped rest reading, hold 1 s
+SPEED_FRACTION = 0.1  # Plan speed as a fraction for safety.check_target.
+VLIM_FRACTION = 0.1  # Motor speed caps run at 10 % of the SDK values.
+HOME_DEG = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+ZERO_RETRIES = 5
+ZERO_DELAY_S = 0.2
+
+_PACKAGE_NAME = "reBotArm_control_py"
+_GLOBAL_CONFIG_NAME = "rebotarm.yaml"
+
+
+def _ramp_profile(peak_deg: float, speed_deg_s: float,
+                  accel_deg_s2: float) -> tuple[int, object]:
+    """Trapezoid distance profile for the leading joint move.
+
+    Returns (cycles, distance_at) where distance_at(cycle) gives the
+    travelled distance after that 1/LOOP_RATE_HZ cycle. Accelerate,
+    cruise, decelerate; triangle when the move is short. Total time
+    is about D/v + v/a.
+    """
+    cruise_v = float(speed_deg_s)
+    accel = float(accel_deg_s2)
+    dist = float(peak_deg)
+    if dist <= 0.0:
+        return (1, lambda cycle: dist)
+    ramp_dist = cruise_v * cruise_v / accel  # accel plus decel distance
+    if dist >= ramp_dist:
+        up_s = cruise_v / accel
+        cruise_s = dist / cruise_v - up_s
+        total_s = dist / cruise_v + up_s
+    else:
+        cruise_v = math.sqrt(dist * accel)
+        up_s = cruise_v / accel
+        cruise_s = 0.0
+        total_s = 2.0 * up_s
+
+    def distance_at(cycle: int) -> float:
+        moment = min(float(cycle) / LOOP_RATE_HZ, total_s)
+        if moment < up_s:
+            return 0.5 * accel * moment * moment
+        cruise_end = up_s + cruise_s
+        if moment < cruise_end:
+            return (0.5 * accel * up_s * up_s
+                    + cruise_v * (moment - up_s))
+        rest = total_s - moment
+        return dist - 0.5 * accel * rest * rest
+
+    return (max(1, int(math.ceil(total_s * LOOP_RATE_HZ))), distance_at)
+
+
+def ramp_waypoints(
+    start_deg: object, end_deg: object, speed_deg_s: float = JOINT_SPEED_DEG_S,
+    accel_deg_s2: float | None = None,
+) -> list[tuple[float, ...]]:
+    """Joint-space ramp along a straight line, excluding start, including end.
+
+    Without accel_deg_s2 the ramp is linear with the largest joint
+    move setting the step count, so no joint travels more than
+    speed_deg_s / LOOP_RATE_HZ per step. With accel_deg_s2 the same
+    line is flown with a trapezoidal speed profile in time sampled
+    at LOOP_RATE_HZ (triangle when the move is short): the leading
+    joint never exceeds speed_deg_s, start and stop are smooth, and
+    the last waypoint is exactly the end pose.
+    """
+    speed = float(speed_deg_s)
+    if not math.isfinite(speed) or speed <= 0.0:
+        raise ValueError("speed_deg_s must be a positive number.")
+    if accel_deg_s2 is not None:
+        accel = float(accel_deg_s2)
+        if not math.isfinite(accel) or accel <= 0.0:
+            raise ValueError("accel_deg_s2 must be a positive number.")
+    start = [float(value) for value in start_deg]
+    end = [float(value) for value in end_deg]
+    if len(start) != 6 or len(end) != 6:
+        raise ValueError("Need six joint angles for start and end.")
+    if not all(math.isfinite(v) for v in start + end):
+        raise ValueError("Joint angles must be finite numbers.")
+    peak = max(abs(e - s) for s, e in zip(start, end))
+    if accel_deg_s2 is None:
+        step_deg = speed / LOOP_RATE_HZ
+        steps = max(1, int(math.ceil(peak / step_deg)))
+        return [
+            tuple(s + (e - s) * i / steps for s, e in zip(start, end))
+            for i in range(1, steps + 1)
+        ]
+    if peak <= 0.0:
+        return [tuple(end)]
+    cycles, distance_at = _ramp_profile(peak, speed, float(accel_deg_s2))
+    points = []
+    for cycle in range(1, cycles + 1):
+        fraction = min(distance_at(cycle) / peak, 1.0)
+        points.append(tuple(s + (e - s) * fraction
+                            for s, e in zip(start, end)))
+    points[-1] = tuple(end)
+    return points
+
+
+def clamp_to_limits(
+    start_deg: object, joint_limits: dict[str, tuple[float, float]]
+) -> tuple[float, ...]:
+    """Clamp each joint of the rest reading into its URDF limits."""
+    start = [float(value) for value in start_deg]
+    if len(start) != 6:
+        raise ValueError("Need six joint angles for the start.")
+    clamped = []
+    for name, value in zip(safety.JOINT_NAMES, start):
+        low, high = joint_limits[name]
+        clamped.append(min(high, max(low, value)))
+    return tuple(clamped)
+
+
+def build_plan(
+    start_deg: object, joint_limits: object = None
+) -> list[tuple[str, tuple[float, ...]]]:
+    """Full labelled plan: home, joint1 +5 deg, back, hold, settle.
+
+    Returns (segment, waypoint) pairs. The settle segment ramps from
+    home to the rest reading clamped into its URDF limits, then holds
+    it for 1 s, so the arm rests on its support before disable.
+    """
+    limits = safety.JOINT_LIMITS_DEG if joint_limits is None else joint_limits
+    if limits is None:
+        raise RuntimeError("Joint limits unavailable, cannot build the plan.")
+    start = tuple(float(value) for value in start_deg)
+    if len(start) != 6:
+        raise ValueError("Need six joint angles for the start.")
+    settle = clamp_to_limits(start, limits)
+    middle = (J1_TEST_DEG,) + HOME_DEG[1:]
+    plan = [(SEG_HOME, point) for point in ramp_waypoints(start, HOME_DEG)]
+    plan += [(SEG_OUT, point) for point in ramp_waypoints(HOME_DEG, middle)]
+    plan += [(SEG_BACK, point) for point in ramp_waypoints(middle, HOME_DEG)]
+    plan += [(SEG_HOLD, HOME_DEG)] * HOLD_CYCLES
+    plan += [(SEG_SETTLE, point) for point in ramp_waypoints(HOME_DEG, settle)]
+    plan += [(SEG_SETTLE, settle)] * SETTLE_HOLD_CYCLES
+    return plan
+
+
+def scale_vlim(vlims: object, fraction: float = VLIM_FRACTION) -> list[float]:
+    """Scale SDK speed caps to the given fraction (default 10 %)."""
+    values = [float(value) for value in vlims]
+    if len(values) != 6 or not all(math.isfinite(v) for v in values):
+        raise ValueError("Need six finite SDK speed caps.")
+    if not 0.0 < fraction <= 1.0:
+        raise ValueError("Fraction must be within (0, 1].")
+    return [value * fraction for value in values]
+
+
+def _config_dir(config_dir: object = None) -> Path | None:
+    """Return the SDK config folder (found, never imported)."""
+    if config_dir is not None:
+        base = Path(config_dir)
+        return base if base.is_dir() else None
+    try:
+        spec = importlib.util.find_spec(_PACKAGE_NAME)
+    except (ImportError, AttributeError, ValueError):
+        return None
+    if spec is None:
+        return None
+    package_dir: Path | None = None
+    locations = spec.submodule_search_locations
+    if locations:
+        package_dir = Path(next(iter(locations)))
+    elif spec.origin:
+        package_dir = Path(spec.origin).parent
+    if package_dir is None:
+        return None
+    for candidate in (package_dir.parent / "config", package_dir / "config"):
+        try:
+            if candidate.is_dir():
+                return candidate
+        except OSError:
+            continue
+    return None
+
+
+def read_sdk_vlims(config_dir: object = None) -> list[float] | None:
+    """Return the six arm speed caps from the SDK config, or None.
+
+    Follows config/rebotarm.yaml to the hardware config, reads the
+    arm group joint order and each joint's POS_VEL vlim. Any failure
+    returns None so the caller refuses to move (fail closed).
+    """
+    base = _config_dir(config_dir)
+    if base is None:
+        return None
+    hardware_name = _scalar(base / _GLOBAL_CONFIG_NAME, "hardware_yaml")
+    if not hardware_name:
+        return None
+    hardware_path = (
+        Path(hardware_name)
+        if Path(hardware_name).is_absolute()
+        else base / hardware_name
+    )
+    try:
+        text = hardware_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    arm_match = re.search(r"arm:\s*\n\s*joints:\s*\[([^\]]+)\]", text)
+    if arm_match is None:
+        return None
+    arm_names = [name.strip().strip("\"'") for name in arm_match.group(1).split(",")]
+    if len(arm_names) != 6:
+        return None
+    vlims: dict[str, float] = {}
+    current: str | None = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        name_match = re.match(r"-\s*name:\s*(\S+)", stripped)
+        if name_match is not None:
+            current = name_match.group(1).strip("\"'")
+            continue
+        vlim_match = re.match(r"vlim:\s*([0-9.]+)", stripped)
+        if vlim_match is not None and current is not None:
+            try:
+                vlims[current] = float(vlim_match.group(1))
+            except ValueError:
+                return None
+    try:
+        return [vlims[name] for name in arm_names]
+    except KeyError:
+        return None
+
+
+def read_current_deg(group: object) -> list[float]:
+    """Read six joint angles in degrees, retrying empty 0.0 feedback."""
+    positions: list[float] = []
+    for _ in range(ZERO_RETRIES):
+        positions = [float(value) for value in group.get_positions()]
+        if len(positions) == 6 and not any(v == 0.0 for v in positions):
+            break
+        time.sleep(ZERO_DELAY_S)
+    if len(positions) != 6:
+        raise RuntimeError(f"Expected six joint angles, got {len(positions)}.")
+    if any(v == 0.0 for v in positions):
+        raise RuntimeError("No joint feedback: readings stay at 0.0.")
+    return [math.degrees(value) for value in positions]
+
+
+def real_tip_m(joints_deg: object) -> tuple[float, float, float]:
+    """Corrected tool tip in metres for six joint angles in degrees."""
+    tip = arm_calibration.tip_table_mm([float(v) for v in joints_deg])
+    return (tip[0] / 1000.0, tip[1] / 1000.0, tip[2] / 1000.0)
+
+
+def validate_and_print(
+    group: object,
+    plan: list[tuple[str, tuple[float, ...]]],
+    check_fn: object = None,
+    tip_fn: object = None,
+    out: object = print,
+) -> tuple[bool, list[tuple[float, float, float]]]:
+    """Check every waypoint; print one line each.
+
+    One live read per waypoint keeps reading_age_ms and the
+    dry-run cycle work timing fresh. The first waypoint is checked
+    against that live reading; every later waypoint is checked
+    against the previous waypoint as the current state (its joints
+    and its tip via tip_of), so the step limits see the planned
+    motion, not the distance from the rest pose. Same idea as
+    target_pose.check_plan. Exact 0.0 in a chained waypoint is a
+    command (home, or the clamped rest), not missing feedback, so
+    it is nudged to SIM_ZERO_DEG for the current-state validity
+    rule that rejects 0.0 live reads; steps and limits are
+    unaffected at that size.
+    """
+    check = safety.check_target if check_fn is None else check_fn
+    tip_of = real_tip_m if tip_fn is None else tip_fn
+    target_tips: list[tuple[float, float, float]] = []
+    all_ok = True
+    work_ms: list[float] = []
+    previous: tuple[float, ...] | None = None
+    for index, (segment, waypoint) in enumerate(plan):
+        work_start = time.perf_counter()
+        read_start = time.monotonic()
+        current_deg = read_current_deg(group)
+        age_ms = (time.monotonic() - read_start) * 1000.0
+        target_tip = tip_of(list(waypoint))
+        target_tips.append(target_tip)
+        if previous is None:
+            base_joints = tuple(current_deg)
+            base_tip = tip_of(current_deg)
+        else:
+            base_joints = tuple(
+                SIM_ZERO_DEG if value == 0.0 else value for value in previous
+            )
+            base_tip = tip_of(list(previous))
+        target = safety.Target(
+            x=target_tip[0], y=target_tip[1], z=target_tip[2],
+            joints_deg=tuple(waypoint), speed=SPEED_FRACTION,
+        )
+        current = safety.CurrentState(
+            x=base_tip[0], y=base_tip[1], z=base_tip[2],
+            joints_deg=base_joints, reading_age_ms=age_ms,
+        )
+        result = check(target, current)
+        work_ms.append((time.perf_counter() - work_start) * 1000.0)
+        if not result.get("ok"):
+            all_ok = False
+        tip_mm = (target_tip[0] * 1000.0, target_tip[1] * 1000.0,
+                  target_tip[2] * 1000.0)
+        out(format_line(index, len(plan), waypoint, tip_mm, result, segment))
+        previous = tuple(waypoint)
+    if work_ms:
+        out(f"cycle work (dry run): {summarize_ms(work_ms)}"
+            f" over {len(work_ms)} waypoints")
+    else:
+        out("cycle work (dry run): no samples")
+    return all_ok, target_tips
+
+
+def format_line(
+    index: int,
+    count: int,
+    joints_deg: tuple[float, ...] | list[float],
+    tip_mm: tuple[float, float, float] | None,
+    result: dict,
+    segment: str = "",
+) -> str:
+    """One printable line per waypoint for the human log."""
+    joints = " ".join(f"{v:+.2f}" for v in joints_deg)
+    tip = "unknown" if tip_mm is None else f"{tip_mm[0]:+.1f} {tip_mm[1]:+.1f} {tip_mm[2]:+.1f}"
+    if result.get("ok"):
+        verdict = "ok"
+    else:
+        verdict = f"REFUSED {result.get('reason')}"
+    tag = f"[{segment}] " if segment else ""
+    return f"wp {index + 1:03d}/{count:03d} {tag}joints=[{joints}] tip=[{tip}] {verdict}"

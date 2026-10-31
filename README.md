@@ -101,9 +101,9 @@ flowchart TD
 
 | Meta tool | Where | What it does |
 | --- | --- | --- |
-| Muse Spark (`muse-spark-1.3`, Meta Model API) | `muse_qc/agent.py` | The agent: reads the order, picks the next tool, reacts to failures and rescans, writes the summary |
-| SAM 3.1 (`sam-3.1`, Meta Model API) | `muse_qc/find_parts.py`, `muse_qc/vision_sam.py` | Confirms parts on the table image |
-| SAM 3.1 | `muse_qc/count_clips.py`, `muse_qc/count_retry.py` | Finds the held part and counts its levers in the close-up |
+| Muse Spark (`muse-spark-1.3`, Meta Model API) | `muse_qc/agent/agent.py` | The agent: reads the order, picks the next tool, reacts to failures and rescans, writes the summary |
+| SAM 3.1 (`sam-3.1`, Meta Model API) | `muse_qc/vision/find_parts.py`, `muse_qc/vision/vision_sam.py` | Confirms parts on the table image |
+| SAM 3.1 | `muse_qc/inspection/count_clips.py`, `muse_qc/inspection/count_retry.py` | Finds the held part and counts its levers in the close-up |
 | Muse Code (powered by Muse Spark) | the whole repository | Wrote all the code, logged task by task in `docs/MUSE_CODE_LOG.md` |
 
 ### A real agent run (excerpt)
@@ -182,7 +182,7 @@ event.
 Prior work, declared and not part of this submission: my Touch-Sensing
 Fin-Ray Gripper (hardware and firmware). I built it before the hackathon,
 and it is listed in the official Seeed reBot-DevArm repository under
-"DIY Soft Finger". New in this hackathon: `muse_qc/gripper.py`, which reads
+"DIY Soft Finger". New in this hackathon: `muse_qc/gripper/gripper.py`, which reads
 the gripper sensors over USB. See `docs/THIRD_PARTY.md`.
 
 ## Run it
@@ -195,9 +195,9 @@ model steps.
 ```bash
 uv sync
 uv run pytest                                     # offline suite, no hardware
-uv run python -m muse_qc.preflight                # human only: USB + SDK checks
-uv run python -m muse_qc.model_check              # human only: Model API check
-uv run python -m muse_qc.find_parts --save-empty  # human only: empty-table reference
+uv run python -m muse_qc.checks.preflight                # human only: USB + SDK checks
+uv run python -m muse_qc.checks.model_check              # human only: Model API check
+uv run python -m muse_qc.vision.find_parts --save-empty  # human only: empty-table reference
 uv run python -m muse_qc.agent                    # real Muse Spark, fake table, no arm
 uv run python -m muse_qc.agent --execute --chat --task "sort all parts"  # human only: real run
 ```
@@ -210,13 +210,14 @@ with its recorded output.
 
 | Path | What |
 | --- | --- |
-| `muse_qc/agent*.py`, `live_page.py` | Muse Spark agent loop, tools, chat orders, live page |
-| `muse_qc/find_parts.py`, `part_angle.py`, `slot_axis.py` | table scan and lever direction |
-| `muse_qc/pick_*.py`, `grip_yaw.py`, `drop_plan.py`, `inspect_station.py` | pick, inspection station, sort |
-| `muse_qc/count_clips.py`, `count_retry.py`, `inspection/` | lever count, records, HTML report |
-| `muse_qc/gripper*.py` | gripper sensors and motor |
-| `muse_qc/safety.py`, `safety_limits.py` | checks before and during every move |
-| `muse_qc/camera_*.py`, `detect_markers.py`, `table_coords.py`, `calibrate_camera.py` | cameras, markers, table millimeters |
+| `muse_qc/agent/` | Muse Spark agent loop, tools, chat orders, live page |
+| `muse_qc/vision/` | cameras, markers, calibration, table scan and lever direction |
+| `muse_qc/inspection/` | lever count, records, HTML report |
+| `muse_qc/arm/` | arm access, safety checks, pose solving |
+| `muse_qc/gripper/` | gripper sensors and motor |
+| `muse_qc/pick/` | pick, inspection station, sort |
+| `muse_qc/checks/` | USB, SDK config and Model API checks |
+| `muse_qc/bringup/` | hand-run arm bringup scripts |
 | `tests/` | offline test suite |
 | `docs/SETUP.md` | every hand-run step with recorded output |
 | `docs/DEVLOG.md` | dated log of every real hardware and API test |

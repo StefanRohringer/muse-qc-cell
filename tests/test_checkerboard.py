@@ -9,7 +9,7 @@ from pathlib import Path
 import cv2
 import numpy
 
-from muse_qc.checkerboard import (
+from muse_qc.vision.checkerboard import (
     CHECKER_INNER_CORNERS,
     CHECKER_SQUARES,
     CHECKER_SQUARE_MM,
@@ -152,20 +152,20 @@ def test_committed_svg_matches_generator():
     committed = (
         Path(__file__).resolve().parent.parent / "docs" / "checkerboard.svg"
     )
-    hint = "run uv run python -m muse_qc.checkerboard and commit the file"
+    hint = "run uv run python -m muse_qc.vision.checkerboard and commit the file"
     assert committed.is_file(), hint
     assert committed.read_text(encoding="utf-8") == build_svg(), hint
 
 
 def test_never_imports_arm_safety_or_sdk_code():
     path = os.path.join(
-        os.path.dirname(__file__), "..", "muse_qc", "checkerboard.py"
+        os.path.dirname(__file__), "..", "muse_qc", "vision", "checkerboard.py"
     )
     with open(path, encoding="utf-8") as handle:
         source = handle.read()
-    assert "from muse_qc.arm" not in source
+    assert "from muse_qc.arm.arm" not in source
     assert "from muse_qc import arm" not in source
-    assert "from muse_qc.safety" not in source
+    assert "from muse_qc.arm.safety" not in source
     assert "from muse_qc import safety" not in source
     assert "import arm" not in source
     assert "import safety" not in source

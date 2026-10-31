@@ -12,8 +12,8 @@ import math
 import cv2
 import numpy
 
-import muse_qc.find_parts as find_parts
-from muse_qc.part_angle import lever_angle_deg
+import muse_qc.vision.find_parts as find_parts
+from muse_qc.vision.part_angle import lever_angle_deg
 
 WIDTH, HEIGHT = 200, 200
 BACKGROUND = (190, 175, 150)

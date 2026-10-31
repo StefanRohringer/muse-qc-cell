@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import math
 
-from muse_qc import hover_move, xy_correction
-from muse_qc.target_pose import base_to_table_mm, table_to_base_mm
+from muse_qc.bringup import hover_move
+from muse_qc.arm import xy_correction
+from muse_qc.arm.target_pose import base_to_table_mm, table_to_base_mm
 
 REVIEWER_YAW_DEG = (2.4, 2.4, 1.35)
 REVIEWER_RADIAL_MM = (18.0, 23.0, 26.0)

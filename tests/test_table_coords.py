@@ -9,9 +9,9 @@ import cv2
 import numpy
 import pytest
 
-import muse_qc.table_coords as table_coords
-from muse_qc.calibrate_camera import save_calibration
-from muse_qc.table_coords import (
+import muse_qc.vision.table_coords as table_coords
+from muse_qc.vision.calibrate_camera import save_calibration
+from muse_qc.vision.table_coords import (
     draw_grid,
     load_table_calibration,
     marker_sides_mm,
@@ -19,7 +19,7 @@ from muse_qc.table_coords import (
     table_homography,
     table_mm_to_pixel,
 )
-from muse_qc.table_markers import (
+from muse_qc.vision.table_markers import (
     TABLE_MARKER_IDS,
     TABLE_MARKER_LAYOUT_MM,
     TABLE_MARKER_SIZE_MM,
@@ -88,7 +88,7 @@ def _frame() -> numpy.ndarray:
 
 def _markers_and_homography():
     """Detect the synthetic frame and return (markers, homography)."""
-    from muse_qc.detect_markers import detect_table_markers
+    from muse_qc.vision.detect_markers import detect_table_markers
 
     markers = detect_table_markers(_frame())
     return markers, table_homography(markers)
@@ -226,7 +226,7 @@ def _ideal_cal_frame() -> numpy.ndarray:
 
 def _distorted_cal_frame() -> numpy.ndarray:
     """Remap the ideal frame through the synthetic distortion."""
-    from muse_qc.calibrate_camera import undistort_points
+    from muse_qc.vision.calibrate_camera import undistort_points
 
     ys, xs = numpy.mgrid[0:CAL_HEIGHT, 0:CAL_WIDTH].astype(numpy.float64)
     raw = numpy.stack([xs.ravel(), ys.ravel()], axis=1)
@@ -242,7 +242,7 @@ def _distorted_cal_frame() -> numpy.ndarray:
 
 def _distorted_markers_and_homographies():
     """Detect the distorted frame, return (markers, raw_H, cal_H, record)."""
-    from muse_qc.detect_markers import detect_table_markers
+    from muse_qc.vision.detect_markers import detect_table_markers
 
     record = _calibration_record()
     markers = detect_table_markers(_distorted_cal_frame())
@@ -269,7 +269,7 @@ def test_centres_map_to_layout_within_1mm_with_calibration():
 
 
 def test_mid_table_point_closer_with_calibration():
-    from muse_qc.calibrate_camera import distort_points
+    from muse_qc.vision.calibrate_camera import distort_points
 
     markers, raw_homography, homography, record = (
         _distorted_markers_and_homographies()
@@ -286,7 +286,7 @@ def test_mid_table_point_closer_with_calibration():
 
 
 def test_round_trip_raw_mm_raw_with_calibration():
-    from muse_qc.calibrate_camera import distort_points
+    from muse_qc.vision.calibrate_camera import distort_points
 
     markers, _, homography, record = _distorted_markers_and_homographies()
     points = [markers[marker_id]["center"] for marker_id in TABLE_MARKER_IDS]
@@ -334,14 +334,14 @@ def test_main_with_calibration_file_uses_it(tmp_path, monkeypatch, capsys):
 
 def test_never_imports_arm_safety_or_sdk_code():
     path = os.path.join(
-        os.path.dirname(__file__), "..", "muse_qc", "table_coords.py"
+        os.path.dirname(__file__), "..", "muse_qc", "vision", "table_coords.py"
     )
     with open(path, encoding="utf-8") as handle:
         source = handle.read()
-    assert "from muse_qc.arm" not in source
+    assert "from muse_qc.arm.arm" not in source
     assert "from muse_qc import arm" not in source
     assert "import arm" not in source
-    assert "from muse_qc.safety" not in source
+    assert "from muse_qc.arm.safety" not in source
     assert "import safety" not in source
     assert "reBotArm" not in source
     assert "motorbridge" not in source

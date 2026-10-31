@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-import muse_qc.gripper as gripper
-import muse_qc.gripper_watch as gripper_watch
-from muse_qc.gripper import (
+import muse_qc.gripper.gripper as gripper
+import muse_qc.gripper.gripper_watch as gripper_watch
+from muse_qc.gripper.gripper import (
     COMMANDS,
     PICO_USB_VID,
     RAW_MODE_UT,
@@ -20,7 +20,7 @@ from muse_qc.gripper import (
     find_pico_port,
     parse_line,
 )
-from muse_qc.gripper_watch import (
+from muse_qc.gripper.gripper_watch import (
     _firmware_version,
     main,
     watch,
@@ -250,7 +250,7 @@ def test_watch_empty_contacts_refused_by_safety(capsys):
 
 
 def test_no_hardware_strings_in_module():
-    text = (Path(__file__).parent.parent / "muse_qc" / "gripper.py").read_text(
+    text = (Path(__file__).parent.parent / "muse_qc" / "gripper" / "gripper.py").read_text(
         encoding="utf-8"
     )
     for banned in ("send_pos_vel", "start_control_loop", ".enable", "--execute", ".env"):

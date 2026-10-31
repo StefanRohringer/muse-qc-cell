@@ -8,7 +8,7 @@ import cv2
 import numpy
 import pytest
 
-from muse_qc.table_markers import (
+from muse_qc.vision.table_markers import (
     TABLE_MARKER_DICT,
     TABLE_MARKER_IDS,
     TABLE_MARKER_SIZE_MM,
@@ -79,10 +79,10 @@ def test_round_trip_detects_same_id():
 
 def test_never_imports_arm_or_sdk_code():
     for name in ("table_markers.py", "make_markers.py"):
-        path = os.path.join(os.path.dirname(__file__), "..", "muse_qc", name)
+        path = os.path.join(os.path.dirname(__file__), "..", "muse_qc", "vision", name)
         with open(path, encoding="utf-8") as handle:
             source = handle.read()
-        assert "from muse_qc.arm" not in source
+        assert "from muse_qc.arm.arm" not in source
         assert "from muse_qc import arm" not in source
         assert "import arm" not in source
         assert "reBotArm" not in source

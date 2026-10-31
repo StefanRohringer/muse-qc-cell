@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-CAL_PATH = Path(__file__).resolve().parent.parent / "muse_qc" / "arm_calibration.py"
+CAL_PATH = Path(__file__).resolve().parent.parent / "muse_qc" / "arm" / "arm_calibration.py"
 
 FORBIDDEN_CALLS = [
     ".enable",
@@ -32,7 +32,7 @@ def _need_sdk_kinematics():
 
 def test_fit_reproduces_stored_constants():
     _need_sdk_kinematics()
-    from muse_qc import arm_calibration as cal
+    from muse_qc.arm import arm_calibration as cal
 
     k, rms_k = cal.fit_ratio()
     assert k == pytest.approx(cal.RATIO_K, abs=0.05)
@@ -46,7 +46,7 @@ def test_fit_reproduces_stored_constants():
 
 def test_fit_report_lists_every_point_with_both_residuals(capsys):
     _need_sdk_kinematics()
-    from muse_qc import arm_calibration as cal
+    from muse_qc.arm import arm_calibration as cal
 
     lines = cal.fit_report_lines()
     assert len(lines) == len(cal.DATA_POINTS) + 2
@@ -61,7 +61,7 @@ def test_fit_report_lists_every_point_with_both_residuals(capsys):
 
 def test_true_joints_applies_ratio_correction():
     _need_sdk_kinematics()
-    from muse_qc import arm_calibration as cal
+    from muse_qc.arm import arm_calibration as cal
 
     true = cal.true_joints_deg(HOVER_A)
     assert true[:2] + true[3:] == pytest.approx(tuple(HOVER_A[:2] + HOVER_A[3:]))
@@ -73,7 +73,7 @@ def test_true_joints_applies_ratio_correction():
 
 def test_tip_table_mm_matches_hand_fit_point():
     _need_sdk_kinematics()
-    from muse_qc import arm_calibration as cal
+    from muse_qc.arm import arm_calibration as cal
 
     assert cal.link_span_mm() == pytest.approx(155.39, abs=0.1)
     assert cal.tip_beyond_end_mm() == pytest.approx(34.61, abs=0.1)
@@ -83,8 +83,8 @@ def test_tip_table_mm_matches_hand_fit_point():
 
 def test_zeroed_correction_matches_old_fk_tip(monkeypatch):
     _need_sdk_kinematics()
-    from muse_qc import arm_calibration as cal
-    from muse_qc import fk_check
+    from muse_qc.arm import arm_calibration as cal
+    from muse_qc.bringup import fk_check
 
     monkeypatch.setattr(cal, "RATIO_K", 0.0)
     monkeypatch.setattr(cal, "LOAD_G", 0.0)
@@ -105,7 +105,7 @@ def test_zeroed_correction_matches_old_fk_tip(monkeypatch):
 
 def test_solve_corrected_converges_at_100mm():
     _need_sdk_kinematics()
-    from muse_qc import arm_calibration as cal
+    from muse_qc.arm import arm_calibration as cal
 
     for base_xy, height in (((300.0, 0.0), 100.0), ((220.0, 0.0), 100.0)):
         solved = cal.solve_corrected(base_xy, height, [0.0] * 6)
@@ -124,7 +124,7 @@ def test_solve_corrected_150mm_fails_cleanly():
     # 0/500 random-seed solves above it). The real arm agrees: the human
     # measured 130 mm for the nominal 150 mm hover on 2026-10-28.
     _need_sdk_kinematics()
-    from muse_qc import arm_calibration as cal
+    from muse_qc.arm import arm_calibration as cal
 
     solved = cal.solve_corrected((300.0, 0.0), 150.0, [0.0] * 6)
     assert solved["ok"] is False
@@ -133,7 +133,7 @@ def test_solve_corrected_150mm_fails_cleanly():
 
 def test_solve_corrected_rejects_bad_input():
     _need_sdk_kinematics()
-    from muse_qc import arm_calibration as cal
+    from muse_qc.arm import arm_calibration as cal
 
     assert cal.solve_corrected((300.0, 0.0), 100.0, [0.0] * 5)["ok"] is False
     far = cal.solve_corrected((300.0, 0.0), 2000.0, [0.0] * 6)
@@ -142,7 +142,7 @@ def test_solve_corrected_rejects_bad_input():
 
 def test_solve_hover_puts_corrected_tip_on_target(capsys):
     _need_sdk_kinematics()
-    from muse_qc.target_pose import base_to_table_mm, run, solve_hover
+    from muse_qc.arm.target_pose import base_to_table_mm, run, solve_hover
 
     solved = solve_hover((495.9, 322.7), 100.0, [0.0] * 6)
     assert solved["ok"] is True

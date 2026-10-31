@@ -12,16 +12,17 @@ import time
 
 import pytest
 
-from muse_qc import drop_plan, pick_loop, pick_plan, pick_test, safety
-from muse_qc.drop_plan import (
+from muse_qc.pick import drop_plan, pick_loop, pick_plan, pick_test
+from muse_qc.arm import safety
+from muse_qc.pick.drop_plan import (
     BOXES_TABLE_MM,
     DROP_TILT_DEG,
     RELEASE_OPEN_MM,
     TRANSIT_FLOOR_MM,
 )
-from muse_qc.first_move_plan import LOOP_RATE_HZ
-from muse_qc.gripper_grip import CLOSED_DEG, width_to_deg
-from muse_qc.target_pose import table_to_base_mm
+from muse_qc.bringup.first_move_plan import LOOP_RATE_HZ
+from muse_qc.gripper.gripper_grip import CLOSED_DEG, width_to_deg
+from muse_qc.arm.target_pose import table_to_base_mm
 
 TABLE = (495.9, 322.7)
 REST = [-3.33, -99.0, -79.0, 74.0, 0.91, -3.97]
@@ -325,7 +326,7 @@ def test_solve_drop_rejects_wrong_axis_tilt(monkeypatch):
                 "link6_x_mm": base[0], "link6_y_mm": base[1],
                 "link6_z_mm": 230.0}
 
-    monkeypatch.setattr("muse_qc.fk_check.pose_mm", fake_pose)
+    monkeypatch.setattr("muse_qc.bringup.fk_check.pose_mm", fake_pose)
     solved = drop_plan.solve_drop(BOXES_TABLE_MM["good"], seed)
     assert solved["ok"] is False
     assert "tilt" in solved["reason"]
@@ -550,8 +551,8 @@ def test_solve_drop_rejects_low_real_tip(monkeypatch):
                 "link6_x_mm": link6[0], "link6_y_mm": link6[1],
                 "link6_z_mm": link6[2]}
 
-    monkeypatch.setattr("muse_qc.fk_check.pose_mm", fake_pose)
-    monkeypatch.setattr("muse_qc.drop_plan.real_tip_m",
+    monkeypatch.setattr("muse_qc.bringup.fk_check.pose_mm", fake_pose)
+    monkeypatch.setattr("muse_qc.pick.drop_plan.real_tip_m",
                         lambda joints_deg: (0.40, 0.12, 0.05))
     solved = drop_plan.solve_drop(BOXES_TABLE_MM["good"], seed)
     assert solved == {"ok": False,
@@ -560,7 +561,7 @@ def test_solve_drop_rejects_low_real_tip(monkeypatch):
 
 def _abort_loop(mid_phase, mid_pos):
     """PickLoop parked mid-drop with a held part, for abort tests."""
-    from muse_qc.pick_loop import PickLoop
+    from muse_qc.pick.pick_loop import PickLoop
 
     built = _built_drop()
     plan, ranges = built["plan"], built["ranges"]

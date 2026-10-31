@@ -6,8 +6,9 @@ import math
 
 import pytest
 
-from muse_qc import first_move, safety
-from muse_qc.first_move_plan import (
+from muse_qc.bringup import first_move
+from muse_qc.arm import safety
+from muse_qc.bringup.first_move_plan import (
     SEG_SETTLE,
     SETTLE_HOLD_CYCLES,
     STEP_DEG,
@@ -152,7 +153,7 @@ def test_dry_run_passes_from_real_rest_position():
 
 
 def test_loop_runs_at_planned_rate_with_caps_on_every_send():
-    from muse_qc.first_move_plan import LOOP_RATE_HZ
+    from muse_qc.bringup.first_move_plan import LOOP_RATE_HZ
 
     arm = FakeArm(REST_DEG)
     result = first_move.execute(arm, input_fn=lambda prompt: "yes",
@@ -358,15 +359,15 @@ def test_scale_vlim_reads_config_not_hardcoded(tmp_path):
 def test_source_avoids_motion_primitives():
     from pathlib import Path
 
-    for name in ("muse_qc/first_move.py", "muse_qc/first_move_plan.py",
-                 "muse_qc/waypoint_stream.py"):
+    for name in ("muse_qc/bringup/first_move.py", "muse_qc/bringup/first_move_plan.py",
+                 "muse_qc/arm/waypoint_stream.py"):
         text = Path(name).read_text(encoding="utf-8")
         for forbidden in ("set_zero", "safe_home", "estop", "RebotArmEndPose"):
             assert forbidden not in text
 
 
 def test_summarize_ms_known_values():
-    from muse_qc.cycle_timing import summarize_ms
+    from muse_qc.bringup.cycle_timing import summarize_ms
 
     assert summarize_ms([]) == "no samples"
     assert summarize_ms([5.0]) == "mean 5.00 ms, p95 5.00 ms, max 5.00 ms"
@@ -394,7 +395,7 @@ def test_dry_run_prints_work_summary():
 def test_execute_prints_work_and_period_summaries():
     import re
 
-    from muse_qc.first_move_plan import LOOP_RATE_HZ
+    from muse_qc.bringup.first_move_plan import LOOP_RATE_HZ
 
     arm = FakeArm(REST_DEG)
     lines = []
@@ -424,7 +425,7 @@ def _drive(stream, sdk, limit=10000):
 
 
 def test_snapshot_defaults_to_none():
-    from muse_qc.waypoint_stream import WaypointStream
+    from muse_qc.arm.waypoint_stream import WaypointStream
 
     group = FakeGroup(REST_DEG)
     tips = [_fake_tip(list(REST_DEG))] * 3
@@ -439,7 +440,7 @@ def test_snapshot_defaults_to_none():
 
 
 def test_snapshot_taken_at_right_index_and_sends_unchanged():
-    from muse_qc.waypoint_stream import WaypointStream
+    from muse_qc.arm.waypoint_stream import WaypointStream
 
     slow = [v * 0.1 for v in VLIMS]
     wp0 = tuple(REST_DEG)

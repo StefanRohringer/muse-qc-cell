@@ -6,7 +6,7 @@ import math
 
 import pytest
 
-from muse_qc.arm import Arm, ArmError, GripperState, JointAngle, JointStateUnavailable, NotConnectedError
+from muse_qc.arm.arm import Arm, ArmError, GripperState, JointAngle, JointStateUnavailable, NotConnectedError
 
 ARM_NAMES = ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6"]
 ARM_POSITIONS = [0.5, -1.0, 0.25, 1.5, -0.75, 2.0]

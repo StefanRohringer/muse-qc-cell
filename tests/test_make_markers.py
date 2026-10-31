@@ -6,7 +6,7 @@ import os
 import xml.etree.ElementTree as ElementTree
 from pathlib import Path
 
-from muse_qc.make_markers import (
+from muse_qc.vision.make_markers import (
     OUTPUT_PATH,
     SCALE_LINE_LENGTH_MM,
     SCALE_LINE_TEXT,
@@ -15,7 +15,7 @@ from muse_qc.make_markers import (
     main,
     write_markers,
 )
-from muse_qc.table_markers import TABLE_MARKER_IDS
+from muse_qc.vision.table_markers import TABLE_MARKER_IDS
 
 SVG_NS = "{http://www.w3.org/2000/svg}"
 
@@ -124,18 +124,18 @@ def test_committed_svg_matches_generator():
     committed = (
         Path(__file__).resolve().parent.parent / "docs" / "table_markers.svg"
     )
-    hint = "run uv run python -m muse_qc.make_markers and commit the file"
+    hint = "run uv run python -m muse_qc.vision.make_markers and commit the file"
     assert committed.is_file(), hint
     assert committed.read_text(encoding="utf-8") == build_svg(), hint
 
 
 def test_never_imports_arm_or_sdk_code():
     path = os.path.join(
-        os.path.dirname(__file__), "..", "muse_qc", "make_markers.py"
+        os.path.dirname(__file__), "..", "muse_qc", "vision", "make_markers.py"
     )
     with open(path, encoding="utf-8") as handle:
         source = handle.read()
-    assert "from muse_qc.arm" not in source
+    assert "from muse_qc.arm.arm" not in source
     assert "from muse_qc import arm" not in source
     assert "import arm" not in source
     assert "reBotArm" not in source

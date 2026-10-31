@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-import muse_qc.arm_gains as arm_gains
-from muse_qc.arm_gains import (
+import muse_qc.arm.arm_gains as arm_gains
+from muse_qc.arm.arm_gains import (
     GAIN_PROFILES,
     describe,
     make_arm,

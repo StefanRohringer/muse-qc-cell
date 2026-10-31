@@ -9,9 +9,9 @@ from types import SimpleNamespace
 import cv2
 import numpy
 
-import muse_qc.vision_sam as vision_sam
-from muse_qc.table_coords import pixel_to_table_mm, table_homography
-from muse_qc.vision_sam import image_to_data_url, parse_output_text, run_detection
+import muse_qc.vision.vision_sam as vision_sam
+from muse_qc.vision.table_coords import pixel_to_table_mm, table_homography
+from muse_qc.vision.vision_sam import image_to_data_url, parse_output_text, run_detection
 
 SECRET = "sk-test-secret-never-print-sam456"
 

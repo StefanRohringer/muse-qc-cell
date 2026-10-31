@@ -11,10 +11,10 @@ import math
 
 import pytest
 
-from muse_qc import inspect_station, pick_loop, pick_plan, pick_test
-from muse_qc.drop_plan import BOXES_TABLE_MM, DROP_TILT_DEG, RELEASE_OPEN_MM
-from muse_qc.first_move_plan import LOOP_RATE_HZ
-from muse_qc.gripper_grip import width_to_deg
+from muse_qc.pick import inspect_station, pick_loop, pick_plan, pick_test
+from muse_qc.pick.drop_plan import BOXES_TABLE_MM, DROP_TILT_DEG, RELEASE_OPEN_MM
+from muse_qc.bringup.first_move_plan import LOOP_RATE_HZ
+from muse_qc.gripper.gripper_grip import width_to_deg
 
 TABLE = (495.9, 322.7)
 REST = [-3.33, -99.0, -79.0, 74.0, 0.91, -3.97]

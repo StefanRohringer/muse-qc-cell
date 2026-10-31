@@ -42,10 +42,8 @@ Built during the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026).
 - Muse Code never reads .env and never prints keys.
 
 ## Layout
-muse_qc/ (safety.py, arm.py, usb_devices.py, sdk_config.py, preflight.py,
-diagnose_joints.py, gripper.py, camera_top.py, table_markers.py,
-make_markers.py, detect_markers.py, table_coords.py, checkerboard.py, capture_calibration.py, calibrate_camera.py, camera_arm.py, vision_sam.py,
-inspection/ (record.py, draw.py, report.py), agent.py, agent_tools.py, find_parts.py, pick_test.py, live_page.py and helpers), tests/, docs/
+muse_qc/ (agent/, vision/, inspection/, arm/, gripper/, pick/, checks/,
+bringup/; one tool per file, max 400 lines per module), tests/, docs/
 
 ## Ground rules for Muse Code
 - Build only what is asked, then stop and report files changed, what was run and limitations.

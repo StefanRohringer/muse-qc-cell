@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from muse_qc.sdk_config import read_sdk_channel
+from muse_qc.arm.sdk_config import read_sdk_channel
 
 
 def _write_config(root, hardware_name, hardware_text):

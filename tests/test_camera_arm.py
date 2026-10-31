@@ -8,8 +8,8 @@ from pathlib import Path
 import cv2
 import numpy
 
-import muse_qc.camera_arm as camera_arm
-from muse_qc.camera_arm import (
+import muse_qc.vision.camera_arm as camera_arm
+from muse_qc.vision.camera_arm import (
     ARM_CAM_HEIGHT,
     ARM_CAM_WIDTH,
     find_arm_color_node,
@@ -217,6 +217,6 @@ def test_main_write_failure_returns_3(monkeypatch, tmp_path):
 
 
 def test_source_has_no_fixed_device_path():
-    source = Path("muse_qc/camera_arm.py").read_text(encoding="utf-8")
+    source = Path("muse_qc/vision/camera_arm.py").read_text(encoding="utf-8")
     assert "2-1:1.4" not in source
     assert "/dev/video6" not in source

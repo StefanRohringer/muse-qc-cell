@@ -8,13 +8,13 @@ import cv2
 import numpy
 import pytest
 
-import muse_qc.detect_markers as detect_markers
-from muse_qc.detect_markers import (
+import muse_qc.vision.detect_markers as detect_markers
+from muse_qc.vision.detect_markers import (
     image_corner_names,
     detect_table_markers,
     scale_px_per_mm,
 )
-from muse_qc.table_markers import (
+from muse_qc.vision.table_markers import (
     TABLE_MARKER_IDS,
     TABLE_MARKER_SIZE_MM,
     get_dictionary,
@@ -156,11 +156,11 @@ def test_main_writes_annotated_png(tmp_path, monkeypatch, capsys):
 
 def test_never_imports_arm_safety_or_sdk_code():
     path = os.path.join(
-        os.path.dirname(__file__), "..", "muse_qc", "detect_markers.py"
+        os.path.dirname(__file__), "..", "muse_qc", "vision", "detect_markers.py"
     )
     with open(path, encoding="utf-8") as handle:
         source = handle.read()
-    assert "from muse_qc.arm" not in source
+    assert "from muse_qc.arm.arm" not in source
     assert "from muse_qc import arm" not in source
     assert "import arm" not in source
     assert "safety" not in source

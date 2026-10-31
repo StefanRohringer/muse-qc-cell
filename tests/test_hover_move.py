@@ -6,8 +6,9 @@ import math
 
 import pytest
 
-from muse_qc import first_move, hover_move, safety
-from muse_qc.first_move_plan import (
+from muse_qc.bringup import first_move, hover_move
+from muse_qc.arm import safety
+from muse_qc.bringup.first_move_plan import (
     HOLD_CYCLES,
     SETTLE_HOLD_CYCLES,
     STEP_DEG,

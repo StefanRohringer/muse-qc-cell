@@ -8,7 +8,7 @@ from pathlib import Path
 import cv2
 import numpy
 
-from muse_qc.vision_sam import draw_boxes
+from muse_qc.vision.vision_sam import draw_boxes
 
 
 def draw_levers(frame: numpy.ndarray, boxes: list[dict], count: int) -> numpy.ndarray:

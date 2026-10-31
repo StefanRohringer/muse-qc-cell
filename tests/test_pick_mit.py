@@ -1,4 +1,4 @@
-"""Tests for pick_test --arm-mode mit-ff (muse_qc.pick_mit).
+"""Tests for pick_test --arm-mode mit-ff (muse_qc.pick.pick_mit).
 
 Offline only: fake SDK groups, fake TouchSensor, fake solve_hover,
 fake gravity. No bus, no serial port, no camera, no network.
@@ -10,10 +10,10 @@ import math
 
 import pytest
 
-from muse_qc import pick_mit, pick_test
-from muse_qc.first_move_plan import LOOP_RATE_HZ
-from muse_qc.gripper_grip import width_to_deg
-from muse_qc.mit_hold import MIT_KD, MIT_KP, TAU_SCALE
+from muse_qc.pick import pick_mit, pick_test
+from muse_qc.bringup.first_move_plan import LOOP_RATE_HZ
+from muse_qc.gripper.gripper_grip import width_to_deg
+from muse_qc.arm.mit_hold import MIT_KD, MIT_KP, TAU_SCALE
 
 TABLE = (495.9, 322.7)
 REST = [-3.33, -99.0, -79.0, 74.0, 0.91, -3.97]
@@ -645,8 +645,8 @@ def test_trim_line_printed_only_in_mitff():
 
 
 def test_maybe_ramp_inserts_checked_micro_steps():
-    from muse_qc.pick_loop import PickLoop
-    from muse_qc.pick_plan import FREE_STEP_DEG
+    from muse_qc.pick.pick_loop import PickLoop
+    from muse_qc.pick.pick_plan import FREE_STEP_DEG
 
     plan = [("hover", tuple(REST), False)] * 4
     tips = [(0.30, 0.0, 0.100)] * 4

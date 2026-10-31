@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-TARGET_PATH = Path(__file__).resolve().parent.parent / "muse_qc" / "target_pose.py"
+TARGET_PATH = Path(__file__).resolve().parent.parent / "muse_qc" / "arm" / "target_pose.py"
 
 FORBIDDEN_IMPORTS = [
     "camera",
@@ -35,26 +35,26 @@ def _need_sdk_kinematics():
 
 
 def test_table_to_base_mm_of_base_point():
-    from muse_qc.target_pose import table_to_base_mm
+    from muse_qc.arm.target_pose import table_to_base_mm
 
     assert table_to_base_mm(495.9, 22.7) == pytest.approx((0.0, 0.0))
 
 
 def test_table_to_base_mm_straight_ahead():
-    from muse_qc.target_pose import table_to_base_mm
+    from muse_qc.arm.target_pose import table_to_base_mm
 
     assert table_to_base_mm(495.9, 322.7) == pytest.approx((300.0, 0.0))
 
 
 def test_table_to_base_mm_to_the_left():
-    from muse_qc.target_pose import table_to_base_mm
+    from muse_qc.arm.target_pose import table_to_base_mm
 
     assert table_to_base_mm(395.9, 322.7) == pytest.approx((300.0, 100.0))
 
 
 def test_hover_home_plan_ok(capsys):
     _need_sdk_kinematics()
-    from muse_qc.target_pose import main, solve_hover
+    from muse_qc.arm.target_pose import main, solve_hover
 
     solved = solve_hover((495.9, 322.7), 100.0, [0.0] * 6)
     assert solved["ok"] is True
@@ -68,7 +68,7 @@ def test_hover_home_plan_ok(capsys):
 
 def test_hover_side_target_keeps_joint6_near_seed():
     _need_sdk_kinematics()
-    from muse_qc.target_pose import solve_hover
+    from muse_qc.arm.target_pose import solve_hover
 
     solved = solve_hover((395.9, 322.7), 100.0, [0.0] * 6)
     assert solved["ok"] is True
@@ -80,7 +80,7 @@ REST_20261028 = [-3.33, 1.58, -1.45, 2.72, 0.91, -3.97]
 
 def test_rest_j2_recovery_plan_ok(capsys):
     _need_sdk_kinematics()
-    from muse_qc.target_pose import run
+    from muse_qc.arm.target_pose import run
 
     code = run((495.9, 322.7), 100.0, list(REST_20261028))
     assert code == 0
@@ -89,7 +89,7 @@ def test_rest_j2_recovery_plan_ok(capsys):
 
 def test_j2_beyond_recovery_refused(capsys):
     _need_sdk_kinematics()
-    from muse_qc.target_pose import run
+    from muse_qc.arm.target_pose import run
 
     start = list(REST_20261028)
     start[1] = 5.0
@@ -100,7 +100,7 @@ def test_j2_beyond_recovery_refused(capsys):
 
 def test_far_target_is_unreachable(capsys):
     _need_sdk_kinematics()
-    from muse_qc.target_pose import main
+    from muse_qc.arm.target_pose import main
 
     code = main(["--table-mm", "495.9", "2022.7", "--start", "home"])
     assert code == 1

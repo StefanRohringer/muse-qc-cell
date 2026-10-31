@@ -6,12 +6,12 @@ import math
 
 import pytest
 
-import muse_qc.gripper_grip as gripper_grip
-from muse_qc import safety
-from muse_qc.first_move_plan import LOOP_RATE_HZ, clamp_to_limits
-from muse_qc.gripper import LINE_TIMEOUT_S, ZERO_SETTLE_S, TouchSensor
-from muse_qc.gripper_grip import deg_to_width, validate_targets, width_to_deg
-from muse_qc.gripper_stream import open_touch_sensor
+import muse_qc.gripper.gripper_grip as gripper_grip
+from muse_qc.arm import safety
+from muse_qc.bringup.first_move_plan import LOOP_RATE_HZ, clamp_to_limits
+from muse_qc.gripper.gripper import LINE_TIMEOUT_S, ZERO_SETTLE_S, TouchSensor
+from muse_qc.gripper.gripper_grip import deg_to_width, validate_targets, width_to_deg
+from muse_qc.gripper.gripper_stream import open_touch_sensor
 
 REST_DEG = [-3.33, -1.58, -1.45, 2.72, 0.91, -3.97]
 REST_TIP_M = (0.2865, -0.0201, 0.1988)
@@ -584,7 +584,7 @@ def test_open_sensor_warns_and_settles_before_zero(monkeypatch):
 def test_source_avoids_homing_primitives_and_foreign_code():
     from pathlib import Path
 
-    text = Path("muse_qc/gripper_grip.py").read_text(encoding="utf-8")
+    text = Path("muse_qc/gripper/gripper_grip.py").read_text(encoding="utf-8")
     for forbidden in ("set_zero", "safe_home", "estop", "RebotArmEndPose("):
         assert forbidden not in text
     assert "gripper_stream" in text  # loop code lives in the shared module
