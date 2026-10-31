@@ -386,3 +386,128 @@ def test_find_parts_line_shows_lever_deg(monkeypatch, tmp_path, capsys):
     out = capsys.readouterr().out
     assert "lever_deg=0.0 (levers)" in out
     assert "lever_deg=?" not in out
+
+
+SHADOW_SLOT = (30, 30, 30)
+SHADOW_GREY = (45, 45, 45)
+
+
+def _across_rect(center, deg, long=8.0, wide=3.0, along=4.0):
+    """Small dark slot polygon across the bars (long axis: normal)."""
+    rad = math.radians(deg)
+    direction = (math.cos(rad), math.sin(rad))
+    normal = (-direction[1], direction[0])
+    middle = (center[0] + direction[0] * along,
+              center[1] + direction[1] * along)
+    corners = []
+    for sign_x, sign_y in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+        corners.append((
+            middle[0] + normal[0] * sign_x * long / 2.0
+            + direction[0] * sign_y * wide / 2.0,
+            middle[1] + normal[1] * sign_x * long / 2.0
+            + direction[1] * sign_y * wide / 2.0,
+        ))
+    return numpy.array(corners, dtype=numpy.int32)
+
+
+def _shadow_slot_frame(deg):
+    """Grey square with bars, an across slot and an attached shadow.
+
+    The dark slot (8 x 3 px) runs across the bars; a large
+    darker shadow (V below 60, far above the slot area limit)
+    is attached on one side, so the diff contour covers part
+    plus shadow and the old centre-to-slot cue points the
+    wrong way.
+    """
+    frame = numpy.full((HEIGHT, WIDTH, 3), BACKGROUND, numpy.uint8)
+    center = (WIDTH / 2.0, HEIGHT / 2.0)
+    rad = math.radians(deg)
+    direction = (math.cos(rad), math.sin(rad))
+    normal = (-direction[1], direction[0])
+    half = 17.0
+    corners = []
+    for sign_x, sign_y in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+        corners.append((
+            center[0] + direction[0] * sign_x * half
+            + normal[0] * sign_y * half,
+            center[1] + direction[1] * sign_x * half
+            + normal[1] * sign_y * half,
+        ))
+    cv2.fillPoly(frame, [numpy.array(corners, dtype=numpy.int32)], GREY)
+    for bar in _bar_polygons((WIDTH / 2.0, HEIGHT / 2.0), deg):
+        cv2.fillPoly(frame, [bar], ORANGE)
+    cv2.fillPoly(frame, [_across_rect(center, deg)], SHADOW_SLOT)
+    shadow_middle = (center[0] + normal[0] * 22.0,
+                     center[1] + normal[1] * 22.0)
+    shadow = []
+    for sign_x, sign_y in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+        shadow.append((
+            shadow_middle[0] + direction[0] * sign_x * 17.0
+            + normal[0] * sign_y * 6.0,
+            shadow_middle[1] + direction[1] * sign_x * 17.0
+            + normal[1] * sign_y * 6.0,
+        ))
+    cv2.fillPoly(frame, [numpy.array(shadow, dtype=numpy.int32)],
+                 SHADOW_GREY)
+    return frame
+
+
+def test_slot_axis_with_shadow_at_known_angles():
+    """Shadow inside the contour must not turn the lever cue."""
+    for deg in (30, 90, 150):
+        frame = _shadow_slot_frame(deg)
+        contour = _diff_contour(frame)
+        x, y, width, height = cv2.boundingRect(contour)
+        result = lever_angle_deg(frame, (x, y, width, height), contour,
+                                 IDENTITY)
+        assert result["ok"], deg
+        assert result["source"] == "slot axis", deg
+        assert _distance_mod_180(result["lever_deg"], deg) <= 5.0, deg
+
+
+def _open_gap_frame(deg):
+    """Real slot plus a long thin open-lever gap along the bars.
+
+    The gap (a 14 px long 1 px wide line, elongation above 4.5)
+    runs through the part centre and so is nearer than the slot
+    but must be skipped by the elongation limit, so the slot
+    still decides.
+    """
+    frame = numpy.full((HEIGHT, WIDTH, 3), BACKGROUND, numpy.uint8)
+    center = (WIDTH / 2.0, HEIGHT / 2.0)
+    rad = math.radians(deg)
+    direction = (math.cos(rad), math.sin(rad))
+    normal = (-direction[1], direction[0])
+    half = 17.0
+    corners = []
+    for sign_x, sign_y in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+        corners.append((
+            center[0] + direction[0] * sign_x * half
+            + normal[0] * sign_y * half,
+            center[1] + direction[1] * sign_x * half
+            + normal[1] * sign_y * half,
+        ))
+    cv2.fillPoly(frame, [numpy.array(corners, dtype=numpy.int32)], GREY)
+    for bar in _bar_polygons(center, deg):
+        cv2.fillPoly(frame, [bar], ORANGE)
+    start = (int(round(center[0] - direction[0] * 7.0)),
+               int(round(center[1] - direction[1] * 7.0)))
+    end = (int(round(center[0] + direction[0] * 7.0)),
+           int(round(center[1] + direction[1] * 7.0)))
+    cv2.line(frame, start, end, SHADOW_SLOT, 1)
+    cv2.fillPoly(frame, [_across_rect(center, deg, along=12.0)],
+                 SHADOW_SLOT)
+    return frame
+
+
+def test_slot_axis_prefers_slot_over_open_lever_gap():
+    """A long thin open-lever gap must not beat the real slot."""
+    for deg in (30, 90):
+        frame = _open_gap_frame(deg)
+        contour = _diff_contour(frame)
+        x, y, width, height = cv2.boundingRect(contour)
+        result = lever_angle_deg(frame, (x, y, width, height), contour,
+                                 IDENTITY)
+        assert result["ok"], deg
+        assert result["source"] == "slot axis", deg
+        assert _distance_mod_180(result["lever_deg"], deg) <= 5.0, deg

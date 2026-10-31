@@ -15,9 +15,14 @@ the eroded part region, weighted where the pixel is lever-like
 or next to one (dilated lever mask, covering the dark gaps
 between merged bars). The dominant gradient runs across the
 bars, so the lever direction is the tensor direction + 90 deg,
-with strength = coherence ((l1 - l2) / (l1 + l2)). A small dark
-slot (V at most SLOT_V_MAX) at one end of the levers is tried
-first: the direction from the part centre to the slot centroid
+with strength = coherence ((l1 - l2) / (l1 + l2)). A small
+elongated dark slot across the levers (see slot_axis.py) is
+tried first: its long axis plus 90 deg estimates the lever
+direction even when the part shadow shifts the contour, and
+picks the agreeing outline direction (within
+SLOT_AXIS_AGREE_DEG) or is used itself. Then the small dark
+slot (V at most SLOT_V_MAX) at one end of the levers is tried:
+the direction from the part centre to the slot centroid
 is parallel to the levers (modulo 180) and chooses the same
 outline vs outline + 90. On small parts the lever-end and edge
 gradients can push the stripe cue the wrong way, so the slot
@@ -37,6 +42,8 @@ import math
 
 import cv2
 import numpy
+
+from muse_qc import slot_axis
 
 # Orange/brown lever pixels in OpenCV HSV (H 0..179). S_MIN 110
 # and V_MAX 165 keep bright wood (S about 66-110, V about
@@ -237,14 +244,16 @@ def lever_angle_deg(frame, bbox, contour, to_table):
     contour the diff-mask blob contour, to_table a pixel to table
     mm mapping. Returns {"ok", "lever_deg", "strength", "reason",
     "source"}: lever_deg in [0, 180) in the table frame (None when
-    not ok), strength in 0..1, source "levers", "slot" or
-    "outline" (None when not ok). The precise angle comes from
-    the blob outline (minAreaRect long side); each cue only
-    chooses between that direction and +90 deg. The dark slot at
-    one end of the levers (centre to slot centroid) is tried
-    first, then the gradient stripe cue inside the part, then the
-    long side when the outline aspect ratio reaches
-    FALLBACK_ASPECT_MIN, else ok is False.
+    not ok), strength in 0..1, source "levers", "slot",
+    "slot axis" or "outline" (None when not ok). The precise
+    angle comes from the blob outline (minAreaRect long side);
+    each cue only chooses between that direction and +90 deg,
+    except the slot-axis cue which is used itself when neither
+    outline direction agrees. The slot long axis (slot_axis.py)
+    is tried first, then the dark slot at one end of the levers
+    (centre to slot centroid), then the gradient stripe cue
+    inside the part, then the long side when the outline aspect
+    ratio reaches FALLBACK_ASPECT_MIN, else ok is False.
     """
     if contour is None or len(contour) < 3:
         return {"ok": False, "lever_deg": None, "strength": 0.0,
@@ -272,6 +281,26 @@ def lever_angle_deg(frame, bbox, contour, to_table):
                 "reason": "no part region", "source": None}
     filled = _filled_mask(contour, x0, y0, (y1 - y0, x1 - x0))
     if filled is not None and filled.any():
+        axis_deg = slot_axis.estimate(crop, filled)
+        if axis_deg is not None:
+            second = _angle_mod_180(outline_deg + 90.0)
+            if _angle_distance_mod_180(outline_deg, axis_deg) <= \
+                    slot_axis.SLOT_AXIS_AGREE_DEG:
+                picked = outline_deg
+            elif _angle_distance_mod_180(second, axis_deg) <= \
+                    slot_axis.SLOT_AXIS_AGREE_DEG:
+                picked = second
+            else:
+                picked = axis_deg
+            table_deg = _to_table_deg(picked, center, to_table)
+            if table_deg is None:
+                return {"ok": False, "lever_deg": None,
+                        "strength": 0.0,
+                        "reason": "table mapping degenerate",
+                        "source": None}
+            return {"ok": True, "lever_deg": table_deg,
+                    "strength": 0.6, "reason": "slot axis",
+                    "source": "slot axis"}
         slot_deg = _slot_direction(crop, filled)
         if slot_deg is not None:
             second = _angle_mod_180(outline_deg + 90.0)

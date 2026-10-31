@@ -1790,6 +1790,16 @@ outline + 90 instead (printed as `(slot)`): on the small real
 parts the lever-end and edge gradients can push the stripe cue
 past `MIN_STRENGTH` in the wrong direction (see docs/DEVLOG.md
 2026-10-30 ~13:30), while the slot was right on all three parts.
+Since 2026-10-31 the slot long axis is tried before that
+(`muse_qc/slot_axis.py`: dark V at most 60 inside the filled
+contour, 8-connected components of 5 to 40 px with elongation
+1.6 to 4.5, nearest the part centre; long axis + 90 deg is the
+lever estimate, the agreeing outline direction within 15 deg
+wins else the estimate itself, printed as `(slot axis)`):
+its own orientation ignores the shadow that shifted the old
+centre-to-slot cue by 45 to 90 deg on the 2026-10-31 table,
+and the much longer open-lever gap never passes the
+elongation limit.
 
 ## 35. Grip yaw from the lever direction (run on hardware 2026-10-30)
 
