@@ -56,7 +56,7 @@ fooled the lever direction. That led to the slot axis fix used in run 3.
 | Lever direction from the table camera (7 parts vs. photo) | 7/7 within about 10 deg with the slot axis (before: 3/7) |
 | Control loop | 100 Hz, cycle period 10.09 ms mean, 10.20 ms max |
 | Grip | touch contact on both fingers before the lift, every grip of run 3 on the first try |
-| Offline test suite | 841 tests, no hardware, camera or network needed |
+| Offline test suite | 848 tests, no hardware, camera or network needed |
 
 ## How it works
 

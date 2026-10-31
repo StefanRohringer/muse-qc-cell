@@ -1,0 +1,67 @@
+{
+  "date": "31 Oct 2026",
+  "parts": [
+    {
+      "time": "2026-10-31T00:39:04+00:00",
+      "levers": 2,
+      "verdict": "bad",
+      "image": "media/count_20261031_013904_crop.jpg"
+    },
+    {
+      "time": "2026-10-31T00:42:35+00:00",
+      "levers": 3,
+      "verdict": "good",
+      "image": "media/count_20261031_014235_crop.jpg"
+    },
+    {
+      "time": "2026-10-31T00:43:19+00:00",
+      "levers": 3,
+      "verdict": "good",
+      "image": "media/count_20261031_014319_crop.jpg"
+    },
+    {
+      "time": "2026-10-31T00:43:58+00:00",
+      "levers": 3,
+      "verdict": "good",
+      "image": "media/count_20261031_014357_crop.jpg"
+    },
+    {
+      "time": "2026-10-31T00:44:35+00:00",
+      "levers": 3,
+      "verdict": "good",
+      "image": "media/count_20261031_014435_crop.jpg"
+    },
+    {
+      "time": "2026-10-31T00:45:15+00:00",
+      "levers": 2,
+      "verdict": "bad",
+      "image": "media/count_20261031_014515_crop.jpg"
+    },
+    {
+      "time": "2026-10-31T00:45:54+00:00",
+      "levers": 3,
+      "verdict": "good",
+      "image": "media/count_20261031_014554_crop.jpg"
+    },
+    {
+      "time": "2026-10-31T00:46:33+00:00",
+      "levers": 2,
+      "verdict": "bad",
+      "image": "media/count_20261031_014633_crop.jpg"
+    },
+    {
+      "time": "2026-10-31T00:47:14+00:00",
+      "levers": 2,
+      "verdict": "bad",
+      "image": "media/count_20261031_014713_crop.jpg"
+    },
+    {
+      "time": "2026-10-31T00:47:57+00:00",
+      "levers": 3,
+      "verdict": "good",
+      "image": "media/count_20261031_014757_crop.jpg"
+    }
+  ],
+  "good": 6,
+  "bad": 4
+}

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>muse-qc-cell — replay of a real sorting run</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+<h1>muse-qc-cell</h1>
+<p>An AI quality inspection cell for injection-molded parts.</p>
+<p><strong>Real hardware, no simulation.</strong></p>
+<p><a href="https://github.com/StefanRohringer/muse-qc-cell">GitHub repository</a></p>
+</header>
+
+<section>
+<h2>Demo video</h2>
+<!-- VIDEO: YouTube embed on Mon 2 Nov -->
+<p>Demo video: coming on 2 Nov</p>
+</section>
+
+<section>
+<h2>Replay of a real run</h2>
+<p id="run-label">Loading run data…</p>
+<p>10 parts: 9 in the agent run plus 1 single pick just before it. Boxes checked by hand.</p>
+<img id="table-scan" src="media/table_scan_10_parts.png" alt="Table camera view: ten parts found on the table, each with its id and table millimeters, next to the two sorting boxes and the arm">
+<div id="player-controls">
+<button id="btn-play" type="button">Play</button>
+<button id="btn-pause" type="button">Pause</button>
+<button id="btn-prev" type="button">Previous</button>
+<button id="btn-next" type="button">Next</button>
+</div>
+<p id="counter"></p>
+<div id="card"></div>
+</section>
+
+<section>
+<h2>Results (real hardware, measured)</h2>
+<p>All numbers come from human-run tests, recorded in <code>docs/DEVLOG.md</code>.</p>
+<h3>Sorting runs with 10 parts</h3>
+<table>
+<tr><th>Run</th><th>What changed</th><th>Gripped on the first try</th><th>Sorted correctly</th><th>Time</th><th>Meta API cost</th></tr>
+<tr><td>30 Oct, run 1</td><td>first 10-part run, close-up right after the lift</td><td>10/10</td><td>not checked: 5 parts on the left half read 0 levers (light), so they were sorted bad without a count</td><td>7 min 20 s, about 44 s per part</td><td>0.22 USD (about 2 cents per part, 14 Muse Spark calls)</td></tr>
+<tr><td>31 Oct, run 3</td><td>lever direction from the slot axis, rescan after every part, fixed inspection station</td><td>9/9</td><td><strong>10/10</strong> (9 in this agent run plus 1 single pick just before it; boxes checked by hand)</td><td>about 6.5 min, about 43 s per part</td><td>not measured (the credits page did not load)</td></tr>
+</table>
+<p>Run 2 (31 Oct, first run with the inspection station) gripped 10/10, but several parts were gripped along the wrong axis because the lamp shadow fooled the lever direction. That led to the slot axis fix used in run 3.</p>
+<h3>Building blocks</h3>
+<table>
+<tr><th>Check</th><th>Result</th></tr>
+<tr><td>Table camera calibration</td><td>RMS reprojection error 0.199 px (26 images)</td></tr>
+<tr><td>Lever direction from the table camera (7 parts vs. photo)</td><td>7/7 within about 10 deg with the slot axis (before: 3/7)</td></tr>
+<tr><td>Control loop</td><td>100 Hz, cycle period 10.09 ms mean, 10.20 ms max</td></tr>
+<tr><td>Grip</td><td>touch contact on both fingers before the lift, every grip of run 3 on the first try</td></tr>
+<tr><td>Offline test suite</td><td>848 tests, no hardware, camera or network needed</td></tr>
+</table>
+</section>
+
+<section>
+<h2>How it works</h2>
+<ol>
+<li><strong>Order:</strong> I type an order in plain words. The Muse Spark agent decides which tool to call next: <code>scan_table</code>, <code>inspect_and_sort(part_id)</code>, <code>write_report</code> or <code>finish</code>.</li>
+<li><strong>Scan:</strong> the table camera finds four ArUco markers and maps pixels to table millimeters with a checkerboard calibration. An empty-table reference shows what changed, SAM 3.1 confirms each candidate, and the lever direction is read from the dark slot at one end of the part.</li>
+<li><strong>Pick:</strong> the arm moves above the part, turns the gripper so the fingers close across the levers, lowers, closes until the touch sensors report contact on both sides, and lifts.</li>
+<li><strong>Inspect:</strong> the arm carries the part to a fixed inspection station. The arm camera takes a close-up, SAM 3.1 finds the part, the crop is enlarged and SAM 3.1 counts the levers. Exactly 3 levers = good. A doubtful count is retried on fresh frames; a part is only good when the count is confirmed.</li>
+<li><strong>Sort:</strong> the part is dropped into the good or bad box, the arm returns to rest, and the table is scanned again, so a part that moved is found again.</li>
+<li><strong>Report:</strong> every step is saved as JSON, and a live page in the browser shows the table, each part's close-up, its lever count and its box.</li>
+</ol>
+</section>
+
+<section>
+<h2>Where Meta AI is used</h2>
+<table>
+<tr><th>Meta tool</th><th>Where</th><th>What it does</th></tr>
+<tr><td>Muse Spark (<code>muse-spark-1.3</code>, Meta Model API)</td><td><code>muse_qc/agent/agent.py</code></td><td>The agent: reads the order, picks the next tool, reacts to failures and rescans, writes the summary</td></tr>
+<tr><td>SAM 3.1 (<code>sam-3.1</code>, Meta Model API)</td><td><code>muse_qc/vision/find_parts.py</code>, <code>muse_qc/vision/vision_sam.py</code></td><td>Confirms parts on the table image</td></tr>
+<tr><td>SAM 3.1</td><td><code>muse_qc/inspection/count_clips.py</code>, <code>muse_qc/inspection/count_retry.py</code></td><td>Finds the held part and counts its levers in the close-up</td></tr>
+<tr><td>Muse Code (powered by Muse Spark)</td><td>the whole repository</td><td>Wrote all the code, logged task by task in <code>docs/MUSE_CODE_LOG.md</code></td></tr>
+</table>
+</section>
+
+<section>
+<h2>A real agent run (excerpt)</h2>
+<p>From run 3 on 31 Oct (<code>docs/DEVLOG.md</code>, output shortened):</p>
+<pre>agent -&gt; scan_table()
+tool: 8 parts found
+grip yaw: lever 119.3 deg, offset -19.9 deg
+inspect: levers 3 verdict good
+tool: rescan found 7 parts
+grip yaw: lever 102.3 deg, offset +9.9 deg
+inspect: levers 2 verdict bad
+...
+tool: rescan found no parts, call scan_table
+agent -&gt; scan_table()
+tool: no parts found
+agent -&gt; write_report()
+agent finished: Sorted 9 parts: 6 good (3 levers), 3 bad (&lt;3 levers), 0 failures/missed grips. Final rescan found no parts.</pre>
+</section>
+
+<section>
+<h2>Safety</h2>
+<p>In short: every waypoint is checked before motion, every command is re-checked each control cycle, only a human starts hardware runs, speed is capped, tracking errors abort the move, touch sensing stops the descent, only grasp waypoints may go low, the model passes part IDs only, and devices are found by USB ID.</p>
+<h3>Not certified</h3>
+<p>muse-qc-cell is a hackathon research prototype. Its safety layers are software checks only. They have not been assessed or certified by any testing body (for example TÜV), and the cell does not comply with the EU Machinery Regulation (EU) 2023/1230 or robot safety standards such as ISO 10218. There is no certified emergency stop, no guarding and no risk assessment. Do not use it in production or near people without a proper safety concept, risk assessment and certification.</p>
+</section>
+
+<section>
+<h2>What is new in this hackathon</h2>
+<p>I started this repository from scratch during the hackathon. Everything in <code>muse_qc/</code>, <code>tests/</code>, <code>docs/</code> and <code>calibration/</code> was written during the event.</p>
+<p>Prior work, declared and not part of this submission: my Touch-Sensing Fin-Ray Gripper (hardware and firmware). I built it before the hackathon, and it is listed in the official Seeed reBot-DevArm repository under "DIY Soft Finger". New in this hackathon: <code>muse_qc/gripper/gripper.py</code>, which reads the gripper sensors over USB. See <code>docs/THIRD_PARTY.md</code>.</p>
+</section>
+
+<footer>
+<p>MIT. Built during the Meta Global AI Developer Hackathon (26 Oct to 4 Nov 2026).</p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

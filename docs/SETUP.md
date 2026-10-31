@@ -2024,3 +2024,19 @@ time only; it is never baked into the image:
 ```bash
 docker run --rm --env-file .env muse-qc-cell uv run python -m muse_qc.agent
 ```
+
+## Export a run for the demo page
+
+This step reads existing inspection records and copies crop images only.
+It is offline: no camera, no arm, no API key, no network. From the project
+root:
+
+```bash
+uv run python -m muse_qc.inspection.export_site --recordings recordings --since <YYYYmmdd_HHMMSS> --until <YYYYmmdd_HHMMSS> --out site/data
+```
+
+The command writes `site/data/run.json` (date plus one entry per part in
+order: time, levers, verdict, box and retries only when recorded, and the
+relative crop image path) and re-encodes only the enlarged crop images
+(`count_*_crop.png`) as JPEG into `site/data/media/`. It prints the part,
+good and bad counts plus the total size in KB.
