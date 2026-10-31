@@ -1,6 +1,6 @@
 # Plan: muse-qc-cell
 
-Context: built for the Meta AI Developer Hackathon (Oct 26 to Nov 4, 2026).
+Context: built for the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026).
 All work in this repository was built during the hackathon, except the
 declared gripper hardware (see docs/THIRD_PARTY.md).
 
@@ -9,7 +9,7 @@ declared gripper hardware (see docs/THIRD_PARTY.md).
 10 scattered connectors with 3 levers each.
 Good = all 3 levers present, intact and closed.
 Bad = a lever missing, broken or open.
-The reBot B601-DM sorts them into a good bin and a bad bin.
+The reBot Arm B601-DM sorts them into a good box and a bad box.
 
 ## Setup
 
@@ -24,8 +24,8 @@ The reBot B601-DM sorts them into a good bin and a bad bin.
 | Tue 27.10 | Rules, plan and safety.py done, table camera with ArUco markers and table coordinates |
 | Wed 28.10 | Table camera calibration with a checkerboard |
 | Thu 29.10 | First safe move, SAM 3.1 finds parts and checks levers (done 28.10, early); first pick and sorting into the boxes, first agent runs (done) |
-| Fri 30.10 | Inspect in the gripper, gripper turned to the lever direction, Muse Spark agent continuous run, live page, order by chat (done) |
-| Sat 31.10 | Test series with all 10 parts |
+| Fri 30.10 | Inspect in the gripper, gripper turned to the lever direction, Muse Spark agent continuous run, live page, order by chat, inspection station, rescan after every part (done) |
+| Sat 31.10 | Test series with all 10 parts (done: 10 of 10 sorted correctly, see docs/DEVLOG.md) |
 | Sun 1.11 | Results and fixes from the test series |
 | Mon 2.11 | Demo video |
 | Tue 3.11 | README and post |

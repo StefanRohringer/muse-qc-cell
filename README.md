@@ -1,210 +1,265 @@
 # muse-qc-cell
 
-AI quality inspection cell for injection-molded parts, built during the
-Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026) with Muse Code
-(powered by Muse Spark `muse-spark-1.3`, see `docs/MUSE_CODE_LOG.md`), SAM 3.1
-and Muse Spark through the Meta Model API.
+An AI quality inspection cell for injection-molded parts. A low-cost
+reBot Arm B601-DM picks each part from the table, a Muse Spark agent
+decides every step, SAM 3.1 counts the levers in a close-up, and the
+part goes into the good box or the bad box. Real hardware, no simulation.
 
-A reBot B601-DM arm finds small connector parts on a table, picks each
-one, inspects it against a rule in plain language and sorts it into a
-good box or a bad box. A Muse Spark agent decides the next step; our code
-executes the tools and enforces every safety check. Rule in plain
-language: good = all 3 levers present; bad = a lever missing.
+<!-- MEDIA: hero image or GIF here (docs/media/...), caption below. -->
+<!-- VIDEO: add the demo video link here on Mon 2 Nov, e.g. "Demo video (3 min): <link>". -->
 
-## Why this project
+![The arm camera close-up of a held part with the three levers boxed by SAM 3.1](docs/media/inspect_good_3_levers.png)
 
-I come from plastic injection molding: 18 years of hands-on
-manufacturing experience, founder of an injection molding company that
-I successfully sold (exit), and Bachelor Professional of Plastics and
-Rubber Production and Management (CCI). Many companies still let people
-do monotonous visual inspection and quality control of molded parts and
-assembled molded parts by hand.
+*A part held between the touch-sensing fingers in front of the arm camera.
+SAM 3.1 finds the part, the crop is enlarged and the levers are counted:
+3 levers = good.*
 
-Physical AI helps from two sides. The company gains efficiency, a higher
-quality rate and a better OEE (overall equipment effectiveness). The
-staff are freed from monotonous checking and can be trained for other
-tasks in the company. A company that uses Physical AI and develops its
-own people can raise its profit, because robots combined with today's
-cameras, sensors and AI add real value. One example: a plant that stops
-production on the weekend could keep an inspection cell like this one
-running unattended.
+## The problem
 
-With this hackathon entry I want to show how a low-cost desktop arm
-(the reBot Arm B601-DM by Seeed Studio) can be brought toward real
-production with little effort. I built the repository from scratch,
-and all code was written by Meta Muse Spark (muse-spark-1.3) through
-Muse Code in the terminal, within the 150 USD of Meta credits given to
-participants. The system is not perfect, but it works end to end on
-real hardware.
+I have worked in plastic injection molding for 18 years. I founded an
+injection molding company and later sold it. In many plants, people
+still check molded parts by eye, part after part. It is monotonous work,
+and it often decides when a machine can run unattended.
 
-## Safety layers
+The rule for a good part is usually simple and fits in one sentence. For
+the connectors in this demo it is: **good = all 3 levers present,
+otherwise bad.** This project shows that a desktop arm, two cameras and
+Meta models can follow such a rule end to end, with little setup and on a
+hackathon budget.
 
-Every layer below is in the code and covered by offline tests:
+Who it is for: small and mid-sized molding plants that cannot pay for a
+dedicated vision inspection system, for example to keep an inspection
+cell running over a weekend.
 
-1. Plan check before motion: every waypoint of a move is checked by
-   `safety.py` (workspace box, minimum tool height above the table,
-   joint limits, joint 6 cable limit, speed and step size per cycle)
-   before the motors are enabled; one refused waypoint stops the whole
-   move before it starts.
-2. Check in every control cycle: during the move each command is checked
-   again against fresh joint readings (stale or invalid readings stop
-   the move).
-3. Human gate: `--execute` needs a typed "yes"; without it nothing moves.
-   Only the human starts hardware runs, with a hand on the power supply
-   switch.
-4. Slow by design: motor speed limits at 10 % (arm) and 25 % (gripper)
-   of the configured values, ramps with limited acceleration, 20 mm/s
-   final approach.
-5. Tracking guard: if a joint falls too far behind its command, the move
-   is aborted and the arm ramps back safely.
-6. Touch sensing: unexpected contact while lowering stops the descent,
-   the arm climbs back and returns; the part counts as held only with
-   contact on both fingers.
-7. Grasp floor: only the grasp waypoints may go down to 4 mm above the
-   table, every other waypoint keeps at least 30 mm.
-8. Agent limits: the model passes part ids only, never coordinates or
-   motor commands; positions come from our own scan; hard limits on
-   model calls, sorts, tries per part and consecutive failures; Ctrl+C
-   stops the run safely.
-9. Devices: found by USB ID, never by port order; a preflight check
-   reports when another program already uses the arm.
+## Results (real hardware, measured)
 
-## Not certified
+All numbers come from human-run tests, recorded in `docs/DEVLOG.md`.
 
-muse-qc-cell is a hackathon research prototype. Its safety layers are
-software checks only. They have not been assessed or certified by any
-testing body (for example TÜV), and the cell does not comply with the
-EU Machinery Regulation (EU) 2023/1230 or the robot safety standards
-(for example ISO 10218). There is no certified emergency stop, no
-guarding and no risk assessment. Do not use it in production or near
-people without a proper safety concept, risk assessment and
-certification.
+### Sorting runs with 10 parts
+
+| Run | What changed | Gripped on the first try | Sorted correctly | Time | Meta API cost |
+| --- | --- | --- | --- | --- | --- |
+| 30 Oct, run 1 | first 10-part run, close-up right after the lift | 10/10 | not checked: 5 parts on the left half read 0 levers (light), so they were sorted bad without a count | 7 min 20 s, about 44 s per part | 0.22 USD (about 2 cents per part, 14 Muse Spark calls) |
+| 31 Oct, run 3 | lever direction from the slot axis, rescan after every part, fixed inspection station | 9/9 | **10/10** (9 in this agent run plus 1 single pick just before it; boxes checked by hand) | about 6.5 min, about 43 s per part | not measured (the credits page did not load) |
+
+Run 2 (31 Oct, first run with the inspection station) gripped 10/10, but
+several parts were gripped along the wrong axis because the lamp shadow
+fooled the lever direction. That led to the slot axis fix used in run 3.
+
+### Building blocks
+
+| Check | Result |
+| --- | --- |
+| Table camera calibration | RMS reprojection error 0.199 px (26 images) |
+| Lever direction from the table camera (7 parts vs. photo) | 7/7 within about 10 deg with the slot axis (before: 3/7) |
+| Control loop | 100 Hz, cycle period 10.09 ms mean, 10.20 ms max |
+| Grip | touch contact on both fingers before the lift, every grip of run 3 on the first try |
+| Offline test suite | 841 tests, no hardware, camera or network needed |
 
 ## How it works
 
-1. Scan: the table camera finds four ArUco markers and maps pixels to
-   table millimetres with a checkerboard calibration. An empty-table
-   reference shows what changed; SAM 3.1 confirms each candidate on a
-   zoomed crop, and the lever direction is read from the image
-   (`find_parts.py`, `part_angle.py`).
-2. Pick: the arm moves above the part, turns the gripper to the lever
-   direction, lowers, closes until the touch sensors report contact on
-   both sides and lifts (`pick_test.py`, `grip_yaw.py`, `gripper.py`).
-3. Inspect: with the part held between the fingers, the arm camera takes
-   a close-up; SAM 3.1 finds the part, the crop is enlarged and the
-   levers are counted (`inspect_step.py`, `count_clips.py`,
-   `count_retry.py`). Exactly 3 levers = good, otherwise bad.
-4. Sort: the part is dropped into the good or bad box (`drop_plan.py`),
-   and the arm returns to rest.
-5. Agent: Muse Spark calls `scan_table`, `inspect_and_sort(part_id)`,
-   `write_report` and `finish` (`agent.py`, `agent_tools.py`). It only
-   passes part ids from our own latest scan, never coordinates. Orders
-   can be given in plain words (`--task`, `--chat`), and a live page in
-   the browser shows the run (`live_page.py`).
-
-```text
-order in plain words (terminal)
-  -> Muse Spark agent
-  -> scan_table: table camera + empty reference + SAM 3.1 "grey object"
-  -> part ids with table mm and lever direction
-  -> inspect_and_sort(id): hover, turn gripper, lower, touch-sensed grip, lift
-  -> arm camera close-up -> SAM 3.1 part + "brown bar" levers
-  -> 3 levers = GOOD, otherwise BAD
-  -> drop into the good or bad box, return to rest
-  -> next id, rescan when the list is used up
-  -> JSON records + HTML report + live page
+```mermaid
+flowchart TD
+    A["Order in plain words<br/>e.g. 'sort all parts on the table'"] --> B["Muse Spark agent<br/>muse-spark-1.3, tool calling"]
+    B -->|scan_table| C["Table camera<br/>empty-table reference + SAM 3.1 'grey object'"]
+    C --> D["Part IDs with table mm<br/>and lever direction"]
+    D --> B
+    B -->|"inspect_and_sort(part ID)"| E["Safety check of every waypoint<br/>safety.py"]
+    E --> F["Pick: hover, turn gripper,<br/>lower, touch-sensed grip, lift"]
+    F --> G["Inspection station<br/>arm camera close-up"]
+    G --> H["SAM 3.1: find the part,<br/>count the 'brown bar' levers"]
+    H -->|3 levers| I["Good box"]
+    H -->|fewer| J["Bad box"]
+    I --> K["Rescan the table"]
+    J --> K
+    K --> B
+    B -->|"write_report, finish"| L["JSON records,<br/>HTML report, live page"]
 ```
 
-Safety: every arm waypoint is checked against `safety.py` (workspace,
-joint, cable, speed, step, freshness and STOP checks) before it is sent,
-in the dry run and again in every control cycle. `--execute` asks for a
-typed "yes". The agent cannot bypass a tool check. Devices are found by
-USB ID, never by fixed `/dev` names. Only the human starts hardware runs,
-with a hand on the power supply switch.
+1. **Order:** I type an order in plain words. The Muse Spark agent decides
+   which tool to call next: `scan_table`, `inspect_and_sort(part_id)`,
+   `write_report` or `finish`.
+2. **Scan:** the table camera finds four ArUco markers and maps pixels to
+   table millimeters with a checkerboard calibration. An empty-table
+   reference shows what changed, SAM 3.1 confirms each candidate, and the
+   lever direction is read from the dark slot at one end of the part.
+3. **Pick:** the arm moves above the part, turns the gripper so the fingers
+   close across the levers, lowers, closes until the touch sensors report
+   contact on both sides, and lifts.
+4. **Inspect:** the arm carries the part to a fixed inspection station.
+   The arm camera takes a close-up, SAM 3.1 finds the part, the crop is
+   enlarged and SAM 3.1 counts the levers. Exactly 3 levers = good. A
+   doubtful count is retried on fresh frames; a part is only good when
+   the count is confirmed.
+5. **Sort:** the part is dropped into the good or bad box, the arm returns
+   to rest, and the table is scanned again, so a part that moved is
+   found again.
+6. **Report:** every step is saved as JSON, and a live page in the browser
+   shows the table, each part's close-up, its lever count and its box.
+
+### Where Meta AI is used
+
+| Meta tool | Where | What it does |
+| --- | --- | --- |
+| Muse Spark (`muse-spark-1.3`, Meta Model API) | `muse_qc/agent.py` | The agent: reads the order, picks the next tool, reacts to failures and rescans, writes the summary |
+| SAM 3.1 (`sam-3.1`, Meta Model API) | `muse_qc/find_parts.py`, `muse_qc/vision_sam.py` | Confirms parts on the table image |
+| SAM 3.1 | `muse_qc/count_clips.py`, `muse_qc/count_retry.py` | Finds the held part and counts its levers in the close-up |
+| Muse Code (powered by Muse Spark) | the whole repository | Wrote all the code, logged task by task in `docs/MUSE_CODE_LOG.md` |
+
+### A real agent run (excerpt)
+
+From run 3 on 31 Oct (`docs/DEVLOG.md`, output shortened):
+
+```text
+agent -> scan_table()
+tool: 8 parts found
+grip yaw: lever 119.3 deg, offset -19.9 deg
+inspect: levers 3 verdict good
+tool: rescan found 7 parts
+grip yaw: lever 102.3 deg, offset +9.9 deg
+inspect: levers 2 verdict bad
+...
+tool: rescan found no parts, call scan_table
+agent -> scan_table()
+tool: no parts found
+agent -> write_report()
+agent finished: Sorted 9 parts: 6 good (3 levers), 3 bad (<3 levers), 0 failures/missed grips. Final rescan found no parts.
+```
+
+## Inspection images
+
+Close-ups from the arm camera. SAM 3.1 boxes only closed levers; an open
+lever does not count.
+
+| Good | Bad | Bad |
+| --- | --- | --- |
+| ![Good part with 3 closed levers](docs/media/inspect_good_3_levers.png) | ![Bad part, right lever open](docs/media/inspect_bad_right_lever_open.png) | ![Bad part, middle lever open](docs/media/inspect_bad_middle_lever_open.png) |
+| 3 closed levers: good | right lever open, 2 counted: bad | middle lever open, 2 counted: bad |
+
+## Safety
+
+Every layer below is in the code and covered by offline tests.
+
+1. **Plan check before motion:** `safety.py` checks every waypoint of a
+   move (workspace box, minimum tool height, joint limits, joint 6 cable
+   limit, speed and step size) before the motors are enabled. One refused
+   waypoint stops the whole move before it starts.
+2. **Check in every control cycle:** during the move, each command is
+   checked again against fresh joint readings.
+3. **Human gate:** `--execute` needs a typed "yes". Only a human operator
+   starts hardware runs, with a hand on the power supply switch.
+4. **Limited speed:** motor speed caps, ramps with limited acceleration,
+   20 mm/s on the final approach.
+5. **Tracking guard:** if a joint falls too far behind its command, the
+   move is aborted and the arm ramps back.
+6. **Touch sensing:** unexpected contact while lowering stops the descent
+   and the arm moves back up. A part counts as held only with contact on
+   both fingers.
+7. **Grasp floor:** only the grasp waypoints may go down to 4 mm above the
+   table; every other waypoint stays at least 30 mm above it.
+8. **Agent limits:** the model passes part IDs only, never coordinates or
+   motor commands. Positions come from our own scan. Hard limits on model
+   calls, sorts, tries per part and consecutive failures. Ctrl+C stops the
+   run safely.
+9. **Devices:** found by USB ID, never by port order.
+
+### Not certified
+
+muse-qc-cell is a hackathon research prototype. Its safety layers are
+software checks only. They have not been assessed or certified by any
+testing body (for example TÜV), and the cell does not comply with the EU
+Machinery Regulation (EU) 2023/1230 or robot safety standards such as
+ISO 10218. There is no certified emergency stop, no guarding and no risk
+assessment. Do not use it in production or near people without a proper
+safety concept, risk assessment and certification.
 
 ## What is new in this hackathon
 
-Everything in `muse_qc/`, `tests/`, `docs/` and `calibration/` was
-written during the hackathon. Declared prior work (not part of the
-submission): the Touch-Sensing Fin-Ray Gripper hardware and firmware are
-pre-existing, not built during the hackathon (listed by Seeed under "DIY
-Soft Finger"). New in this hackathon: `muse_qc/gripper.py`, which reads
-the gripper sensors over USB, and everything else in this repository.
-See `docs/THIRD_PARTY.md`. The official Seeed SDK (`reBotArm_control_py`)
-and `motorbridge` are dependencies, never copied in.
+I started this repository from scratch during the hackathon. Everything
+in `muse_qc/`, `tests/`, `docs/` and `calibration/` was written during the
+event.
 
-## Status with evidence (human runs only)
+Prior work, declared and not part of this submission: my Touch-Sensing
+Fin-Ray Gripper (hardware and firmware). I built it before the hackathon,
+and it is listed in the official Seeed reBot-DevArm repository under
+"DIY Soft Finger". New in this hackathon: `muse_qc/gripper.py`, which reads
+the gripper sensors over USB. See `docs/THIRD_PARTY.md`.
 
-Every row is a human run (started by the human, recorded output never
-edited); details in `docs/DEVLOG.md` and `docs/SETUP.md`.
+## Run it
 
-| Step | State | Evidence |
-| --- | --- | --- |
-| Table camera, markers, calibration (rms 0.199 px) | works | SETUP 9-14, DEVLOG 2026-10-27/28 |
-| Model API check, SAM 3.1 on the table | works | SETUP 15-16, DEVLOG 2026-10-28 |
-| First motion at 100 Hz, every waypoint checked | works | SETUP 18, DEVLOG 2026-10-28 |
-| Gripper touch sensors, grip with touch feedback | works | SETUP 24-26, DEVLOG 2026-10-28 |
-| Find parts (empty reference + SAM confirm) | works | SETUP 29, DEVLOG 2026-10-29 |
-| Pick and sort into the good and bad box | works | SETUP 28 and 31, DEVLOG 2026-10-29 |
-| Inspect in the gripper after the lift | works | SETUP 32, DEVLOG 2026-10-30 |
-| Gripper turned to the lever direction | works | SETUP 34-35, DEVLOG 2026-10-30 |
-| Muse Spark agent, continuous run, 3 parts, 3 correct | works | SETUP 33 and 36, DEVLOG 2026-10-30 |
-| Order by chat, live page | works | SETUP 36, DEVLOG 2026-10-30 |
-| Test series with all 10 parts | planned | - |
-
-Known limits: SAM 3.1 does not always confirm a real part on the table
-crop (a second phrase is tried, the agent rescans); SAM sometimes counts
-0 levers on a bad part with 2 levers (the verdict "bad" is still
-correct, retries cost time); the lever direction can jump on some parts.
-Only missing levers are tested so far, open or broken levers are not.
-
-## Quick start
-
-Prereqs: Python 3.11, `uv`, the Seeed SDK checked out next to this repo as
-`../seeed-sdk` (see `docs/SETUP.md`, without it `uv sync` fails), and a
-`.env` file with `MODEL_API_KEY` for the camera/model steps only.
+Prerequisites: Linux, Python 3.11, `uv`, the Seeed SDK checked out next to
+this repository as `../seeed-sdk` (see `docs/SETUP.md`; without it
+`uv sync` fails), and a `.env` file with `MODEL_API_KEY` for the camera and
+model steps.
 
 ```bash
 uv sync
-uv run pytest                                   # offline suite, no hardware
-uv run python -m muse_qc.preflight              # human only: USB + SDK checks
-uv run python -m muse_qc.model_check            # human only: Model API check
-uv run python -m muse_qc.find_parts --save-empty  # human only: empty table reference
-uv run python -m muse_qc.find_parts             # human only: scan the table
-uv run python -m muse_qc.agent                  # human only: real Muse Spark, fake table, no arm
+uv run pytest                                     # offline suite, no hardware
+uv run python -m muse_qc.preflight                # human only: USB + SDK checks
+uv run python -m muse_qc.model_check              # human only: Model API check
+uv run python -m muse_qc.find_parts --save-empty  # human only: empty-table reference
+uv run python -m muse_qc.agent                    # real Muse Spark, fake table, no arm
 uv run python -m muse_qc.agent --execute --chat --task "sort all parts"  # human only: real run
-firefox recordings/live.html &                  # watch the run
 ```
 
-`uv run pytest` runs the full offline suite (fake arm, fake camera, fake
-model; no hardware, camera, or network). Every hardware or network step is
-human-only: never run by CI or an agent.
+The live page is written to `recordings/live.html`; open it in a browser
+to watch the run. Every hardware step is described in `docs/SETUP.md`
+with its recorded output.
 
-## Files
+## Repository
 
-| Path | Purpose |
+| Path | What |
 | --- | --- |
-| `muse_qc/agent.py`, `agent_tools.py`, `agent_io.py`, `agent_parse.py`, `agent_chat.py` | Muse Spark agent loop, tools, chat orders |
-| `muse_qc/live_page.py` | Live status page for the agent run |
-| `muse_qc/find_parts.py`, `find_skip.py`, `parts_image.py`, `part_angle.py` | Table scan, skip zones, annotated image, lever direction |
-| `muse_qc/pick_test.py`, `pick_loop.py`, `pick_plan.py`, `pick_plan_check.py`, `pick_args.py`, `pick_mit.py`, `pick_inspect.py` | Pick, inspect and sort one part |
-| `muse_qc/grip_yaw.py`, `grip_speed.py`, `drop_plan.py` | Gripper turn, gripper speed, box drop plan |
-| `muse_qc/inspect_step.py`, `count_clips.py`, `count_retry.py` | Lever count on the arm camera image |
-| `muse_qc/inspection/` | JSON records, drawing, HTML report |
-| `muse_qc/gripper.py`, `gripper_stream.py`, `gripper_watch.py`, `gripper_grip.py`, `gripper_motor.py` | Gripper sensors and motor |
-| `muse_qc/safety.py`, `safety_limits.py` | Pre-move checks |
-| `muse_qc/target_pose.py`, `arm_calibration.py`, `xy_correction.py`, `waypoint_stream.py` | Targets, tip correction, waypoint stream |
-| `muse_qc/first_move.py`, `first_move_plan.py`, `hover_move.py`, `hold_test.py`, `mit_hold.py`, `arm_gains.py` | Motion tests, hold, gains |
-| `muse_qc/arm.py`, `fk_check.py`, `diagnose_joints.py`, `cycle_timing.py` | Arm readout, kinematics and timing checks |
-| `muse_qc/preflight.py`, `usb_devices.py`, `sdk_config.py` | Device checks |
-| `muse_qc/camera_top.py`, `camera_arm.py` | Capture |
-| `muse_qc/table_markers.py`, `make_markers.py`, `detect_markers.py`, `table_coords.py` | Markers and pixel-to-mm frame |
-| `muse_qc/checkerboard.py`, `capture_calibration.py`, `calibrate_camera.py` | Camera calibration |
-| `muse_qc/model_check.py`, `vision_sam.py` | Model API check, SAM box detection |
-| `tests/` | Offline suite mirroring the modules |
-| `docs/SETUP.md` | Hand-run manual, sections 1-36 |
-| `docs/DEVLOG.md` | Dated human-run evidence log |
-| `docs/PLAN.md`, `docs/RESULTS.md` | Goal and schedule, verified numbers |
-| `calibration/table_camera.json` | Table camera calibration |
+| `muse_qc/agent*.py`, `live_page.py` | Muse Spark agent loop, tools, chat orders, live page |
+| `muse_qc/find_parts.py`, `part_angle.py`, `slot_axis.py` | table scan and lever direction |
+| `muse_qc/pick_*.py`, `grip_yaw.py`, `drop_plan.py`, `inspect_station.py` | pick, inspection station, sort |
+| `muse_qc/count_clips.py`, `count_retry.py`, `inspection/` | lever count, records, HTML report |
+| `muse_qc/gripper*.py` | gripper sensors and motor |
+| `muse_qc/safety.py`, `safety_limits.py` | checks before and during every move |
+| `muse_qc/camera_*.py`, `detect_markers.py`, `table_coords.py`, `calibrate_camera.py` | cameras, markers, table millimeters |
+| `tests/` | offline test suite |
+| `docs/SETUP.md` | every hand-run step with recorded output |
+| `docs/DEVLOG.md` | dated log of every real hardware and API test |
+| `docs/RESULTS.md` | verified numbers |
+| `docs/MUSE_CODE_LOG.md` | what Muse Code built in each task |
 
-Recorded images in `recordings/` are never committed.
+## Known limits
+
+- Missing and open levers were seen in the tests; broken levers are not
+  tested yet.
+- SAM 3.1 does not always confirm a real part on the first try; a second
+  phrase and the rescan catch most of them.
+- Light matters: a lamp shadow once turned the lever direction by 90 deg,
+  and poor light gave 0 levers on good parts. The fixed inspection station
+  and the slot axis fixed this in run 3.
+- After every part the arm returns to rest, which costs about 7 s per part.
+
+## Next
+
+- A longer test series with known good and bad parts, including broken
+  and open levers.
+- Go straight from the box to the next part without returning to rest.
+- Measure the Meta API cost of a full run again.
+- Other parts with other rules, given in plain words.
+
+## Credits
+
+Built during the Meta Global AI Developer Hackathon (26 Oct to 4 Nov 2026).
+
+- **Meta models:** Muse Spark 1.3 and SAM 3.1 through the Meta Model API;
+  Muse Code (powered by Muse Spark) wrote the code.
+- **Hardware:** reBot Arm B601-DM by Seeed Studio, Orbbec Gemini 305 on the
+  arm, a USB webcam above the table, and my pre-existing Touch-Sensing
+  Fin-Ray Gripper ([repository](https://github.com/StefanRohringer/Touch-Sensing-Fin-Ray-Gripper)).
+- **Software (dependencies, not copied in):** Seeed `reBotArm_control_py`
+  (MIT), `motorbridge` (MIT), Pinocchio (BSD-2-Clause), OpenCV
+  (Apache-2.0), the `openai` Python client for the Meta Model API
+  (Apache-2.0), NumPy (BSD-3-Clause), pySerial (BSD), pytest (MIT), uv.
+  Details and versions: `docs/THIRD_PARTY.md`.
+- **Ideas:** the public Meta workshop repository
+  `meta-models/legal-agent-workshop` (checks inside tools, agent loop with
+  hard limits; ideas only, no code copied).
+
+## License
+
+MIT, see `LICENSE`. Third-party components: `docs/THIRD_PARTY.md`.

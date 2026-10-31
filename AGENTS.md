@@ -1,7 +1,7 @@
 # muse-qc-cell: project rules
 
-Goal: AI quality inspection cell for injection molded parts. A reBot B601-DM arm finds parts,
-inspects them against a rule in plain language, and sorts them into good and reject bins.
+Goal: AI quality inspection cell for injection-molded parts. The reBot Arm B601-DM finds parts,
+inspects them against a rule in plain language, and sorts them into good and bad boxes.
 Built during the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026).
 
 ## Hard rules

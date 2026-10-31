@@ -262,11 +262,11 @@ corner. The scale is the mean marker side in pixels divided by 40 mm.
 
 This step opens the real camera, so only the human runs it, never CI
 and never an agent. `muse_qc/table_coords.py` converts table camera
-pixels into table millimetres. The frame is defined in
+pixels into table millimeters. The frame is defined in
 `muse_qc/table_markers.py` as `TABLE_MARKER_LAYOUT_MM`: origin at the
-centre of marker 0, +x towards the centre of marker 1, units mm. The
+center of marker 0, +x towards the center of marker 1, units mm. The
 four points are a least-squares fit (residuals under 0.5 mm) to all
-six hand-measured centre-to-centre distances of the black marker
+six hand-measured center-to-center distances of the black marker
 squares: ID0-ID1 982 mm, ID2-ID3 977 mm, ID0-ID2 531 mm,
 ID1-ID3 530 mm, diagonals ID0-ID3 1117 mm and ID1-ID2 1110 mm. The
 markers form a slightly skewed quadrilateral, not a rectangle. From
@@ -276,11 +276,11 @@ the project root:
 uv run python -m muse_qc.table_coords
 ```
 
-Expected result: one line per ID with centre in pixels, centre in
-millimetres and side length in millimetres (expected 40 mm), then the
-table position of the image centre, then the path of one grid copy
+Expected result: one line per ID with center in pixels, center in
+millimeters and side length in millimeters (expected 40 mm), then the
+table position of the image center, then the path of one grid copy
 (grid lines every 100 mm over the marker quadrilateral, origin and
-axes labelled) at `recordings/table_grid_<YYYYmmdd_HHMMSS>.png`.
+axes labeled) at `recordings/table_grid_<YYYYmmdd_HHMMSS>.png`.
 Real human run with the calibration and the fitted quadrilateral
 layout:
 
@@ -296,14 +296,14 @@ recordings/table_grid_20261028_084104.png
 
 The command fails when a marker is missing, naming the missing IDs.
 The side length in mm is an independent check: it maps the four
-marker corners (not the centres used for the homography) into the
+marker corners (not the centers used for the homography) into the
 table frame, so a wrong homography shows up as a wrong side length.
 
 When `calibration/table_camera.json` exists (see section 14), the
 command loads it and prints
 `calibration: calibration/table_camera.json (rms <x> px)` as the
 first line; otherwise it prints `calibration: none (raw pixels)`.
-With a calibration, the detected marker centres and corners are
+With a calibration, the detected marker centers and corners are
 undistorted point by point before the homography is built, every
 pixel-to-mm mapping undistorts the raw pixel first, and the grid is
 distorted back onto the raw frame, which itself is never
@@ -354,7 +354,7 @@ the saved PNGs. Both import no arm code and move nothing.
 
 Photo plan: take about 16 photos of the flat board, always fully
 visible with a white margin around it. Take about 8 flat photos
-spread over the centre, the four corners and the edges of the image,
+spread over the center, the four corners and the edges of the image,
 then about 8 tilted photos with the board leaning 20 to 40 degrees
 against a box or book (different tilt directions). Move the board,
 never the camera.
@@ -436,7 +436,7 @@ agent. `muse_qc/vision_sam.py` takes one frame with
 `open_table_camera()` from `muse_qc/camera_top.py` (or a saved image
 with `--image`), sends it with a noun phrase to SAM 3.1 through the
 `openai` SDK in one `POST /v1/responses` call, parses the box records
-from the output text (masks are ignored) and draws the boxes with ids
+from the output text (masks are ignored) and draws the boxes with IDs
 onto a copy of the image. The key is read with
 `muse_qc/model_check.py` and never printed. From the project root:
 
@@ -450,7 +450,7 @@ pixels and confidence, then the count, then the path of the annotated
 copy at `recordings/sam_<YYYYmmdd_HHMMSS>.png`. Before the box lines,
 one `table mapping:` line reports `calibrated`, `raw pixels` (no
 calibration file) or `unavailable (<reason>)`, and each box line ends
-with `table_mm=(x, y)` in millimetres (the box centre mapped onto the
+with `table_mm=(x, y)` in millimeters (the box center mapped onto the
 table frame on the same frame sent to SAM) when the mapping works.
 
 Real human run of `uv run python -m muse_qc.vision_sam "small part"`
@@ -483,7 +483,7 @@ This step opens the real arm bus for reading, so only the human
 runs it, never CI and never an agent. `muse_qc/fk_check.py` reads
 the six joint angles once through `muse_qc/arm.py` (read only: it
 never enables, zeroes or sends anything), computes the `end_link`
-pose with the Seeed SDK kinematics (metres and radians in the SDK,
+pose with the Seeed SDK kinematics (meters and radians in the SDK,
 printed as mm and degrees) and projects the finger-tip position
 30 mm along the tool axis (link6 to end_link). The 30 mm value
 (`TIP_OFFSET_MM`) is an estimate from a hand measurement (185 mm
@@ -627,7 +627,7 @@ uv run python -m muse_qc.first_move --execute
 ## 19. Arm camera test (by hand only)
 
 This step opens the real arm camera, so only the human runs it, never CI
-and never an agent. `muse_qc/camera_arm.py` finds the colour stream of
+and never an agent. `muse_qc/camera_arm.py` finds the color stream of
 the Orbbec Gemini 305 on the gripper by USB vendor and product ID
 (2bc5:0840) plus USB interface 4 (`find_arm_color_node` in the same
 module: the interface directory behind the `device` link must carry
@@ -786,9 +786,9 @@ The page showed "parts inspected: 2, good: 1, bad: 1" with the BAD card first an
 
 ## 22. Target pose dry run (by hand only)
 
-This step turns a part position in table millimetres (as printed by
+This step turns a part position in table millimeters (as printed by
 `muse_qc/vision_sam.py`, table frame of `muse_qc/table_coords.py`:
-origin at the centre of marker 0, +x towards marker 1, +y towards
+origin at the center of marker 0, +x towards marker 1, +y towards
 marker 2 away from the arm) into an arm pose with the gripper tip
 straight above the part at a hover height. `muse_qc/target_pose.py`
 converts the table target to the arm base frame (joint 1 axis at
@@ -1081,7 +1081,7 @@ Method: the human placed the white 25 mm cube, the table camera
 measured it (`python -m muse_qc.vision_sam "white cube"` gives
 table_mm A), the arm hovered at 100 mm over A
 (`python -m muse_qc.hover_move --table-mm A --hold-s 30 --execute`),
-the human slid the cube exactly under the centre between the finger
+the human slid the cube exactly under the center between the finger
 tips while the arm held, and after the return the camera measured the
 cube again (table_mm B). B is where the real tip was when commanded
 to A. Table to base uses `target_pose.table_to_base_mm`
@@ -1130,7 +1130,7 @@ holds, puts it back down, opens, lifts and returns to rest. Only the
 human runs it, never CI and never an agent.
 
 Three modules share the work (`tests/test_pick.py`, fake SDK, fake
-sensor and fake IK only): `muse_qc/pick_plan.py` builds the labelled
+sensor and fake IK only): `muse_qc/pick_plan.py` builds the labeled
 arm waypoint plan (trapezoid hover ramp at the CLI speed with
 the CLI accel plus a 0.5 s hover settle, 1 mm ladder fast at
 40 mm/s above the slow zone and 20 mm/s near the part, lift slow
@@ -1261,7 +1261,7 @@ confirmed the part. `muse_qc/find_parts.py` therefore works in two
 steps: it compares the frame with a reference photo of the empty
 table (arm in its rest pose) and takes every new blob as a candidate,
 then sends a zoomed crop around each candidate to SAM 3.1 to confirm
-it and refine the centre. Only the human runs it, never CI and never
+it and refine the center. Only the human runs it, never CI and never
 an agent (it opens the real table camera and contacts the Meta Model
 API over the network).
 
@@ -1278,12 +1278,12 @@ rest pose: `--save-empty` takes one frame with
 `camera_top.open_table_camera` and saves it as
 `recordings/empty_table.png`, then prints the path and exits 0.
 Then place the parts and run with `--no-sam` first (change
-detection only, one line per candidate with blob centre, area and
+detection only, one line per candidate with blob center, area and
 table mm, ending in `candidates: M`), then with SAM (default phrase
 `grey object`, overridable with `--phrase`; one SAM call per
 candidate on a square crop of side max(3x blob side, 160 px),
-upscaled to 640 px). Each line reports the centre used (SAM box
-centre when confirmed, blob centre otherwise), the area, the table
+upscaled to 640 px). Each line reports the center used (SAM box
+center when confirmed, blob center otherwise), the area, the table
 position and the SAM verdict (`confirmed` with confidence, `no box`
 or `skipped`), sorted by table x; the last lines give the
 `parts: N confirmed of M candidates` count and the path of the
@@ -1311,7 +1311,7 @@ get no second call.
 
 Before SAM, every candidate is checked against three skip zones and
 skipped ones cost no SAM call: within 70 mm (max of |dx|, |dy|) of
-a sorting box centre from `drop_plan.BOXES_TABLE_MM` (parts already
+a sorting box center from `drop_plan.BOXES_TABLE_MM` (parts already
 sorted), inside one of the two arm zone rectangles (x 380 to
 610 mm, y 0 to 200 mm for the base and arm with cables, x 430 to
 590 mm, y 200 to 300 mm for the resting gripper), and farther
@@ -1337,7 +1337,7 @@ Blobs are found by Gaussian blur, absolute difference in LAB space
 (max over the channels, threshold 30), morphological open then
 close, and external contours; a blob counts only when its area
 (through the marker scale) is between 150 and 3000 mm2 and its
-centre maps inside the table rectangle (0 to 990 mm in x, 0 to
+center maps inside the table rectangle (0 to 990 mm in x, 0 to
 540 mm in y). The table position uses the same calibration and
 marker homography as `muse_qc/vision_sam.py`, and the key handling
 and error messages match it (the key is never printed).
@@ -1520,7 +1520,7 @@ Recorded runs (2026-10-30, same point 506.4 338.1, `--gains vel2`, 20 s hold eac
 
 Two open boxes (100 x 100 mm, 70 mm high, open on top) stand on the
 table: the left box takes good parts, the right box takes rejects.
-Their centres (top rim in the camera view) were measured by the
+Their centers (top rim in the camera view) were measured by the
 human with `python -m muse_qc.vision_sam "box"` as table mm
 (376.4, 423.8) for good and (675.4, 420.3) for bad.
 `muse_qc/drop_plan.py` keeps these positions plus the nominal
@@ -1550,7 +1550,7 @@ hover height. During to-box the loop keeps the part-lost watch
 exactly as during lift, then opens the gripper to 40 mm over the
 box, holds 1 s, and reads the touch sensors once: no contacts means
 the part dropped into the box, contacts left mean it is still held
-(warning only). Without `--drop` the behaviour is unchanged
+(warning only). Without `--drop` the behavior is unchanged
 (put-down). Only the human runs it, never CI and never an agent.
 
 Order, with the hand on the power supply switch:
@@ -1576,7 +1576,7 @@ built once with both drop branches: hover, lower and lift as
 today, then the to-box/release/return waypoints for the good and
 for the bad box. The dry run solves and checks every waypoint of
 both branches before anything moves, and first checks that the
-arm colour node exists and that the API key is present (the key is
+arm color node exists and that the API key is present (the key is
 never printed).
 
 Order, with the hand on the power supply switch:
@@ -1622,7 +1622,7 @@ The control loop thread never opens the camera
 and never calls the API; without `--inspect` everything behaves
 exactly as today.
 
-Failure behaviour: no frame, no part found or an API error prints
+Failure behavior: no frame, no part found or an API error prints
 "inspect failed: ..." and the unverified part is sorted into the
 bad box with exit code 1 -- the loop prints "inspect failed,
 sorting into the bad box (unverified part)" and never opens the
@@ -1657,7 +1657,7 @@ keeps holding the part meanwhile.
 
 A saved image can be rechecked by hand with
 `uv run python -m muse_qc.count_retry --image <file>` (not yet
-run on hardware): it always uses --expect-target behaviour,
+run on hardware): it always uses --expect-target behavior,
 never grabs a fresh frame, and prints one line per attempt
 ("attempt N: prompt P scale S margin M levers L") plus
 "levers: N" and "verdict: ...".
@@ -1669,7 +1669,7 @@ through Meta Muse Spark (model `muse-spark-1.3`, Responses API,
 tool calling): the model decides which tool to call next; our code
 only executes the tools and enforces safety. The model never sends
 coordinates and never moves the arm directly: positions always
-come from our own latest scan (the model only passes part ids),
+come from our own latest scan (the model only passes part IDs),
 and every motion goes through the `pick_test --inspect --execute`
 path with its safety checks. Each sort runs as its own
 `python -m muse_qc.pick_test` child process, so the operating
@@ -1680,14 +1680,14 @@ once for the whole run.
 Tools offered to the model:
 
 - `scan_table()` lists the SAM-confirmed, not skipped parts of the
-  latest table scan under fresh ids.
+  latest table scan under fresh IDs.
 - `inspect_and_sort(part_id)` picks the part with that id, counts
   its levers and drops it into the good or bad box. Unknown or
-  stale ids are refused; after every sorted part the table is
+  stale IDs are refused; after every sorted part the table is
   scanned again right away (the arm is back at rest with the
   motors off, since each sort runs as its own child process) and
   the new part list comes back inside the tool result under
-  "table after sort" with new ids, so a slipped part gets its new
+  "table after sort" with new IDs, so a slipped part gets its new
   position, the live page shows the table after every sort and no
   extra model call is needed. The rescan stays cheap: parts
   already confirmed in the previous scan are not sent to SAM
@@ -1793,11 +1793,11 @@ past `MIN_STRENGTH` in the wrong direction (see docs/DEVLOG.md
 Since 2026-10-31 the slot long axis is tried before that
 (`muse_qc/slot_axis.py`: dark V at most 60 inside the filled
 contour, 8-connected components of 5 to 40 px with elongation
-1.6 to 4.5, nearest the part centre; long axis + 90 deg is the
+1.6 to 4.5, nearest the part center; long axis + 90 deg is the
 lever estimate, the agreeing outline direction within 15 deg
 wins else the estimate itself, printed as `(slot axis)`):
 its own orientation ignores the shadow that shifted the old
-centre-to-slot cue by 45 to 90 deg on the 2026-10-31 table,
+center-to-slot cue by 45 to 90 deg on the 2026-10-31 table,
 and the much longer open-lever gap never passes the
 elongation limit.
 
@@ -1805,7 +1805,7 @@ elongation limit.
 
 `muse_qc/grip_yaw.py` turns the `lever_deg` of section 34 into a
 grip yaw offset: the lever direction is mapped into the arm base
-frame (`table_to_base_mm` on the part centre and centre plus the
+frame (`table_to_base_mm` on the part center and center plus the
 unit lever direction), compared with the radial yaw
 `atan2(base_y, base_x)` of the part, and wrapped modulo 180 into
 [-90, 90), so a 180 deg turn of the part does not matter. The
