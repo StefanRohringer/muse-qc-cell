@@ -5,14 +5,14 @@ reBot Arm B601-DM picks each part from the table, a Muse Spark agent
 decides every step, SAM 3.1 counts the levers in a close-up, and the
 part goes into the good box or the bad box. Real hardware, no simulation.
 
-<!-- MEDIA: hero image or GIF here (docs/media/...), caption below. -->
 <!-- VIDEO: add the demo video link here on Mon 2 Nov, e.g. "Demo video (3 min): <link>". -->
 
-![The arm camera close-up of a held part with the three levers boxed by SAM 3.1](docs/media/inspect_good_3_levers.png)
+<p align="center">
+<img src="docs/media/table_scan_10_parts.png" width="64%" alt="Table camera view: ten parts found on the table, each with its id and table millimeters, next to the two sorting boxes and the arm">
+<img src="docs/media/inspect_good_3_levers.png" width="31%" alt="The arm camera close-up of a held part with the three levers boxed by SAM 3.1">
+</p>
 
-*A part held between the touch-sensing fingers in front of the arm camera.
-SAM 3.1 finds the part, the crop is enlarged and the levers are counted:
-3 levers = good.*
+*Left: the table camera finds every part and gives the arm its position in table millimeters. Right: a part held between the touch-sensing fingers in front of the arm camera; SAM 3.1 finds the part, the crop is enlarged and the levers are counted: 3 levers = good.*
 
 ## The problem
 
