@@ -166,6 +166,7 @@ def wait_and_inspect(
     stream,
     out=print,
     ready_timeout_s: float = 135.0,
+    on_ready=None,
     **kwargs,
 ) -> str | None:
     """Wait for the loop lift hold, inspect, return the box or None.
@@ -176,7 +177,9 @@ def wait_and_inspect(
     or another abort before the lift ended). On done or skip no
     frame is taken and None is returned, so the caller hands
     set_verdict(None) to the loop. A ready timeout also returns
-    None.
+    None. on_ready is called exactly once right after inspect_ready
+    is set and before the inspection runs (never on skip, done or
+    ready timeout); pick_test starts the station table shot there.
     """
     ready = getattr(stream, "inspect_ready", None)
     done = getattr(stream, "done", None)
@@ -194,4 +197,6 @@ def wait_and_inspect(
             out("inspect failed: hold never settled")
             return None
         time.sleep(0.1)
+    if on_ready is not None:
+        on_ready()
     return run_inspection(out, **kwargs)

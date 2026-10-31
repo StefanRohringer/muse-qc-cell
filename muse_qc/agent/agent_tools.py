@@ -26,6 +26,10 @@ from datetime import datetime
 from pathlib import Path
 
 from muse_qc.agent.agent_parse import parse_pick_lines as parse_pick_lines
+from muse_qc.agent.agent_rescan import (
+    rescan_after_sort as rescan_after_sort,
+)
+from muse_qc.agent.agent_rescan import store_scan as store_scan
 from muse_qc.agent.agent_state import (
     SAME_PART_MM,
     RunState,
@@ -100,67 +104,6 @@ TOOL_DEFINITIONS = [
         "strict": True,
     },
 ]
-
-def store_scan(state, found) -> dict:
-    """Store a scan in state under new ids; return the tool result part.
-
-    Same shape as a scan_table call: {"parts", "skipped", "image"}
-    with one {"id", "table_mm", "confidence", "lever_deg"} dict
-    per part. The state is fresh again under new ids.
-    """
-    items = found.get("parts", [])
-    positions = [part["table_mm"] for part in items]
-    state.new_scan(
-        positions,
-        [part.get("lever_deg") for part in items],
-        [part.get("confidence") for part in items],
-    )
-    skipped = int(found.get("skipped", 0) or 0)
-    return {"parts": [
-        {"id": index,
-         "table_mm": [float(pos[0]), float(pos[1])],
-         "confidence": part.get("confidence"),
-         "lever_deg": (None if part.get("lever_deg") is None
-                       else round(float(part["lever_deg"]), 1))}
-        for index, (pos, part) in enumerate(zip(positions, items))
-    ], "skipped": skipped, "image": found.get("image")}
-
-
-def rescan_after_sort(state, scan_fn, out=print) -> dict:
-    """Rescan right after a sorted part; return the result update.
-
-    The pick_test child has ended (arm at rest, motors off), so
-    the scan runs at once with known = the confirmed points of
-    the previous scan: known parts skip SAM, a slipped part gets
-    its new position. The new scan is stored under new ids like
-    a scan_table call and returned as "table after sort" with
-    the same part fields. When the rescan fails or finds
-    nothing, the scan expires and the update says so; the model
-    then calls scan_table as usual. Prints nothing but the
-    one-line rescan outcome through out.
-    """
-    known = state.known_parts()
-    try:
-        found = scan_fn(known=known)
-    except Exception as exc:  # noqa: BLE001 - short, no key
-        state.mark_stale()
-        out(f"tool: rescan failed: {exc}")
-        return {"rescan": f"failed: {exc}, call scan_table"}
-    items = found.get("parts", []) if isinstance(found, dict) else []
-    if not items:
-        state.mark_stale()
-        out("tool: rescan found no parts, call scan_table")
-        return {"table after sort": [],
-                "rescan": "no parts found, call scan_table"}
-    result = store_scan(state, found)
-    count = len(result["parts"])
-    if count == 1:
-        out("tool: rescan found 1 part")
-    else:
-        out(f"tool: rescan found {count} parts")
-    return {"table after sort": result["parts"],
-            "image after sort": result["image"]}
-
 
 class FakeTable:
     """Fake table for --simulate: 3 parts, two good, one bad.
@@ -277,54 +220,27 @@ def real_scan(known=None) -> dict:
     known holds the confirmed points of the previous scan;
     known parts skip SAM (first scan: known empty, all to SAM).
     """
-    import cv2
-
-    from muse_qc.vision import find_parts
+    from muse_qc.agent.agent_rescan import scan_frame
     from muse_qc.vision.camera_top import open_table_camera
-    from muse_qc.checks.model_check import KEY_NAME, read_api_key
-    from muse_qc.vision.vision_sam import _default_client_factory
 
     try:
         frame, _ = open_table_camera()
     except (OSError, RuntimeError) as exc:
         raise RuntimeError(f"request failed: {exc}") from exc
-    empty = cv2.imread(find_parts.EMPTY_PATH)
-    if empty is None:
-        raise RuntimeError(
-            f"missing empty reference {find_parts.EMPTY_PATH}:"
-            " take one with --save-empty")
-    key = read_api_key()
-    if not (key or "").strip():
-        raise RuntimeError(
-            f"{KEY_NAME} is missing: set it in .env or the environment")
-    try:
-        client = _default_client_factory(key)
-    except Exception as exc:  # noqa: BLE001 - mapped, key never printed
-        raise RuntimeError(
-            f"request failed: {exc}") from exc
-    results, path = find_parts.scan_table(
-        frame, empty, find_parts.DEFAULT_PHRASE, client,
-        known=known)
-    parts = [
-        {"table_mm": [float(item["table_mm"][0]),
-                      float(item["table_mm"][1])],
-         "confidence": item["confidence"],
-         "lever_deg": item["lever_deg"]}
-        for item in results
-        if item["skipped"] is None and item["confirmed"]
-    ]
-    skipped = sum(1 for item in results if item["skipped"] is not None)
-    return {"parts": parts, "skipped": skipped, "image": str(path)}
+    return scan_frame(frame, known)
 
 
 def real_sort(table_mm, lever_deg=None, popen_factory=None,
-              timeout_s=None, clock=None) -> dict:
+              timeout_s=None, clock=None, scan_at_station=False) -> dict:
     """Run one real pick_test inspect sort as a child. --execute only.
 
     Each sort is its own process so the operating system frees the
     serial port when the child exits. The child's yes prompt is
     answered on stdin (the human confirmed once for the whole run).
     lever_deg adds --lever-deg to the child command when not None.
+    scan_at_station adds --station --station-table-shot so the
+    table overview is taken during the station hold; without it
+    the child command is exactly the command used so far.
     Returns the parsed result with the last lines and exit_code.
     """
     import sys
@@ -337,6 +253,8 @@ def real_sort(table_mm, lever_deg=None, popen_factory=None,
     cmd = [sys.executable, "-m", "muse_qc.pick.pick_test",
            "--table-mm", f"{float(table_mm[0])}",
            f"{float(table_mm[1])}", "--inspect", "--execute"]
+    if scan_at_station:
+        cmd += ["--station", "--station-table-shot"]
     if lever_deg is not None:
         cmd += ["--lever-deg", f"{float(lever_deg)}"]
     try:

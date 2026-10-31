@@ -479,3 +479,40 @@ def test_station_j6_without_station_is_refused():
             **_station_dry_kwargs(lines),
         )
     assert exc.value.code == 2
+
+
+def test_station_table_shot_without_inspect_is_refused():
+    def factory(**kwargs):
+        raise AssertionError("nothing may connect on a bad argument")
+
+    with pytest.raises(SystemExit) as exc:
+        pick_test.main(
+            _station_main_args(["--station", "--station-table-shot"]),
+            sdk_factory=factory,
+        )
+    assert exc.value.code == 2
+
+
+def test_station_table_shot_without_station_is_refused():
+    def factory(**kwargs):
+        raise AssertionError("nothing may connect on a bad argument")
+
+    with pytest.raises(SystemExit) as exc:
+        pick_test.main(
+            _station_main_args(["--inspect", "--station-table-shot"]),
+            sdk_factory=factory,
+        )
+    assert exc.value.code == 2
+
+
+def test_station_table_shot_dry_run_saves_nothing():
+    sdk, lines = FakeSdk(), []
+    code = pick_test.main(
+        _station_main_args(
+            ["--inspect", "--station", "--station-table-shot"]),
+        sdk_factory=lambda **kwargs: sdk,
+        **_station_dry_kwargs(lines),
+    )
+    assert code == 0
+    assert not any(line.startswith("station table shot") for line in lines)
+    assert "enable_all" not in sdk.calls and "loop" not in sdk.calls

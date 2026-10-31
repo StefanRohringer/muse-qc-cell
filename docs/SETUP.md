@@ -1982,6 +1982,43 @@ To tune the joint 6 angle without editing code, pass `--station-j6 DEG` together
 uv run python -m muse_qc.pick.pick_test --table-mm X Y --lever-deg L --inspect --station --station-j6 15 --execute
 ```
 
+## 38. Table scan at the inspection station (not yet run on hardware)
+
+With `--station-table-shot` (needs `--station` and `--inspect`)
+the table camera takes one overview image while the arm holds
+the part at the station, in parallel with the lever count: the
+shot starts right before the count and joins with the remaining
+time of 6 s (`STATION_SHOT_TIMEOUT_S` in
+`muse_qc/inspection/station_shot.py`) after it, so the extra
+hold is at most the shot time minus the inspect time, normally
+zero. The frame is only saved as
+`recordings/station_table_<stamp>.png` (one printed line
+`station table shot: ...`); no SAM call happens in the child.
+On any camera error or timeout one
+`station table shot failed: ...` line is printed once and the
+hold, the lever count, the drop and the return continue
+normally. The agent flag `--scan-at-station` passes
+`--station --station-table-shot` to every sort and scans the
+saved overview for the rescan after the sort (same empty
+reference, same phrase, same known parts) instead of opening
+the table camera again after the arm is home; a missing or
+unreadable station image falls back to the normal table camera
+rescan. Without `--scan-at-station` the agent run behaves
+exactly as before. Dry run first, then one part with the hand
+on the power supply switch:
+
+```bash
+uv run python -m muse_qc.pick.pick_test --table-mm X Y --inspect --station --station-table-shot
+uv run python -m muse_qc.pick.pick_test --table-mm X Y --inspect --station --station-table-shot --execute
+uv run python -m muse_qc.agent --execute --scan-at-station
+```
+
+The arm at the station may cover part of the table in the
+overview image. The first real run must be checked by eye:
+open `recordings/station_table_<stamp>.png` and confirm every
+remaining part is visible before trusting the rescan. Only the
+human runs it, never CI and never an agent.
+
 ## Safety notes
 
 Read-only review of the SDK file
