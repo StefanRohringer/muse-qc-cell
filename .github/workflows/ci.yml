@@ -1,0 +1,47 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+      - name: Prepare the Seeed SDK clone
+        run: bash scripts/setup_sdk.sh ../seeed-sdk
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Offline test suite
+        run: uv run pytest -q
+      - name: Import every module
+        run: |
+          uv run python -c "
+          import importlib, pkgutil
+          import muse_qc
+          names = [m.name for m in pkgutil.walk_packages(muse_qc.__path__, 'muse_qc.')]
+          assert names, 'no muse_qc modules found'
+          subs = {'agent', 'arm', 'bringup', 'checks', 'gripper', 'inspection', 'pick', 'vision'}
+          found = {n.split('.')[1] for n in names if '.' in n}
+          assert subs <= found, f'missing subpackages: {sorted(subs - found)}'
+          for n in names:
+              importlib.import_module(n)
+          print(f'imported {len(names)} modules')
+          "
+      - name: Agent entry point
+        run: uv run python -m muse_qc.agent --help
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the offline test image
+        run: docker build -t muse-qc-cell .
+      - name: Run the offline suite in the image
+        run: docker run --rm muse-qc-cell

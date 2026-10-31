@@ -1,5 +1,7 @@
 # muse-qc-cell
 
+![tests](https://github.com/StefanRohringer/muse-qc-cell/actions/workflows/ci.yml/badge.svg)
+
 An AI quality inspection cell for injection-molded parts. A low-cost
 reBot Arm B601-DM picks each part from the table, a Muse Spark agent
 decides every step, SAM 3.1 counts the levers in a close-up, and the
@@ -192,7 +194,11 @@ this repository as `../seeed-sdk` (see `docs/SETUP.md`; without it
 `uv sync` fails), and a `.env` file with `MODEL_API_KEY` for the camera and
 model steps.
 
+`scripts/setup_sdk.sh` covers SETUP steps 1 to 3, so a fresh clone only
+needs the script plus `uv sync` (step 4):
+
 ```bash
+bash scripts/setup_sdk.sh                        # prepares ../seeed-sdk, idempotent
 uv sync
 uv run pytest                                     # offline suite, no hardware
 uv run python -m muse_qc.checks.preflight                # human only: USB + SDK checks
@@ -200,6 +206,13 @@ uv run python -m muse_qc.checks.model_check              # human only: Model API
 uv run python -m muse_qc.vision.find_parts --save-empty  # human only: empty-table reference
 uv run python -m muse_qc.agent                    # real Muse Spark, fake table, no arm
 uv run python -m muse_qc.agent --execute --chat --task "sort all parts"  # human only: real run
+```
+
+Without local setup, the same offline suite runs in Docker:
+
+```bash
+docker build -t muse-qc-cell .
+docker run --rm muse-qc-cell
 ```
 
 The live page is written to `recordings/live.html`; open it in a browser

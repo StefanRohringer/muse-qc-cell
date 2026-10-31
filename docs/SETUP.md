@@ -2001,3 +2001,26 @@ Read-only review of the SDK file
 - Not verified: the exact bytes the `motorbridge` package
   (`Controller.disable_all`, `shutdown`, `close`, `send_*`) puts on the
   bus. That package was outside this review.
+
+## Run the offline suite in Docker or CI
+
+`scripts/setup_sdk.sh` automates sections 1 to 3 above, so a fresh clone
+only needs the script plus `uv sync`. GitHub runs the same steps on every
+push to main (`.github/workflows/ci.yml`): setup script, `uv sync
+--locked`, `uv run pytest -q`, an import check of every `muse_qc` module,
+and `uv run python -m muse_qc.agent --help`. No secrets, no
+`MODEL_API_KEY`, no network calls in tests, no hardware.
+
+The same offline suite runs in Docker, without any local setup:
+
+```bash
+docker build -t muse-qc-cell .
+docker run --rm muse-qc-cell
+```
+
+The agent with a fake table (real Muse Spark, no arm) takes the key at run
+time only; it is never baked into the image:
+
+```bash
+docker run --rm --env-file .env muse-qc-cell uv run python -m muse_qc.agent
+```
