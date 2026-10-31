@@ -126,7 +126,11 @@ def rescan_after_sort(state, scan_fn, out=print,
     during the station hold is scanned instead of opening the
     table camera, and one line names the source used. Without it
     the behaviour is exactly the camera rescan above. A missing
-    or unreadable station image falls back to the camera rescan.
+    or unreadable station image falls back to the camera rescan,
+    and so does any RuntimeError from scanning the station image
+    (for example a missing table mapping when the arm covers a
+    marker): the scan never reports "no parts found" for an
+    unscanned station image.
     """
     known = state.known_parts()
     if station_image is not None:
@@ -136,12 +140,9 @@ def rescan_after_sort(state, scan_fn, out=print,
         else:
             out("tool: rescan from station image")
             try:
-                found = scan_frame(frame, known)
-            except Exception as exc:  # noqa: BLE001 - short, no key
-                state.mark_stale()
-                out(f"tool: rescan failed: {exc}")
-                return {"rescan": f"failed: {exc}, call scan_table"}
-            return _store_found(state, found, out)
+                return _store_found(state, scan_frame(frame, known), out)
+            except Exception:  # noqa: BLE001 - fall back to the camera
+                out("tool: rescan from table camera")
     try:
         found = scan_fn(known=known)
     except Exception as exc:  # noqa: BLE001 - short, no key

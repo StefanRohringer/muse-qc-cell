@@ -2016,7 +2016,10 @@ uv run python -m muse_qc.agent --execute --scan-at-station
 The arm at the station may cover part of the table in the
 overview image. The first real run must be checked by eye:
 open `recordings/station_table_<stamp>.png` and confirm every
-remaining part is visible before trusting the rescan. Only the
+remaining part is visible before trusting the rescan. The arm
+at the station hides marker 0, so a station image reuses the
+last full 4-marker mapping (`recordings/table_mapping_last.json`,
+at most 12 hours old) instead of failing. Only the
 human runs it, never CI and never an agent.
 
 ## Safety notes

@@ -1179,6 +1179,62 @@ def test_execute_without_flag_sorts_as_before(monkeypatch, tmp_path):
     assert sort_seen == [False]
 
 
+def test_rescan_falls_back_when_station_scan_raises_value_error(
+        monkeypatch, tmp_path):
+    import cv2
+    import numpy
+
+    from muse_qc.agent import agent_rescan
+
+    image = tmp_path / "station_table_20261031_234847.png"
+    cv2.imwrite(str(image), numpy.zeros((8, 8, 3), numpy.uint8))
+
+    def bad_frame(frame, known):
+        raise ValueError("bad station frame")
+
+    monkeypatch.setattr(agent_rescan, "scan_frame", bad_frame)
+    lines = []
+    calls = []
+
+    def scan(known=None):
+        calls.append(known)
+        return _station_found()
+
+    result = agent_tools.rescan_after_sort(
+        _station_state(), scan, lines.append, station_image=str(image))
+    assert len(calls) == 1
+    assert "tool: rescan from table camera" in lines
+    assert result["table after sort"][0]["table_mm"] == [540.0, 330.0]
+
+
+def test_rescan_falls_back_when_station_image_unmapped(monkeypatch, tmp_path):
+    import cv2
+    import numpy
+
+    from muse_qc.agent import agent_rescan
+
+    image = tmp_path / "station_table_20261031_234847.png"
+    cv2.imwrite(str(image), numpy.zeros((8, 8, 3), numpy.uint8))
+
+    def no_mapping(frame, known):
+        raise RuntimeError(
+            "table mapping: unavailable (missing table markers: [0])")
+
+    monkeypatch.setattr(agent_rescan, "scan_frame", no_mapping)
+    lines = []
+    calls = []
+
+    def scan(known=None):
+        calls.append(known)
+        return _station_found()
+
+    result = agent_tools.rescan_after_sort(
+        _station_state(), scan, lines.append, station_image=str(image))
+    assert len(calls) == 1
+    assert "tool: rescan from table camera" in lines
+    assert result["table after sort"][0]["table_mm"] == [540.0, 330.0]
+
+
 def test_scan_result_shows_lever_deg(tmp_path):
     scan = _scan_with_levers([
         {"table_mm": list(P0), "lever_deg": 89.84, "confidence": 0.9},

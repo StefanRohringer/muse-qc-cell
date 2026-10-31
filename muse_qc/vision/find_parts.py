@@ -11,13 +11,13 @@ Hand-run only (real camera and API); tests use synthetic images:
 
 from __future__ import annotations
 
-import argparse
 import sys
 from pathlib import Path
 
 import cv2
 import numpy
 
+from muse_qc.vision import table_mapping
 from muse_qc.vision.camera_top import open_table_camera
 from muse_qc.vision.detect_markers import detect_table_markers, scale_px_per_mm
 from muse_qc.vision.find_skip import classify_skip
@@ -218,15 +218,35 @@ def scan_table(frame, empty, phrase=DEFAULT_PHRASE, client=None,
     (the unclear reason, None otherwise). Raises RuntimeError
     with the user-facing message (the
     same text main prints) instead of returning an exit code.
+    The table mapping comes from all 4 markers and is saved for
+    later; when markers are covered (the arm at the inspection
+    station hides marker 0) the last mapping at most
+    MAPPING_MAX_AGE_H hours old is reused with one printed line.
     """
+    mapping_path = str(Path(recordings_dir) / "table_mapping_last.json")
     try:
         markers = detect_table_markers(frame)
         calibration = load_table_calibration()
         homography = table_homography(markers, calibration)
     except (RuntimeError, OSError, ValueError, KeyError) as exc:
-        raise RuntimeError(
-            f"table mapping: unavailable ({exc})") from exc
-    scale = scale_px_per_mm(markers)
+        loaded = table_mapping.load_last_mapping(mapping_path)
+        if loaded is None:
+            raise RuntimeError(
+                f"table mapping: unavailable ({exc})") from exc
+        homography, scale, stamp = loaded
+        try:
+            calibration = load_table_calibration()
+        except (OSError, ValueError, KeyError):
+            calibration = None
+        markers = None
+        print(f"table mapping: from last full scan {stamp}")
+    else:
+        scale = scale_px_per_mm(markers)
+        try:
+            table_mapping.save_last_mapping(homography, markers, scale,
+                                            mapping_path)
+        except OSError as exc:
+            raise RuntimeError(f"request failed: {exc}") from exc
     to_table = lambda point: pixel_to_table_mm(  # noqa: E731
         homography, point, calibration)
     blobs = detect_changes(frame, empty, scale, to_table)
@@ -297,102 +317,15 @@ def scan_table(frame, empty, phrase=DEFAULT_PHRASE, client=None,
 
 
 def main(argv=None):
-    """Find table parts against the empty reference, confirm with SAM."""
-    parser = argparse.ArgumentParser(
-        description="Find connector parts via empty-table diff plus SAM."
-    )
-    parser.add_argument("--save-empty", action="store_true")
-    parser.add_argument("--phrase", default=DEFAULT_PHRASE)
-    parser.add_argument("--no-sam", action="store_true")
-    parser.add_argument("--image", default=None)
-    parser.add_argument("--empty", default=EMPTY_PATH)
-    args = parser.parse_args(argv)
-    if args.save_empty:
-        return save_empty()
-    if args.image is not None:
-        frame = cv2.imread(args.image)
-        if frame is None:
-            print(f"cannot read image {args.image}")
-            return 1
-    else:
-        try:
-            frame, _ = open_table_camera()
-        except (OSError, RuntimeError) as exc:
-            print(f"request failed: {exc}")
-            return 1
-    empty = cv2.imread(args.empty)
-    if empty is None:
-        print(f"missing empty reference {args.empty}:"
-              " take one with --save-empty")
-        return 2
-    if empty.shape != frame.shape:
-        print("size mismatch: take a new empty reference with --save-empty")
-        return 2
-    client = None
-    if not args.no_sam:
-        api_key = read_api_key()
-        if not api_key or not api_key.strip():
-            print(f"{KEY_NAME} is missing: set it in .env or the environment")
-            return 2
-        try:
-            client = _default_client_factory(api_key)
-        except Exception as exc:  # noqa: BLE001 - mapped, key never printed
-            print(_request_error(exc))
-            return 1
-    try:
-        results, path = scan_table(frame, empty, args.phrase, client)
-    except TooManyChanges as exc:
-        skipped = sum(1 for item in exc.results if item["skipped"] is not None)
-        print(f"blobs: {len(exc.results)} total, {skipped} skipped,"
-              f" {len(exc.results) - skipped} unskipped")
-        print(exc.path)
-        print(exc)
-        return 1
-    except RuntimeError as exc:
-        print(exc)
-        return 1
-    for index, item in enumerate(results):
-        pixel_x, pixel_y = item["pixel"]
-        table_x, table_y = item["table_mm"]
-        if item["skipped"] is not None:
-            print(f"part {index} center=({pixel_x:.0f}, {pixel_y:.0f})"
-                  f" area_mm2={item['area_mm2']:.0f}"
-                  f" table_mm=({table_x:.1f}, {table_y:.1f})"
-                  f" skipped: {item['skipped']}")
-            continue
-        if client is None:
-            sam_text = "skipped"
-        elif item.get("known"):
-            sam_text = "known"
-        elif not item["confirmed"]:
-            sam_text = "no box"
-        elif item["confidence"] is None:
-            sam_text = "confirmed n/a"
-        else:
-            sam_text = f"confirmed {item['confidence']:.2f}"
-            if item.get("retried"):
-                sam_text += " (small part)"
-        if item["lever_deg"] is None:
-            lever_text = f"lever_deg=? ({item['lever_reason']})"
-        else:
-            shown = float(item["lever_deg"])
-            if round(shown, 1) >= 180.0:
-                shown = 0.0
-            lever_text = f"lever_deg={shown:.1f} ({item['lever_source']})"
-        print(f"part {index} center=({pixel_x:.0f}, {pixel_y:.0f})"
-              f" area_mm2={item['area_mm2']:.0f}"
-              f" table_mm=({table_x:.1f}, {table_y:.1f}) sam={sam_text}"
-              f" {lever_text}")
-    skipped = sum(1 for item in results if item["skipped"] is not None)
-    skipped_text = f" ({skipped} skipped)" if skipped else ""
-    if client is None:
-        print(f"candidates: {len(results)}{skipped_text}")
-    else:
-        done = sum(1 for item in results if item["confirmed"])
-        print(f"parts: {done} confirmed of {len(results)}"
-              f" candidates{skipped_text}")
-    print(path)
-    return 0
+    """Find table parts against the empty reference, confirm with SAM.
+
+    Moved to muse_qc.vision.parts_cli to keep this module within
+    the 400 line limit; kept here so python -m and the tests keep
+    calling find_parts.main.
+    """
+    from muse_qc.vision.parts_cli import main as cli_main
+
+    return cli_main(argv)
 
 
 if __name__ == "__main__":
