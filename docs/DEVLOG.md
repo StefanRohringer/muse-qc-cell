@@ -1161,3 +1161,55 @@ tool: no parts found
 agent finished: Rescan found 0 parts: 0 good, 0 bad, 0 failures. Total run 3 sorted (2 good, 1 bad).
 ```
 Result: first continuous run: 3 parts sorted in one run (about 2.5 min, about 35 s per part, inspection images at 19:33:56, 19:34:30, 19:35:11), every grip on the first try, grip rotation applied each time, scan once then rescan only after the first scan was used up. Human check: the third part had only 2 levers, so "bad" was correct (SAM counted 0 instead of 2, as at 17:07). The fourth part (lying flat at about (616, 278)) was never confirmed by SAM, so the agent left it alone, also after the chat order. The chat order and the live page worked on hardware.
+- Human ran (2026-10-30 ~22:19:52 to 22:27:12, power supply on, hand on the switch) the first 10-part agent run `uv run python -m muse_qc.agent --execute --chat` with the order "sort all 10 parts on the table.". Result: 10 of 10 parts gripped on the first try, 0 missed grips; agent: 1 scan, 10 sorts, control scan "no parts found", write_report, finish "Sorted 10 parts: 4 good, 6 bad, 0 failures". 14 Muse Spark calls. 7 min 20 s, about 44 s per part. The 5 parts on the left half of the table gave "levers 0" after 5 count attempts (sorted bad unverified); suspected cause: lamp light and background in the hand camera view. Credits before 5.37 USD, after 5.15 USD, so about 0.22 USD for the run (about 2 cents per part). This led to the fixed inspection station.
+- Human ran (2026-10-30 ~22:59 to ~23:48, power supply on) inspection station tests with `pick_test --inspect --station` (station at table mm (235.0, 150.0), tip z 100 mm). Findings: --station-j6 +15 and -15 gave no visible change of the part view (the arm camera turns with joint 6), so STATION_J6_DEG stays 0.0. Several runs ended "part: target not in view" (SAM part box confidence only about 0.51 to 0.54). The lever direction from the table camera flipped by 90 deg on the same part (51.1 and 54.2 "slot" versus 134.6 three times; the photo showed about 135 to 145 deg); suspected cause: the long shadow of the side lamp.
+- Human ran (2026-10-30 ~23:31 to ~23:45) the zoomed part search (commit ca8a14d), tried and reverted (commit 4036b8d). Human ran count_clips offline on the same arm camera frame: without the zoom the part was found (box (323,267,362,315), confidence 0.54, 3 levers, good); with the zoom: "target not in view". So the zoom made the part search worse and was reverted.
+
+## 2026-10-31
+
+- Human ran (2026-10-31 ~00:08:55, power supply on) the first fully OK station run, pick_test at table mm (355.4, 274.0) with lever 144.2 deg (find_parts said 54.2 "slot", corrected by hand by +90 after comparing with the table photo), station joint 6 0 deg. The first arm frame missed the part, the fresh-frame retry (commit 82c9ac5) found it (confidence 0.511), 3 levers (confidence 0.87 to 0.91), good, dropped into the good box.
+- Human ran (2026-10-31 ~00:28:00 to 00:34:22, power supply on) the second 10-part agent run with the station as default (commit 905cbaa), `uv run python -m muse_qc.agent --execute --chat` with the order "sort all 10 parts on the table.". Result: 10 of 10 gripped, 0 missed grips, about 6.5 min. 4 good (3 levers at once), 3 bad with 2 levers, 2 bad with 0 levers after 5 attempts (lever 80.2 and 39.5 deg), 1 bad unverified (found only by the control scan, then 3 times "target not in view"). Human observation: several parts were not gripped across the levers, so the levers were not visible; cause: wrong lever direction from the table camera (shadow).
+- Human ran (2026-10-31 ~01:02 to 01:04, power supply off, table camera only) a comparison of a shadow mask idea (not committed) against the old lever direction with `find_parts --no-sam`, three runs new and one old, same table. Read against the photo: both versions right on only 3 of 7 parts. The idea was dropped.
+- Human ran (2026-10-31 ~01:06 to 01:27, power supply off) `uv run python -m muse_qc.camera_top` and saved a raw table frame (recordings/table_20261031_010640.png). After the slot axis cue (commit 95d7cfe) the human ran offline `uv run python -m muse_qc.find_parts --image recordings/table_20261031_010640.png --no-sam`:
+```text
+part 1 center=(607, 578) area_mm2=753 table_mm=(258.5, 226.4) sam=skipped lever_deg=108.0 (slot axis)
+part 3 center=(764, 566) area_mm2=635 table_mm=(355.3, 233.1) sam=skipped lever_deg=160.3 (slot axis)
+part 4 center=(770, 458) area_mm2=765 table_mm=(360.1, 300.8) sam=skipped lever_deg=146.0 (slot axis)
+part 7 center=(990, 384) area_mm2=861 table_mm=(496.4, 345.6) sam=skipped lever_deg=89.8 (slot axis)
+part 9 center=(1102, 370) area_mm2=891 table_mm=(566.0, 354.0) sam=skipped lever_deg=95.1 (slot axis)
+part 10 center=(1226, 494) area_mm2=729 table_mm=(642.4, 276.7) sam=skipped lever_deg=33.7 (slot axis)
+part 14 center=(1310, 576) area_mm2=614 table_mm=(693.6, 226.4) sam=skipped lever_deg=38.8 (slot axis)
+```
+Result: all 7 reachable parts within about 10 deg of the photo (before: 3 of 7 right).
+- Human ran (2026-10-31 ~01:39, power supply on, hand on the switch) a single pick of the part that the old code got wrong by 90 deg, `uv run python -m muse_qc.pick_test --table-mm 558.9 356.3 --lever-deg 96.3 --inspect --execute`:
+```text
+grip yaw: lever 96.3 deg, offset +17.0 deg
+contact: gripper commanded deg -45.12 measured deg -48.49 contacts L2 R2
+part lifted, holding
+inspect: levers 2 verdict bad
+dropped into the bad box
+```
+Result: gripped across the levers (levers face the arm camera), 2 closed levers counted, the open third lever dropped by the bar height rule; the human box check after the next entry confirmed bad as correct.
+- Human ran (2026-10-31 ~01:41 to 01:48:15, power supply on, hand on the switch, live page open) the agent run with the slot axis cue and the rescan after every sorted part (commit f9f64b8), `uv run python -m muse_qc.agent --execute --chat` with the order "sort all parts on the table.":
+```text
+agent -> scan_table()
+tool: 8 parts found
+grip yaw: lever 119.3 deg, offset -19.9 deg
+inspect: levers 3 verdict good
+tool: rescan found 7 parts
+grip yaw: lever 102.3 deg, offset +9.9 deg
+inspect: levers 2 verdict bad
+tool: rescan found 4 parts
+grip yaw: lever 5.0 deg, offset -43.8 deg
+inspect retry: 3 attempts
+inspect: levers 3 verdict good
+tool: rescan found no parts, call scan_table
+agent -> scan_table()
+tool: no parts found
+agent -> write_report()
+agent finished: Sorted 9 parts: 6 good (3 levers), 3 bad (<3 levers), 0 failures/missed grips. Final rescan found no parts.
+```
+Result: 9 of 9 gripped on the first try, every part counted (no "levers 0", no "target not in view"), only 2 parts needed 2 and 3 count attempts. The rescan after a sort found one part the first scan had missed (after the 5th part the rescan still listed 4 parts). About 6.5 min, about 43 s per part including the rescan. Human checked the boxes: the 6 good parts and the 4 bad parts (these 3 plus the single pick of the ~01:39 entry) were all in the right box, so 10 of 10 sorted correctly. Credits: the credits page could not be loaded after the run, cost not measured.
+![good part with 3 closed levers at the station](media/inspect_good_3_levers.png)
+![bad part with the right lever open at the station](media/inspect_bad_right_lever_open.png)
+![bad part with the middle lever open at the station](media/inspect_bad_middle_lever_open.png)
