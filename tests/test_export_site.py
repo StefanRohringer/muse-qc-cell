@@ -11,7 +11,11 @@ import json
 import cv2
 import numpy
 
-from muse_qc.inspection.export_site import export_run, main
+from muse_qc.inspection.export_site import (
+    export_run,
+    export_table_scan,
+    main,
+)
 
 
 def _crop(path, height=600, width=500):
@@ -128,4 +132,96 @@ def test_main_prints_summary(tmp_path, capsys):
     assert "parts 2" in summary
     assert "good 1" in summary
     assert "bad 1" in summary
+    assert "table scans 0" in summary
     assert "KB" in summary
+
+
+def _scan(target, stamp, height=700, width=900):
+    frame = numpy.zeros((height, width, 3), dtype=numpy.uint8)
+    frame[100:600, 100:800] = (200, 170, 140)
+    cv2.imwrite(str(target / f"parts_{stamp}.png"), frame)
+
+
+def test_table_image_is_newest_earlier_scan(tmp_path):
+    src = tmp_path / "recordings"
+    _recordings(src, ["20261031_014235", "20261031_014500"], ["good", "bad"])
+    _scan(src, "20261031_014000")
+    _scan(src, "20261031_014200")
+    _scan(src, "20261031_014300")
+    out = tmp_path / "out"
+    data = export_run(src, "20261031_014000", "20261031_015000", out)
+    assert data["parts"][0]["table_image"] == "media/parts_20261031_014200.jpg"
+    assert data["parts"][1]["table_image"] == "media/parts_20261031_014300.jpg"
+    assert "final_table_image" not in data
+
+
+def test_no_scan_before_first_part(tmp_path):
+    src = tmp_path / "recordings"
+    _recordings(src, ["20261031_014235"], ["good"])
+    _scan(src, "20261031_014300")
+    out = tmp_path / "out"
+    data = export_run(src, "20261031_014000", "20261031_015000", out)
+    assert "table_image" not in data["parts"][0]
+    assert data["final_table_image"] == "media/parts_20261031_014300.jpg"
+
+
+def test_no_final_scan_after_last_part(tmp_path):
+    src = tmp_path / "recordings"
+    _recordings(src, ["20261031_014235"], ["good"])
+    _scan(src, "20261031_014000")
+    out = tmp_path / "out"
+    data = export_run(src, "20261031_014000", "20261031_015000", out)
+    assert data["parts"][0]["table_image"] == "media/parts_20261031_014000.jpg"
+    assert "final_table_image" not in data
+
+
+def test_shared_scan_written_once(tmp_path, capsys):
+    src = tmp_path / "recordings"
+    _recordings(src, ["20261031_014235", "20261031_014319"], ["good", "bad"])
+    _scan(src, "20261031_014000")
+    out = tmp_path / "out"
+    data = export_run(src, "20261031_014000", "20261031_015000", out)
+    assert data["parts"][0]["table_image"] == data["parts"][1]["table_image"]
+    assert [path.name for path in (out / "media").iterdir()
+            if path.name.startswith("parts_")] == ["parts_20261031_014000.jpg"]
+    assert data["table_scans"] == 1
+
+
+def test_refused_scan_names(tmp_path):
+    src = tmp_path / "recordings"
+    _recordings(src, ["20261031_014235"], ["good"])
+    frame = numpy.zeros((100, 100, 3), dtype=numpy.uint8)
+    cv2.imwrite(str(src / "armcam_20261031_014000.png"), frame)
+    cv2.imwrite(str(src / "table_20261031_014000.png"), frame)
+    cv2.imwrite(str(src / "count_20261031_014000.png"), frame)
+    out = tmp_path / "out"
+    export_run(src, "20261031_014000", "20261031_015000", out)
+    names = sorted(path.name for path in (out / "media").iterdir())
+    assert names == ["count_20261031_014235_crop.jpg"]
+    assert export_table_scan(src / "armcam_20261031_014000.png", out) is None
+    assert export_table_scan(src / "table_20261031_014000.png", out) is None
+    assert export_table_scan(src / "count_20261031_014000.png", out) is None
+
+
+def test_table_scan_longest_side_limited(tmp_path):
+    src = tmp_path / "recordings"
+    _recordings(src, ["20261031_014235"], ["good"])
+    _scan(src, "20261031_014000", height=1600, width=1400)
+    out = tmp_path / "out"
+    export_run(src, "20261031_014000", "20261031_015000", out)
+    image = cv2.imread(
+        str(out / "media" / "parts_20261031_014000.jpg"), cv2.IMREAD_COLOR)
+    assert max(image.shape[:2]) <= 1200
+
+
+def test_scan_run_json_has_no_absolute_paths(tmp_path):
+    src = tmp_path / "recordings"
+    _recordings(src, ["20261031_014235"], ["good"])
+    _scan(src, "20261031_014000")
+    _scan(src, "20261031_014300")
+    out = tmp_path / "out"
+    data = export_run(src, "20261031_014000", "20261031_015000", out)
+    text = json.dumps(data) + (out / "run.json").read_text(encoding="utf-8")
+    assert str(src) not in text
+    assert str(tmp_path) not in text
+    assert "recordings/" not in text
