@@ -108,14 +108,21 @@ held part plus its levers in the close-up.
 Muse Code (powered by Muse Spark) wrote all the code in this
 repository, task by task, logged in `docs/MUSE_CODE_LOG.md`
 (154 entries). Every hardware run in `docs/DEVLOG.md` was
-started by the human by hand.
+started by the human by hand. Muse Code is a coding tool, not a
+separate model; it ran with "--model muse-spark-1.3" and signs
+in with its own login ("muse login"), not with `MODEL_API_KEY`
+from `.env`. So the project uses three Meta tools: Muse Spark
+(agent), SAM 3.1 (vision) and Muse Code (coding).
 
 ## How to verify
 
 No hardware, no `.env`, no network for the suite; the three
 checks below need a key or a camera and are human-run only.
 
-- `uv run python -m muse_qc.checks.model_check --list`
+- `uv run python -m muse_qc.checks.model_check --list`: on
+  31 Oct 2026 the key listed 9 models; this project uses
+  muse-spark-1.3 and sam-3.1 (the other ids are listed, not
+  used).
 - `uv run python -m muse_qc.vision.vision_sam "<phrase>" --image <path>` on a saved image
 - `make simulate` (agent on the fake table, needs
   `MODEL_API_KEY` in `.env`, see the README Quickstart)
