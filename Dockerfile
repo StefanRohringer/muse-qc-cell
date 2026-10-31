@@ -8,7 +8,7 @@ FROM python:3.11-slim
 COPY --from=ghcr.io/astral-sh/uv:0.11.21 /uv /uvx /bin/
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git \
+    && apt-get install -y --no-install-recommends git libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /work/muse-qc-cell
