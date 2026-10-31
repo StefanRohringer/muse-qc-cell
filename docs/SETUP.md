@@ -450,6 +450,28 @@ project root:
 uv run python -m muse_qc.checks.model_check
 ```
 
+With `--list` the check prints every model id the API returns
+instead of the count plus `OK`/`MISSING` lines, one id per line,
+sorted (the key is never printed):
+
+```bash
+uv run python -m muse_qc.checks.model_check --list
+```
+
+Real human run with --list (recorded output, never edited):
+
+```text
+muse-image-1.0
+muse-spark-1.1
+muse-spark-1.2
+muse-spark-1.2-contributor
+muse-spark-1.3
+muse-spark-1.3-contributor
+muse-voice-transcribe-1.0
+muse-wonder-1.0
+sam-3.1
+```
+
 Real human run with a valid key (recorded output, never edited):
 
 ```text

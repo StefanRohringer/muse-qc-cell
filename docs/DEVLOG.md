@@ -1214,3 +1214,15 @@ Result: 9 of 9 gripped on the first try, every part counted (no "levers 0", no "
 ![bad part with the right lever open at the station](media/inspect_bad_right_lever_open.png)
 ![bad part with the middle lever open at the station](media/inspect_bad_middle_lever_open.png)
 - Restructure only, no behaviour change: the flat modules of muse_qc/ moved into subpackages (agent/, vision/, inspection/, arm/, gripper/, pick/, checks/, bringup/). Commands before this entry use the old flat names, see the table in docs/SETUP.md.
+- Human ran `uv run python -m muse_qc.checks.model_check --list` (2026-10-31, key from .env, network on, no hardware): OK, 9 model ids listed, both used models (muse-spark-1.3, sam-3.1) present.
+```text
+muse-image-1.0
+muse-spark-1.1
+muse-spark-1.2
+muse-spark-1.2-contributor
+muse-spark-1.3
+muse-spark-1.3-contributor
+muse-voice-transcribe-1.0
+muse-wonder-1.0
+sam-3.1
+```

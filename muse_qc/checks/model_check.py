@@ -5,8 +5,10 @@ never printed, logged or written, not even partly), calls GET
 /v1/models once through the openai SDK with base URL
 https://api.meta.ai/v1, prints the number of models and one OK/MISSING
 line each for muse-spark-1.3 and sam-3.1. Exit code 0 only when both
-are listed. Only the human runs it, never CI and never an agent, since
-it contacts the network. Imports no arm, safety, SDK or camera code.
+are listed. With --list it prints every returned model id instead,
+one per line, sorted. Only the human runs it, never CI and never an
+agent, since it contacts the network. Imports no arm, safety, SDK or
+camera code.
 """
 
 from __future__ import annotations
@@ -114,13 +116,17 @@ def _is_connection_error(exc: BaseException) -> bool:
 def run_check(
     api_key: str | None,
     make_client: Callable[[str], object],
+    list_ids: bool = False,
 ) -> int:
     """Run the check with an injected client factory; return exit code.
 
     make_client receives the key and returns a client with
-    models.list(). Returns 0 only when both expected models are
-    listed, 2 when the key is missing, 1 otherwise. Errors print a
-    short message without a stack trace and never include the key.
+    models.list(). With list_ids False (default) print the model
+    count plus one OK/MISSING line per expected model and return 0
+    only when both expected models are listed. With list_ids True
+    print every returned model id, one per line, sorted, and return
+    0. Returns 2 when the key is missing, 1 otherwise. Errors print
+    a short message without a stack trace and never include the key.
     """
     if not api_key or not api_key.strip():
         print(f"{KEY_NAME} is missing: set it in .env or the environment")
@@ -138,6 +144,10 @@ def run_check(
             return 1
         print(f"request failed: {exc}")
         return 1
+    if list_ids:
+        for model_id in sorted(ids):
+            print(model_id)
+        return 0
     print(f"models: {len(ids)}")
     results = evaluate(ids)
     for name in EXPECTED_MODELS:
@@ -152,9 +162,20 @@ def _default_client_factory(api_key: str) -> object:
     return OpenAI(api_key=api_key, base_url=BASE_URL)
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     """Read the key and run the check against the real API."""
-    return run_check(read_api_key(), _default_client_factory)
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Check the Meta Model API model list.")
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help="print every returned model id, one per line, sorted",
+    )
+    args = parser.parse_args(argv)
+    return run_check(
+        read_api_key(), _default_client_factory, list_ids=args.list)
 
 
 if __name__ == "__main__":
