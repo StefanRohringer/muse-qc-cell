@@ -33,12 +33,17 @@ class _FakeClient:
 
 
 def _fake_markers():
-    """Marker centres at the frame corners, 40 px sides (1 px/mm)."""
+    """Marker centres at the frame corners, 40 px sides (1 px/mm).
+
+    Carries the "ignored_ids" key like the real detect_table_markers
+    output (detected IDs outside the table set).
+    """
     return {
         0: {"center": (20.0, 20.0), "side_px": 40.0},
         1: {"center": (620.0, 20.0), "side_px": 40.0},
         2: {"center": (20.0, 460.0), "side_px": 40.0},
         3: {"center": (620.0, 460.0), "side_px": 40.0},
+        "ignored_ids": [7],
     }
 
 
@@ -574,6 +579,19 @@ def test_full_scan_saves_mapping(monkeypatch, tmp_path):
     payload = json.loads(mapping.read_text(encoding="utf-8"))
     assert payload["marker_ids"] == [0, 1, 2, 3]
     assert payload["stamp"]
+
+
+def test_failing_save_prints_line_and_scan_continues(
+        monkeypatch, tmp_path, capsys):
+    from muse_qc.vision import table_mapping
+
+    def boom(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(table_mapping, "save_last_mapping", boom)
+    results = _scan_direct(monkeypatch, tmp_path, _two_parts())
+    assert [part for part in results if part["skipped"] is None]
+    assert "table mapping: not saved (disk full)" in capsys.readouterr().out
 
 
 def _scan_without_marker_0(monkeypatch, tmp_path, known):

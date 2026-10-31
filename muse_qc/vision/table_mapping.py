@@ -18,6 +18,8 @@ from pathlib import Path
 
 import numpy
 
+from muse_qc.vision.table_markers import TABLE_MARKER_IDS
+
 MAPPING_PATH = "recordings/table_mapping_last.json"
 MAPPING_MAX_AGE_H = 12
 _STAMP_FORMAT = "%Y%m%d_%H%M%S"
@@ -28,7 +30,9 @@ def save_last_mapping(homography, markers, scale, path=MAPPING_PATH,
     """Save the mapping built from all markers; return the stamp.
 
     homography is the 3x3 pixel-to-mm matrix, markers the detected
-    marker dict (only the ids are kept), scale the px/mm factor.
+    marker dict (only table marker ids are kept: the real
+    detect_table_markers output carries extra non-marker keys like
+    "ignored_ids"), scale the px/mm factor.
     now is an injectable zero-argument clock returning a datetime
     (local time, like every other recordings file name).
     """
@@ -37,7 +41,8 @@ def save_last_mapping(homography, markers, scale, path=MAPPING_PATH,
     payload = {
         "homography": [[float(value) for value in row]
                        for row in homography],
-        "marker_ids": sorted(int(key) for key in markers),
+        "marker_ids": sorted(key for key in markers
+                             if key in TABLE_MARKER_IDS),
         "px_per_mm": float(scale),
         "stamp": stamp,
     }
@@ -55,8 +60,6 @@ def load_last_mapping(path=MAPPING_PATH, now=None):
     or when its stamp is older than MAPPING_MAX_AGE_H hours.
     now is an injectable zero-argument clock returning a datetime.
     """
-    from muse_qc.vision.table_markers import TABLE_MARKER_IDS
-
     ticks = now if now is not None else datetime.now
     try:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))

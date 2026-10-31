@@ -82,3 +82,14 @@ def test_saved_ids_cover_all_table_markers(tmp_path):
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert all(marker_id in payload["marker_ids"]
                for marker_id in TABLE_MARKER_IDS)
+
+
+def test_save_ignores_non_marker_keys(tmp_path):
+    path = tmp_path / "table_mapping_last.json"
+    markers = _markers()
+    markers["ignored_ids"] = [7]
+    stamp = table_mapping.save_last_mapping(
+        numpy.eye(3), markers, 1.5, path, now=lambda: FIXED)
+    assert stamp == "20261031_234847"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["marker_ids"] == [0, 1, 2, 3]

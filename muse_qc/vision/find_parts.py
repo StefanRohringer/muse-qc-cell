@@ -245,8 +245,11 @@ def scan_table(frame, empty, phrase=DEFAULT_PHRASE, client=None,
         try:
             table_mapping.save_last_mapping(homography, markers, scale,
                                             mapping_path)
-        except OSError as exc:
-            raise RuntimeError(f"request failed: {exc}") from exc
+        except Exception as exc:  # noqa: BLE001 - never break a scan
+            reason = str(exc).splitlines()
+            short = reason[0][:160] if reason and reason[0] \
+                else type(exc).__name__
+            print(f"table mapping: not saved ({short})")
     to_table = lambda point: pixel_to_table_mm(  # noqa: E731
         homography, point, calibration)
     blobs = detect_changes(frame, empty, scale, to_table)
