@@ -168,9 +168,41 @@ def test_never_imports_arm_safety_sdk_or_camera_code():
             assert all(word not in name.lower() for word in forbidden), name
 
 
+def test_list_ids_prints_sorted_ids_one_per_line(capsys):
+    code = run_check(
+        SECRET,
+        _factory(ids=["sam-3.1", "other-1.0", "muse-spark-1.3"]),
+        list_ids=True,
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert out.splitlines() == ["muse-spark-1.3", "other-1.0", "sam-3.1"]
+    assert SECRET not in out
+
+
+def test_list_ids_empty_list_prints_nothing(capsys):
+    code = run_check(SECRET, _factory(ids=[]), list_ids=True)
+    assert code == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_main_list_flag_reaches_run_check(monkeypatch, capsys):
+    monkeypatch.setattr(model_check, "read_api_key", lambda: SECRET)
+    monkeypatch.setattr(
+        model_check,
+        "_default_client_factory",
+        _factory(ids=["sam-3.1", "muse-spark-1.3"]),
+    )
+    assert model_check.main(["--list"]) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "muse-spark-1.3",
+        "sam-3.1",
+    ]
+
+
 def test_main_reports_missing_key_without_network(monkeypatch, capsys, tmp_path):
     monkeypatch.delenv("MODEL_API_KEY", raising=False)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(model_check, "read_api_key", lambda: None)
-    assert model_check.main() != 0
+    assert model_check.main([]) != 0
     assert "MODEL_API_KEY" in capsys.readouterr().out

@@ -110,6 +110,8 @@ flowchart TD
 | SAM 3.1 | `muse_qc/inspection/count_clips.py`, `muse_qc/inspection/count_retry.py` | Finds the held part and counts its levers in the close-up |
 | Muse Code (powered by Muse Spark) | the whole repository | Wrote all the code, logged task by task in `docs/MUSE_CODE_LOG.md` |
 
+Details and request formats: `docs/META_AI.md`.
+
 ### A real agent run (excerpt)
 
 From run 3 on 31 Oct (`docs/DEVLOG.md`, output shortened):
