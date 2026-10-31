@@ -65,6 +65,36 @@ def test_scores_counts_and_verdicts(tmp_path):
     assert timing["count"] == 3
     assert timing["mean"] == 60.0
     assert timing["p95"] == 60.0
+    assert timing["runs"] == 1
+    assert timing["skipped"] == 0
+
+
+def test_long_gap_starts_new_run(tmp_path):
+    recordings = tmp_path / "recordings"
+    recordings.mkdir(parents=True, exist_ok=True)
+    stamps = ["20261031_000100", "20261031_000200",
+              "20261031_001000", "20261031_001100"]
+    moments = ["2026-10-31T00:01:00+00:00", "2026-10-31T00:02:00+00:00",
+               "2026-10-31T00:10:00+00:00", "2026-10-31T00:11:00+00:00"]
+    labels_path = tmp_path / "labels.csv"
+    with open(labels_path, "w", encoding="utf-8") as handle:
+        handle.write("record,true_levers\n")
+        for stamp, moment in zip(stamps, moments):
+            record = _record(stamp, 3, 1)
+            record["timestamp"] = moment
+            (recordings / f"count_{stamp}.json").write_text(
+                json.dumps(record), encoding="utf-8")
+            handle.write(f"{stamp},3\n")
+    from muse_qc.inspection.evaluate import format_text, load_records
+    result = evaluate(load_labels(labels_path), load_records(recordings))
+    timing = result["seconds_per_part"]
+    assert timing["count"] == 2
+    assert timing["mean"] == 60.0
+    assert timing["p95"] == 60.0
+    assert timing["runs"] == 2
+    assert timing["skipped"] == 1
+    assert ("seconds per part: mean 60.0 s, p95 60.0 s "
+            "(n=2, 2 runs, 1 gap skipped)") in format_text(result)
 
 
 def test_missing_records_are_listed_not_invented(tmp_path):

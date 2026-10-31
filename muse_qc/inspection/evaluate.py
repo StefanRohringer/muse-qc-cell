@@ -26,6 +26,7 @@ from pathlib import Path
 
 STAMP_FORMAT = "%Y%m%d_%H%M%S"
 DEFAULT_EXPECTED_LEVERS = 3
+RUN_GAP_S = 120.0
 
 
 def parse_stamp(text: str) -> datetime:
@@ -138,14 +139,18 @@ def evaluate(labels: list[dict], records: dict[str, dict]) -> dict:
     gaps = [(later - earlier).total_seconds()
             for earlier, later in zip(moments, moments[1:])]
     gaps = [gap for gap in gaps if gap >= 0]
+    kept = [gap for gap in gaps if gap <= RUN_GAP_S]
+    skipped = len(gaps) - len(kept)
     seconds_per_part = None
-    if gaps:
-        ordered = sorted(gaps)
+    if kept:
+        ordered = sorted(kept)
         rank = min(len(ordered) - 1, math.ceil(0.95 * len(ordered)) - 1)
         seconds_per_part = {
-            "count": len(gaps),
-            "mean": sum(gaps) / len(gaps),
+            "count": len(kept),
+            "mean": sum(kept) / len(kept),
             "p95": ordered[rank],
+            "runs": skipped + 1,
+            "skipped": skipped,
         }
     total = len(matched)
     return {
@@ -168,6 +173,19 @@ def _percent(value: float | None) -> str:
     return f"{100.0 * value:.1f} %"
 
 
+def _timing_text(timing: dict | None) -> str:
+    """Format the seconds-per-part summary, or n/a without timing."""
+    if timing is None:
+        return "n/a (need 2+ timestamps)"
+    runs = timing["runs"]
+    skipped = timing["skipped"]
+    run_word = "run" if runs == 1 else "runs"
+    gap_word = "gap" if skipped == 1 else "gaps"
+    return (f"mean {timing['mean']:.1f} s, "
+            f"p95 {timing['p95']:.1f} s (n={timing['count']}, "
+            f"{runs} {run_word}, {skipped} {gap_word} skipped)")
+
+
 def format_text(result: dict) -> str:
     """Format the evaluation result as plain text lines."""
     matrix = result["matrix"]
@@ -185,12 +203,7 @@ def format_text(result: dict) -> str:
         f"recall (bad): {_percent(result['recall_bad'])}",
     ]
     timing = result["seconds_per_part"]
-    if timing is None:
-        lines.append("seconds per part: n/a (need 2+ timestamps)")
-    else:
-        lines.append(
-            f"seconds per part: mean {timing['mean']:.1f} s, "
-            f"p95 {timing['p95']:.1f} s (n={timing['count']})")
+    lines.append(f"seconds per part: {_timing_text(timing)}")
     if result["missing"]:
         lines.append("missing records: " + ", ".join(result["missing"]))
     else:
@@ -202,11 +215,7 @@ def format_markdown(result: dict, command: str, date: str) -> str:
     """Format the evaluation result as a small markdown page."""
     matrix = result["matrix"]
     timing = result["seconds_per_part"]
-    if timing is None:
-        timing_text = "n/a (need 2+ timestamps)"
-    else:
-        timing_text = (f"mean {timing['mean']:.1f} s, "
-                       f"p95 {timing['p95']:.1f} s (n={timing['count']})")
+    timing_text = _timing_text(timing)
     missing = ", ".join(f"`{stamp}`" for stamp in result["missing"])
     return (
         "# Lever count evaluation\n"
