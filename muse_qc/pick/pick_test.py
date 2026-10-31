@@ -15,6 +15,8 @@ box with exit code 1. With --station the arm carries the part to
 the fixed inspection station first and inspects there; without
 it (default) the part is inspected at the lift pose. --station-j6
 DEG turns joint 6 to that angle at the station (needs --station).
+--station-table-shot saves one table overview image during the
+station hold for the agent rescan (needs --station and --inspect).
 The default arm mode is mit-ff (MIT with
 gravity feed-forward); --arm-mode posvel selects the old POS_VEL
 loop. The default grip tip height is 8 mm. With --lever-deg the
@@ -25,6 +27,7 @@ from __future__ import annotations
 import argparse
 import math
 import sys
+import time
 from muse_qc.arm import mit_hold, safety
 from muse_qc.pick import pick_mit
 from muse_qc.arm.arm_gains import GAIN_PROFILES, describe, make_arm
@@ -53,7 +56,7 @@ from muse_qc.gripper.gripper_grip import deg_to_width, width_to_deg
 from muse_qc.gripper.grip_speed import GRIPPER_VLIM_FRACTION
 from muse_qc.gripper.gripper_motor import CONFIRM_PROMPT, GRIPPER_CONFIG_VLIM
 from muse_qc.gripper.gripper_stream import open_touch_sensor
-from muse_qc.inspection import inspect_step
+from muse_qc.inspection import inspect_step, station_shot
 from muse_qc.pick.pick_loop import PickLoop
 from muse_qc.pick.pick_plan_check import _plan_and_check
 
@@ -84,7 +87,8 @@ def dry_run(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, out=print,
             drop=None, solve_drop_fn=None,
             inspect=False, find_arm_node=None, read_key=None,
             arm_mode="mit-ff", tau_scale=None, gravity_fn=None,
-            lever_deg=None, use_station=None, station_j6_deg=None):
+            lever_deg=None, use_station=None, station_j6_deg=None,
+            station_table_shot=False):
     out(f"arm mode: {arm_mode}")
     if inspect and inspect_step.check_prereqs(
             out, find_arm_node, read_key) is None:
@@ -129,7 +133,8 @@ def execute(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, input_fn=input,
             read_key=None, open_arm_camera=None, make_client=None,
             count_frame=None, inspect_recordings_dir="recordings",
             arm_mode="mit-ff", tau_scale=None, gravity_fn=None,
-            lever_deg=None, use_station=None, station_j6_deg=None):
+            lever_deg=None, use_station=None, station_j6_deg=None,
+            station_table_shot=False, open_table_camera=None):
     out(f"arm mode: {arm_mode}")
     reader, arm_start_deg, grip_start_deg = _read_start(sdk)
     stream, sensor, arm_sender = None, None, None
@@ -205,13 +210,27 @@ def execute(sdk, table_xy, grip_z_mm, open_mm, no_grip, hold_s, input_fn=input,
             sdk.start_control_loop(stream, rate=LOOP_RATE_HZ)
             live = True
             if inspect:
+                shot_holder: dict = {}
+
+                def _start_station_shot() -> None:
+                    shot_holder["shot"] = (
+                        station_shot.start_station_table_shot(
+                            out, open_camera=open_table_camera,
+                            recordings_dir=inspect_recordings_dir))
                 box = inspect_step.wait_and_inspect(
                     stream, out,
                     ready_timeout_s=total / LOOP_RATE_HZ + 120.0,
+                    on_ready=(_start_station_shot
+                              if station_table_shot else None),
                     find_node=find_arm_node, open_camera=open_arm_camera,
                     read_key=read_key, make_client=make_client,
                     count_frame_fn=count_frame,
                     recordings_dir=inspect_recordings_dir)
+                shot = shot_holder.get("shot")
+                if shot is not None:
+                    remaining = (station_shot.STATION_SHOT_TIMEOUT_S
+                                 - (time.monotonic() - shot.started))
+                    shot.join(max(remaining, 0.0))
                 stream.set_verdict(box)
             stream.done.wait(timeout=total / LOOP_RATE_HZ + 120.0)
         except (KeyboardInterrupt, Exception) as exc:
@@ -302,9 +321,17 @@ def main(argv=None, sdk_factory=None, **kwargs):
                         metavar="DEG",
                         help="joint 6 angle at the station in deg"
                         " (needs --station)")
+    parser.add_argument("--station-table-shot", action="store_true",
+                        help="take one table overview image while the part"
+                        " is held at the station (needs --station"
+                        " and --inspect)")
     args = parser.parse_args(argv)
     if args.station_j6 is not None and args.station is not True:
         parser.error("--station-j6 needs --station")
+    if args.station_table_shot and not args.inspect:
+        parser.error("--station-table-shot needs --inspect")
+    if args.station_table_shot and args.station is not True:
+        parser.error("--station-table-shot needs --station")
     if args.station_j6 is not None and not math.isfinite(args.station_j6):
         parser.error("--station-j6 must be a finite angle in deg")
     if args.tau_scale is not None and args.arm_mode != "mit-ff":
@@ -340,6 +367,7 @@ def main(argv=None, sdk_factory=None, **kwargs):
     kwargs.setdefault("tau_scale", tau_scale)
     kwargs.setdefault("lever_deg", args.lever_deg)
     kwargs.setdefault("station_j6_deg", args.station_j6)
+    kwargs.setdefault("station_table_shot", args.station_table_shot)
     return run(sdk, (args.table_mm[0], args.table_mm[1]), args.grip_z_mm,
                args.open_mm, args.no_grip, args.hold_s,
                use_xy_correction=not args.no_xy_correction,

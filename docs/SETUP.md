@@ -1982,6 +1982,67 @@ To tune the joint 6 angle without editing code, pass `--station-j6 DEG` together
 uv run python -m muse_qc.pick.pick_test --table-mm X Y --lever-deg L --inspect --station --station-j6 15 --execute
 ```
 
+## 38. Table scan at the inspection station (run on hardware 2026-10-31)
+
+With `--station-table-shot` (needs `--station` and `--inspect`)
+the table camera takes one overview image while the arm holds
+the part at the station, in parallel with the lever count: the
+shot starts when the arm holds the part at the station (inspect
+ready), in parallel with the lever count, and joins with the
+remaining time of 6 s (`STATION_SHOT_TIMEOUT_S` in
+`muse_qc/inspection/station_shot.py`) after it, so the extra
+hold is at most the shot time minus the inspect time, normally
+zero. The frame is only saved as
+`recordings/station_table_<stamp>.png` (one printed line
+`station table shot: ...`); no SAM call happens in the child.
+On any camera error or timeout one
+`station table shot failed: ...` line is printed once and the
+hold, the lever count, the drop and the return continue
+normally. The agent flag `--scan-at-station` passes
+`--station --station-table-shot` to every sort and scans the
+saved overview for the rescan after the sort (same empty
+reference, same phrase, same known parts) instead of opening
+the table camera again after the arm is home; a missing or
+unreadable station image falls back to the normal table camera
+rescan. Without `--scan-at-station` the agent run behaves
+exactly as before. Dry run first, then one part with the hand
+on the power supply switch:
+
+```bash
+uv run python -m muse_qc.pick.pick_test --table-mm X Y --inspect --station --station-table-shot
+uv run python -m muse_qc.pick.pick_test --table-mm X Y --inspect --station --station-table-shot --execute
+uv run python -m muse_qc.agent --execute --scan-at-station
+```
+
+Real station run on hardware (2026-10-31, part at table mm
+(508.5, 343.9), lever 89.8 deg, grip on the first try):
+
+```text
+inspect: levers 3 verdict good
+station table shot: recordings/station_table_20261031_234847.png
+dropped into the good box
+```
+
+The shot stamp matches the lever count second, so the shot ran
+in parallel during the station hold; the hold felt as long as
+in earlier station runs (not timed). The arm at the station
+covers roughly the lower left quarter of the table and hides
+marker 0, so a station image reuses the last full 4-marker
+mapping (`recordings/table_mapping_last.json`, at most 12 hours
+old) instead of failing:
+
+```text
+uv run python -m muse_qc.vision.find_parts --image recordings/station_table_20261031_234847.png
+table mapping: from last full scan 20261101_004201
+```
+
+That run found 1 candidate (in box good, skipped), 0 confirmed:
+neither the arm at the station nor the held part was taken for
+a part. Known limit: a part lying in the area the arm covers at
+the station is not visible in the station image; the final
+scan_table from the table camera after the arm is home still
+sees it. Only the human runs it, never CI and never an agent.
+
 ## Safety notes
 
 Read-only review of the SDK file

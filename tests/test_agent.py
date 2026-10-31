@@ -991,6 +991,250 @@ def test_fake_table_run_ends_with_expected_counts(tmp_path):
     assert fake.parts == []
 
 
+def test_parse_pick_lines_station_table_image():
+    ok = agent_tools.parse_pick_lines([
+        "inspect: levers 3 verdict good",
+        "station table shot: recordings/station_table_20261031_120000.png",
+        "dropped into the good box",
+        "recordings/count_child_000001.json",
+    ])
+    assert ok["outcome"] == "sorted"
+    assert ok["station_table_image"] == \
+        "recordings/station_table_20261031_120000.png"
+    failed = agent_tools.parse_pick_lines(
+        ["station table shot failed: timed out after 6 s"])
+    assert failed["station_table_image"] is None
+    missing = agent_tools.parse_pick_lines(
+        ["inspect: levers 3 verdict good",
+         "dropped into the good box"])
+    assert missing["station_table_image"] is None
+
+
+def test_real_sort_command_unchanged_without_flag():
+    made = []
+
+    def factory(cmd):
+        made.append(cmd)
+        return _FakeProc([
+            "inspect: levers 3 verdict good",
+            "dropped into the good box",
+            "recordings/count_child_000001.json",
+        ])
+
+    agent_tools.real_sort([478.7, 344.7], popen_factory=factory)
+    assert made[0] == [sys.executable, "-m", "muse_qc.pick.pick_test",
+                       "--table-mm", "478.7", "344.7",
+                       "--inspect", "--execute"]
+
+
+def test_real_sort_command_with_scan_at_station():
+    made = []
+
+    def factory(cmd):
+        made.append(cmd)
+        return _FakeProc([
+            "inspect: levers 3 verdict good",
+            "dropped into the good box",
+            "recordings/count_child_000001.json",
+        ])
+
+    agent_tools.real_sort([478.7, 344.7], popen_factory=factory,
+                          scan_at_station=True)
+    assert made[0] == [sys.executable, "-m", "muse_qc.pick.pick_test",
+                       "--table-mm", "478.7", "344.7",
+                       "--inspect", "--execute",
+                       "--station", "--station-table-shot"]
+
+
+def _station_state():
+    from muse_qc.agent.agent_state import RunState
+
+    state = RunState()
+    state.new_scan([[500.0, 360.0]], [None], [None])
+    return state
+
+
+def _station_found():
+    return {"parts": [{"table_mm": [540.0, 330.0], "confidence": 0.7,
+                       "lever_deg": 30.0}],
+            "skipped": 0, "image": "recordings/parts_x.png"}
+
+
+def test_rescan_uses_station_image(monkeypatch, tmp_path):
+    import cv2
+    import numpy
+
+    from muse_qc.agent import agent_rescan
+
+    image = tmp_path / "station_table_20261031_120000.png"
+    cv2.imwrite(str(image), numpy.zeros((8, 8, 3), numpy.uint8))
+    seen = {}
+
+    def fake_scan_frame(frame, known):
+        seen["known"] = known
+        return _station_found()
+
+    monkeypatch.setattr(agent_rescan, "scan_frame", fake_scan_frame)
+    lines = []
+
+    def boom(known=None):
+        raise AssertionError("the table camera must not open")
+
+    result = agent_tools.rescan_after_sort(
+        _station_state(), boom, lines.append, station_image=str(image))
+    assert seen["known"] == [{"table_mm": [500.0, 360.0],
+                              "confidence": None}]
+    assert result["table after sort"][0]["table_mm"] == [540.0, 330.0]
+    assert "tool: rescan from station image" in lines
+
+
+def test_rescan_falls_back_when_station_image_missing(tmp_path):
+    lines = []
+    calls = []
+
+    def scan(known=None):
+        calls.append(known)
+        return _station_found()
+
+    result = agent_tools.rescan_after_sort(
+        _station_state(), scan, lines.append,
+        station_image=str(tmp_path / "missing.png"))
+    assert len(calls) == 1
+    assert result["table after sort"][0]["table_mm"] == [540.0, 330.0]
+    assert "tool: rescan from table camera" in lines
+
+
+def test_rescan_falls_back_when_station_image_unreadable(tmp_path):
+    bad = tmp_path / "station_table_broken.png"
+    bad.write_bytes(b"not an image")
+    lines = []
+    calls = []
+
+    def scan(known=None):
+        calls.append(known)
+        return _station_found()
+
+    result = agent_tools.rescan_after_sort(
+        _station_state(), scan, lines.append, station_image=str(bad))
+    assert len(calls) == 1
+    assert result["table after sort"][0]["table_mm"] == [540.0, 330.0]
+    assert "tool: rescan from table camera" in lines
+
+
+def _run_execute_main(monkeypatch, tmp_path, argv, script, sort_seen):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(agent_mod, "read_api_key", lambda: SECRET)
+
+    def fake_scan(known=None):
+        return {"parts": [{"table_mm": list(P0), "confidence": 0.9,
+                            "lever_deg": 10.0}],
+                "skipped": 0, "image": "recordings/fake.png"}
+
+    def fake_sort(table_mm, lever_deg=None, **kwargs):
+        sort_seen.append(kwargs.get("scan_at_station", False))
+        return {"outcome": "sorted", "levers": 3, "verdict": "good",
+                "box": "good", "record": "recordings/count_fake.json",
+                "reason": None,
+                "lines": ["inspect: levers 3 verdict good",
+                          "dropped into the good box"]}
+
+    def fake_report(record_paths):
+        out_path = tmp_path / "report.html"
+        out_path.write_text("<html></html>", encoding="utf-8")
+        return str(out_path)
+
+    monkeypatch.setattr(agent_tools, "real_scan", fake_scan)
+    monkeypatch.setattr(agent_tools, "real_sort", fake_sort)
+    monkeypatch.setattr(agent_tools, "real_report", fake_report)
+    client = FakeClient(script)
+    return main(argv, client_factory=lambda key: client,
+                input_fn=lambda prompt: "yes",
+                out=lambda line: None)
+
+
+def _execute_script():
+    return [
+        [_message("scan"), _call("c1", "scan_table", {})],
+        [_message("sort"), _call("c2", "inspect_and_sort",
+                                {"part_id": 0})],
+        [_message("done"), _call("c3", "finish",
+                                {"summary": "1 sorted"})],
+    ]
+
+
+def test_execute_scan_at_station_reaches_sort(monkeypatch, tmp_path):
+    sort_seen = []
+    code = _run_execute_main(monkeypatch, tmp_path,
+                             ["--execute", "--scan-at-station"],
+                             _execute_script(), sort_seen)
+    assert code == 0
+    assert sort_seen == [True]
+
+
+def test_execute_without_flag_sorts_as_before(monkeypatch, tmp_path):
+    sort_seen = []
+    code = _run_execute_main(monkeypatch, tmp_path, ["--execute"],
+                             _execute_script(), sort_seen)
+    assert code == 0
+    assert sort_seen == [False]
+
+
+def test_rescan_falls_back_when_station_scan_raises_value_error(
+        monkeypatch, tmp_path):
+    import cv2
+    import numpy
+
+    from muse_qc.agent import agent_rescan
+
+    image = tmp_path / "station_table_20261031_234847.png"
+    cv2.imwrite(str(image), numpy.zeros((8, 8, 3), numpy.uint8))
+
+    def bad_frame(frame, known):
+        raise ValueError("bad station frame")
+
+    monkeypatch.setattr(agent_rescan, "scan_frame", bad_frame)
+    lines = []
+    calls = []
+
+    def scan(known=None):
+        calls.append(known)
+        return _station_found()
+
+    result = agent_tools.rescan_after_sort(
+        _station_state(), scan, lines.append, station_image=str(image))
+    assert len(calls) == 1
+    assert "tool: rescan from table camera" in lines
+    assert result["table after sort"][0]["table_mm"] == [540.0, 330.0]
+
+
+def test_rescan_falls_back_when_station_image_unmapped(monkeypatch, tmp_path):
+    import cv2
+    import numpy
+
+    from muse_qc.agent import agent_rescan
+
+    image = tmp_path / "station_table_20261031_234847.png"
+    cv2.imwrite(str(image), numpy.zeros((8, 8, 3), numpy.uint8))
+
+    def no_mapping(frame, known):
+        raise RuntimeError(
+            "table mapping: unavailable (missing table markers: [0])")
+
+    monkeypatch.setattr(agent_rescan, "scan_frame", no_mapping)
+    lines = []
+    calls = []
+
+    def scan(known=None):
+        calls.append(known)
+        return _station_found()
+
+    result = agent_tools.rescan_after_sort(
+        _station_state(), scan, lines.append, station_image=str(image))
+    assert len(calls) == 1
+    assert "tool: rescan from table camera" in lines
+    assert result["table after sort"][0]["table_mm"] == [540.0, 330.0]
+
+
 def test_scan_result_shows_lever_deg(tmp_path):
     scan = _scan_with_levers([
         {"table_mm": list(P0), "lever_deg": 89.84, "confidence": 0.9},

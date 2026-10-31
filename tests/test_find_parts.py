@@ -33,12 +33,17 @@ class _FakeClient:
 
 
 def _fake_markers():
-    """Marker centres at the frame corners, 40 px sides (1 px/mm)."""
+    """Marker centres at the frame corners, 40 px sides (1 px/mm).
+
+    Carries the "ignored_ids" key like the real detect_table_markers
+    output (detected IDs outside the table set).
+    """
     return {
         0: {"center": (20.0, 20.0), "side_px": 40.0},
         1: {"center": (620.0, 20.0), "side_px": 40.0},
         2: {"center": (20.0, 460.0), "side_px": 40.0},
         3: {"center": (620.0, 460.0), "side_px": 40.0},
+        "ignored_ids": [7],
     }
 
 
@@ -563,3 +568,78 @@ def test_known_printed_as_sam_known(monkeypatch, tmp_path, capsys):
                      [_rect_at((505.0, 360.0))])
     assert "sam=known" in out
     assert "parts: 1 confirmed of 1 candidates" in out
+
+
+def test_full_scan_saves_mapping(monkeypatch, tmp_path):
+    import json
+
+    _scan_direct(monkeypatch, tmp_path, _two_parts())
+    mapping = tmp_path / "table_mapping_last.json"
+    assert mapping.is_file()
+    payload = json.loads(mapping.read_text(encoding="utf-8"))
+    assert payload["marker_ids"] == [0, 1, 2, 3]
+    assert payload["stamp"]
+
+
+def test_failing_save_prints_line_and_scan_continues(
+        monkeypatch, tmp_path, capsys):
+    from muse_qc.vision import table_mapping
+
+    def boom(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(table_mapping, "save_last_mapping", boom)
+    results = _scan_direct(monkeypatch, tmp_path, _two_parts())
+    assert [part for part in results if part["skipped"] is None]
+    assert "table mapping: not saved (disk full)" in capsys.readouterr().out
+
+
+def _scan_without_marker_0(monkeypatch, tmp_path, known):
+    """Run scan_table with marker 0 covered, return (results, out)."""
+    partial = {key: value for key, value in _fake_markers().items()
+               if key != 0}
+    monkeypatch.setattr(find_parts, "detect_table_markers",
+                        lambda frame: partial)
+    monkeypatch.setattr(find_parts, "load_table_calibration", lambda: None)
+    results, _ = find_parts.scan_table(
+        _frame_with(_two_parts()), _background(), client=None,
+        recordings_dir=str(tmp_path), known=known)
+    return results
+
+
+def test_missing_marker_uses_saved_mapping(monkeypatch, tmp_path, capsys):
+    full = _scan_direct(monkeypatch, tmp_path, _two_parts())
+    points = [dict(table_mm=list(part["table_mm"]), confidence=0.9)
+              for part in full if part["skipped"] is None]
+    assert points
+    capsys.readouterr()
+    results = _scan_without_marker_0(monkeypatch, tmp_path, points)
+    assert [part["table_mm"] for part in results if part.get("known")] == [
+        point["table_mm"] for point in points]
+    out = capsys.readouterr().out
+    assert "table mapping: from last full scan" in out
+
+
+def test_missing_marker_without_saved_mapping_stays_unavailable(
+        monkeypatch, tmp_path):
+    import pytest
+
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(RuntimeError, match="table mapping: unavailable"):
+        _scan_without_marker_0(monkeypatch, tmp_path, known=None)
+
+
+def test_stale_mapping_stays_unavailable(monkeypatch, tmp_path):
+    import pytest
+    from datetime import datetime, timedelta
+
+    from muse_qc.vision import table_mapping
+    from muse_qc.vision.table_coords import table_homography
+
+    old = datetime.now() - timedelta(hours=13)
+    table_mapping.save_last_mapping(
+        table_homography(_fake_markers(), None), _fake_markers(), 1.0,
+        tmp_path / "table_mapping_last.json", now=lambda: old)
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(RuntimeError, match="table mapping: unavailable"):
+        _scan_without_marker_0(monkeypatch, tmp_path, known=None)

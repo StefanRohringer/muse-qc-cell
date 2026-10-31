@@ -10,6 +10,7 @@ from pathlib import Path
 
 _INSPECT_RE = re.compile(r"inspect: levers (\d+) verdict (good|bad)")
 _BOX_RE = re.compile(r"dropped into the (good|bad) box")
+_STATION_TABLE_RE = re.compile(r"^station table shot: (\S+)\s*$")
 
 
 def parse_pick_lines(lines: list[str]) -> dict:
@@ -22,11 +23,14 @@ def parse_pick_lines(lines: list[str]) -> dict:
     failed" is sorted too, with the failed line kept as the
     reason; "inspect skipped" alone never counts as sorted.
     record is the last count_*.json path in the lines, or None.
+    station_table_image is the "station table shot:" path, or None
+    when the line is missing or the shot failed.
     """
     levers = None
     verdict = None
     box = None
     record = None
+    station_table_image = None
     missed = False
     failed = None
     halted = None
@@ -38,6 +42,9 @@ def parse_pick_lines(lines: list[str]) -> dict:
         match = _BOX_RE.search(line)
         if match is not None:
             box = match.group(1)
+        match = _STATION_TABLE_RE.search(line)
+        if match is not None:
+            station_table_image = match.group(1)
         if "missed grip" in line:
             missed = True
         if line.startswith(("inspect failed", "inspect skipped:",
@@ -67,5 +74,6 @@ def parse_pick_lines(lines: list[str]) -> dict:
         "verdict": verdict,
         "box": box,
         "record": record,
+        "station_table_image": station_table_image,
         "reason": err_reason if outcome == "error" else halted or failed,
     }

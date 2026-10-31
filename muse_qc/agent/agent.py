@@ -22,6 +22,7 @@ The human checks this in the --simulate run.
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import sys
 
@@ -274,8 +275,9 @@ def _run_tool(name, args, state, scan_fn, sort_fn, report_fn,
             state.note_sorted(position)
             out(f"tool: part {part_id} levers {result.get('levers')}"
                 f" {result.get('verdict')}, sorted")
-            result.update(
-                agent_tools.rescan_after_sort(state, scan_fn, out))
+            result.update(agent_tools.rescan_after_sort(
+                state, scan_fn, out,
+                station_image=result.get("station_table_image")))
         else:
             # Any other outcome (missed grip, error, inspect_failed,
             # interrupted, refused): the table may have changed, so
@@ -330,6 +332,10 @@ def main(argv=None, client_factory=None, toolset=None, input_fn=None,
         description="Agentic QC cell loop (Muse Spark, human-started).")
     parser.add_argument("--execute", action="store_true",
                         help="use the real tools and move the arm")
+    parser.add_argument("--scan-at-station", action="store_true",
+                        help="take the table overview during the station"
+                        " hold and rescan from that image instead of"
+                        " opening the table camera after the sort")
     parser.add_argument("--task", default=None,
                         help="first order in plain words")
     parser.add_argument("--chat", action="store_true",
@@ -348,9 +354,13 @@ def main(argv=None, client_factory=None, toolset=None, input_fn=None,
                 return 2
             out("agent: human confirmed,"
                 " keep a hand on the power supply switch")
+            sort_fn = agent_tools.real_sort
+            if args.scan_at_station:
+                sort_fn = functools.partial(
+                    agent_tools.real_sort, scan_at_station=True)
             toolset = (
                 agent_tools.real_scan,
-                agent_tools.real_sort,
+                sort_fn,
                 agent_tools.real_report,
             )
     elif toolset is None:

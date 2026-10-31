@@ -881,9 +881,11 @@ def test_loop_never_opens_camera_or_calls_api():
     assert "read_api_key" not in source
 
 
-def _run_execute_inspect(tmp_path, texts, **overrides):
+def _run_execute_inspect(tmp_path, texts, holder=None, **overrides):
     """Run pick_test.execute with --inspect on a background-loop fake SDK."""
-    holder, lines = {}, []
+    if holder is None:
+        holder = {}
+    lines = []
     sdk = ThreadedFakeSdk(holder=holder)
     kwargs = {
         "input_fn": lambda prompt: "yes",
@@ -999,3 +1001,83 @@ def test_execute_inspect_failed_sorts_unverified_into_bad_box(tmp_path):
     assert bad_rad in sends
     assert good_rad not in sends
     assert "disable_all" in sdk.calls and "disconnect" in sdk.calls
+
+
+def test_wait_and_inspect_calls_on_ready_once_before_inspection(tmp_path):
+    order = []
+    ready = threading.Event()
+    ready.set()
+    stream = SimpleNamespace(inspect_ready=ready, inspect_skipped=False,
+                             done=threading.Event())
+
+    def count_frame(*args, **kwargs):
+        order.append("count")
+        return {"ok": True, "levers": 3, "verdict": "good",
+                "attempts": [{"levers": 3}],
+                "full_image": "recordings/full.png",
+                "crop_image": "recordings/crop.png",
+                "record": "recordings/count_x.json"}
+
+    lines = []
+    box = inspect_step.wait_and_inspect(
+        stream, lines.append, ready_timeout_s=5.0,
+        on_ready=lambda: order.append("ready"),
+        find_node=lambda: "/dev/videoFAKE",
+        open_camera=lambda node: _arm_frame(),
+        read_key=lambda: SECRET,
+        make_client=lambda key: object(),
+        count_frame_fn=count_frame,
+        recordings_dir=str(tmp_path))
+    assert box == "good"
+    assert order == ["ready", "count"]
+
+
+def test_wait_and_inspect_skips_on_ready_on_skip():
+    calls = []
+    skipped = SimpleNamespace(inspect_skipped=True)
+
+    def _no_camera(node):
+        raise AssertionError("no frame on skip")
+
+    box = inspect_step.wait_and_inspect(
+        skipped, lambda line: None, ready_timeout_s=5.0,
+        on_ready=lambda: calls.append(True),
+        open_camera=_no_camera)
+    assert box is None
+    assert calls == []
+
+
+def test_execute_station_shot_starts_after_ready(tmp_path):
+    holder, seen = {}, {}
+
+    def table_camera():
+        seen["ready_was_set"] = holder["loop"].inspect_ready.is_set()
+        return _arm_frame(), {}
+
+    sdk, code, text = _run_execute_inspect(
+        tmp_path, [PART_AND_GRIPPER, THREE_BARS], holder=holder,
+        station_table_shot=True, open_table_camera=table_camera)
+    assert code == 0
+    assert seen.get("ready_was_set") is True
+    assert "station table shot: " in text
+    assert len(list(Path(tmp_path).glob("station_table_*.png"))) == 1
+
+
+def test_execute_station_shot_skipped_on_missed_grip(tmp_path):
+    def boom():
+        raise AssertionError("no table shot without a held part")
+
+    sdk, code, text = _run_execute_inspect(
+        tmp_path, [PART_AND_GRIPPER, THREE_BARS],
+        sensor_factory=lambda: FakeSensor(lambda n: "-"),
+        station_table_shot=True, open_table_camera=boom)
+    assert "station table shot" not in text
+    assert list(Path(tmp_path).glob("station_table_*.png")) == []
+
+
+def test_execute_without_shot_flag_saves_nothing(tmp_path):
+    sdk, code, text = _run_execute_inspect(
+        tmp_path, [PART_AND_GRIPPER, THREE_BARS])
+    assert code == 0
+    assert "station table shot" not in text
+    assert list(Path(tmp_path).glob("station_table_*.png")) == []

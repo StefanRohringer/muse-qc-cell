@@ -1226,3 +1226,14 @@ muse-voice-transcribe-1.0
 muse-wonder-1.0
 sam-3.1
 ```
+- Human ran (2026-10-31 ~23:45, power supply on, hand on the switch) pick_test with `--inspect --station --station-table-shot`, first as dry run, then with `--execute`, part at table mm (508.5, 343.9), lever 89.8 deg. The first dry run failed with JointStateUnavailable (no joint feedback for joint1) because another program held the arm connection; after closing it the dry run worked: all waypoints ok, no station table shot line, motors never enabled. Execute:
+```text
+inspect: levers 3 verdict good
+station table shot: recordings/station_table_20261031_234847.png
+dropped into the good box
+```
+Result: OK. Grip on the first try (contacts L2 R2, then L1 L2 R1 R2 while lifting), count record count_20261031_234847 (same second as the lever count, so the shot ran in parallel during the station hold), dropped into the good box, motors disabled at rest. The human observed that the hold at the station was as long as in earlier station runs (no visible extra wait from the table shot; not timed).
+- Human checked the station overview recordings/station_table_20261031_234847.png by eye (2026-10-31): the arm at the station covers roughly the lower left quarter of the table (between the station and the arm base) and hides table marker 0; the middle, the right half and the area in front of the boxes are visible.
+- Human ran `uv run python -m muse_qc.vision.find_parts --image recordings/station_table_20261031_234847.png` (2026-10-31, no hardware): `table mapping: unavailable (missing table markers: [0])`, nothing found. This led to the last-full-mapping reuse (commit "Reuse the last full table mapping when the arm hides a marker").
+- Human ran `uv run python -m muse_qc.vision.find_parts` (normal scan, all 4 markers visible) after commit 71db67a: crash `ValueError: invalid literal for int() with base 10: 'ignored_ids'` in table_mapping.save_last_mapping on the "ignored_ids" key of the real marker output; the offline fakes had no such key. Fixed in "Save only table marker ids and never break a scan on a failed save".
+- Human ran after the fix (2026-11-01 ~00:40, arm at rest, no motion). `uv run python -m muse_qc.vision.find_parts`: 7 candidates, 0 confirmed, 6 skipped (3 in box good, 3 arm zone), 1 unskipped candidate at (370.4, 61.2) area 2704 mm2 sam=no box; mapping saved (stamp 20261101_004201). `uv run python -m muse_qc.vision.find_parts --image recordings/station_table_20261031_234847.png`: `table mapping: from last full scan 20261101_004201`, 1 candidate at (407.9, 423.8) skipped: in box good, 0 confirmed. So neither the arm at the station nor the held part was taken for a part. Result: OK. Known limit: a part lying in the area the arm covers at the station is not visible in the station image; the final scan_table from the table camera after the arm is home still sees it.
