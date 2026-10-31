@@ -2025,6 +2025,26 @@ time only; it is never baked into the image:
 docker run --rm --env-file .env muse-qc-cell uv run python -m muse_qc.agent
 ```
 
+## Evaluate the lever count
+
+This step scores the recorded lever counts against labels written by
+hand. It is offline: no camera, no arm, no API key, no network. The
+human looks at each arm camera crop (`count_<stamp>_crop.png`), writes
+the true number of closed levers into `eval/labels.csv` (one row per
+part, `record` is the `YYYYmmdd_HHMMSS` stamp), then runs from the
+project root:
+
+```bash
+uv run python -m muse_qc.inspection.evaluate --labels eval/labels.csv --recordings recordings --out eval/results.md
+```
+
+The command prints the labeled part count, the lever count accuracy,
+the verdict accuracy, the good/bad confusion matrix, precision and
+recall for "bad", and seconds per part from consecutive record
+timestamps. It writes `eval/results.md` only when `--out` is given.
+Records named in the labels but missing from the recordings folder are
+listed as missing, never invented. See `eval/README.md`.
+
 ## Export a run for the demo page
 
 This step reads existing inspection records and copies crop images only.

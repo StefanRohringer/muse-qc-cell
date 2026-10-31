@@ -189,6 +189,16 @@ and it is listed in the official Seeed reBot-DevArm repository under
 "DIY Soft Finger". New in this hackathon: `muse_qc/gripper/gripper.py`, which reads
 the gripper sensors over USB. See `docs/THIRD_PARTY.md`.
 
+## Quickstart
+
+1. Clone this repository.
+2. `make setup`: prepares `../seeed-sdk` and syncs the environment.
+3. `make test`: runs the offline test suite, no hardware needed.
+4. Optional, for the agent with the fake table: `cp .env.example .env`,
+   add your key, then `make simulate`.
+
+or with Docker: `make docker`
+
 ## Run it
 
 Prerequisites: Linux, Python 3.11, `uv`, the Seeed SDK checked out next to
