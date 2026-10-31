@@ -1,17 +1,26 @@
 "use strict";
 
 const STEP_MS = 2000;
+const STATIC_TABLE_SRC = "media/table_scan_10_parts.png";
 let parts = [];
+let finalTableImage = null;
+let finalEmpty = false;
 let index = 0;
 let timer = null;
 
 const labelEl = document.getElementById("run-label");
+const tableScanEl = document.getElementById("table-scan");
+const staticTableAlt = tableScanEl.getAttribute("alt");
 const cardEl = document.getElementById("card");
 const counterEl = document.getElementById("counter");
 const playBtn = document.getElementById("btn-play");
 const pauseBtn = document.getElementById("btn-pause");
 const prevBtn = document.getElementById("btn-prev");
 const nextBtn = document.getElementById("btn-next");
+
+function viewCount() {
+  return parts.length + (finalTableImage ? 1 : 0);
+}
 
 function countsShown() {
   let good = 0;
@@ -26,11 +35,41 @@ function countsShown() {
   return { good, bad };
 }
 
+function totals() {
+  let good = 0;
+  let bad = 0;
+  for (const part of parts) {
+    if (part.verdict === "good") {
+      good++;
+    } else if (part.verdict === "bad") {
+      bad++;
+    }
+  }
+  return { good, bad };
+}
+
 function render() {
   if (parts.length === 0) {
     return;
   }
+  if (index >= parts.length) {
+    tableScanEl.setAttribute("src", "data/" + finalTableImage);
+    tableScanEl.setAttribute("alt", "Table camera final rescan");
+    cardEl.innerHTML = "<p>" +
+      (finalEmpty ? "final rescan: table empty" : "final rescan") + "</p>";
+    const counts = totals();
+    counterEl.textContent =
+      "good " + counts.good + ", bad " + counts.bad + " (final rescan)";
+    return;
+  }
   const part = parts[index];
+  if (part.table_image) {
+    tableScanEl.setAttribute("src", "data/" + part.table_image);
+    tableScanEl.setAttribute("alt", "Table camera scan before part " + (index + 1));
+  } else {
+    tableScanEl.setAttribute("src", STATIC_TABLE_SRC);
+    tableScanEl.setAttribute("alt", staticTableAlt);
+  }
   const badge = part.verdict === "good"
     ? '<span class="badge good">GOOD</span>'
     : '<span class="badge bad">BAD</span>';
@@ -83,7 +122,7 @@ function stop() {
 function play() {
   stop();
   timer = setInterval(() => {
-    if (index < parts.length - 1) {
+    if (index < viewCount() - 1) {
       index++;
       render();
     } else {
@@ -103,7 +142,7 @@ prevBtn.addEventListener("click", () => {
 });
 nextBtn.addEventListener("click", () => {
   stop();
-  if (index < parts.length - 1) {
+  if (index < viewCount() - 1) {
     index++;
     render();
   }
@@ -122,6 +161,8 @@ fetch("data/run.json")
       return;
     }
     parts = data.parts;
+    finalTableImage = data.final_table_image || null;
+    finalEmpty = data.final_empty === true;
     index = 0;
     labelEl.textContent = "Replay of a real run on " + data.date;
     render();

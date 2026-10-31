@@ -2,6 +2,8 @@
 
 ![tests](https://github.com/StefanRohringer/muse-qc-cell/actions/workflows/ci.yml/badge.svg)
 
+**Demo page (replay of a real run):** https://stefanrohringer.github.io/muse-qc-cell/
+
 An AI quality inspection cell for injection-molded parts. A low-cost
 reBot Arm B601-DM picks each part from the table, a Muse Spark agent
 decides every step, SAM 3.1 counts the levers in a close-up, and the

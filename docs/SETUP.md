@@ -2038,5 +2038,8 @@ uv run python -m muse_qc.inspection.export_site --recordings recordings --since 
 The command writes `site/data/run.json` (date plus one entry per part in
 order: time, levers, verdict, box and retries only when recorded, and the
 relative crop image path) and re-encodes only the enlarged crop images
-(`count_*_crop.png`) as JPEG into `site/data/media/`. It prints the part,
-good and bad counts plus the total size in KB.
+(`count_*_crop.png`) as JPEG into `site/data/media/`. It also collects the
+table rescans (`recordings/parts_<stamp>.png`) in the same window and links
+each part to the newest rescan taken before it was picked, plus a final
+rescan after the last part. It prints the part,
+good and bad counts, the table scan count, plus the total size in KB.
