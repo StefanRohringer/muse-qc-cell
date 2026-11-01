@@ -164,6 +164,9 @@ class LivePage:
             self.status("scanning the table")
         elif name == "inspect_and_sort":
             self.status(f"sorting part {args.get('part_id')}")
+        elif name == "sort_in_order":
+            order = args.get("part_ids") or []
+            self.status(f"sorting {len(order)} parts in order")
         elif name == "write_report":
             self.status("writing the report")
         else:
@@ -176,6 +179,21 @@ class LivePage:
         if name == "scan_table":
             if result.get("outcome") is None:
                 self.scan(result.get("image"), result.get("parts") or [])
+        elif name == "sort_in_order":
+            for planned in result.get("sorted") or []:
+                self.sorted({"outcome": "sorted",
+                             "levers": planned.get("levers"),
+                             "verdict": planned.get("verdict"),
+                             "box": planned.get("box"),
+                             "record": planned.get("record")})
+            if result.get("deviation_outcome") in (
+                    "missed_grip", "error", "inspect_failed",
+                    "interrupted"):
+                self.sorted(
+                    {"outcome": result["deviation_outcome"]})
+            if isinstance(result.get("table after sort"), list):
+                self.scan(result.get("image after sort") or self._image,
+                          result["table after sort"])
         elif name == "inspect_and_sort":
             self.sorted(result)
             if isinstance(result.get("table after sort"), list):

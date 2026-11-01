@@ -35,7 +35,7 @@ def write_transcript(recordings_dir, entries, summary, out) -> str:
 def run_session(client, scan_fn, sort_fn, report_fn, *, task=None,
                 chat=False, ask=None, out=print,
                 recordings_dir="recordings", max_steps=None,
-                max_sorts=None, live=None) -> dict:
+                max_sorts=None, live=None, plan_once=False) -> dict:
     """Run the first order, then keep asking while chat is on.
 
     task replaces the default first order; with chat and no
@@ -88,7 +88,8 @@ def run_session(client, scan_fn, sort_fn, report_fn, *, task=None,
             client, scan_fn, sort_fn, report_fn, out=emit,
             recordings_dir=recordings_dir, max_steps=max_steps,
             max_sorts=max_sorts, live=live,
-            first_text=pending, history=history, state=state)
+            first_text=pending, history=history, state=state,
+            plan_once=plan_once)
         history = result["history"]
         state = result["state"]
         if result.get("summary"):

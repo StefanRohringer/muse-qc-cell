@@ -34,6 +34,8 @@ from muse_qc.agent.agent_io import (
     plain_item,
     usage_text,
 )
+from muse_qc.agent.agent_plan import PLAN_PROMPT, SORT_IN_ORDER_TOOL
+from muse_qc.agent.agent_toolrun import run_tool
 from muse_qc.agent.agent_tools import TOOL_DEFINITIONS, RunState
 from muse_qc.agent.live_page import LivePage
 from muse_qc.checks.model_check import BASE_URL, KEY_NAME, read_api_key
@@ -68,31 +70,53 @@ def _default_client_factory(api_key: str) -> object:
     return OpenAI(api_key=api_key, base_url=BASE_URL)
 
 
-def _model_call(client, history):
+def _model_call(client, history, tools, instructions):
     """One Responses API call with tools and low reasoning effort."""
     create = getattr(getattr(client, "responses"), "create")
     return create(
         model=MODEL,
-        instructions=SYSTEM_PROMPT,
+        instructions=instructions,
         input=history,
-        tools=TOOL_DEFINITIONS,
+        tools=tools,
         reasoning={"effort": "low"},
         store=False,
         include=["reasoning.encrypted_content"],
     )
 
 
+def _loop_tools(plan_once):
+    """Return the tool definitions for this run.
+
+    Without --plan-once exactly the tools used so far; with it
+    plus sort_in_order.
+    """
+    if plan_once:
+        return list(TOOL_DEFINITIONS) + [SORT_IN_ORDER_TOOL]
+    return TOOL_DEFINITIONS
+
+
+def _loop_instructions(plan_once):
+    """Return the system prompt for this run (one added sentence)."""
+    if plan_once:
+        return SYSTEM_PROMPT + PLAN_PROMPT
+    return SYSTEM_PROMPT
+
+
 def run_agent(client, scan_fn, sort_fn, report_fn, out=print,
               recordings_dir="recordings", max_steps=MAX_STEPS,
               max_sorts=MAX_SORTS, live=None, first_text=None,
-              history=None, state=None) -> dict:
+              history=None, state=None, plan_once=False) -> dict:
     """Run the tool-calling loop; return the run summary dict.
 
     scan_fn returns {"parts", "skipped", "image"}, sort_fn takes a
     stored [x, y] position and returns the outcome dict, report_fn
     takes this run's record paths and returns the report path. The
     key never appears here: only the client factory sees it.
+    With plan_once the model may sort a whole order with one
+    sort_in_order call; without it the run behaves as before.
     """
+    tools = _loop_tools(plan_once)
+    instructions = _loop_instructions(plan_once)
     if state is None:
         state = RunState()
     if history is None:
@@ -113,7 +137,8 @@ def run_agent(client, scan_fn, sort_fn, report_fn, out=print,
         while step < max_steps:
             step += 1
             try:
-                response = _model_call(client, history)
+                response = _model_call(client, history, tools,
+                                       instructions)
             except Exception as exc:  # noqa: BLE001 - short, no key
                 out(f"agent: model request failed: {exc}")
                 stop_reason = f"model request failed: {exc}"
@@ -147,9 +172,10 @@ def run_agent(client, scan_fn, sort_fn, report_fn, out=print,
                 if not isinstance(args, dict):
                     args = {}
                 entry["calls"].append({"name": name, "arguments": args})
-                result, stop = _run_tool(
+                result, stop = run_tool(
                     name, args, state, scan_fn, sort_fn, report_fn,
-                    max_sorts, out, live)
+                    max_sorts, MAX_PER_POSITION, out, live,
+                    plan_once)
                 if live is not None:
                     live.after_tool(name, result)
                 entry["results"].append(result)
@@ -166,11 +192,18 @@ def run_agent(client, scan_fn, sort_fn, report_fn, out=print,
                         good += 1
                     else:
                         bad += 1
+                for planned in result.get("sorted") or []:
+                    if planned.get("verdict") == "good":
+                        good += 1
+                    else:
+                        bad += 1
                 if stop:
                     break
             for tool_result in entry["results"]:
                 outcome = tool_result.get("outcome")
-                if outcome in ("error", "inspect_failed"):
+                deviation = tool_result.get("deviation_outcome")
+                if outcome in ("error", "inspect_failed") or \
+                        deviation in ("error", "inspect_failed"):
                     fails += 1
                 elif outcome is not None:
                     # A successful scan (no outcome) between two
@@ -183,6 +216,8 @@ def run_agent(client, scan_fn, sort_fn, report_fn, out=print,
             entries.append(entry)
             if finished or stop:
                 if any(result.get("outcome") == "interrupted"
+                       or result.get("deviation_outcome")
+                       == "interrupted"
                        for result in entry["results"]):
                     out("agent: interrupted by human, stopping")
                     stop_reason = "interrupted by human"
@@ -199,6 +234,7 @@ def run_agent(client, scan_fn, sort_fn, report_fn, out=print,
         stop_reason = "interrupted by human"
     path = agent_chat.write_transcript(
         recordings_dir, entries, summary, out)
+    out(f"agent: {step} model calls")
     if live is not None:
         live.finish(summary if finished else stop_reason or "stopped")
     return {
@@ -206,118 +242,9 @@ def run_agent(client, scan_fn, sort_fn, report_fn, out=print,
         "finished": finished,
         "good": good,
         "bad": bad,
-        "steps": step, "history": history,
+        "steps": step, "model_calls": step, "history": history,
         "transcript": path, "state": state,
     }
-
-
-def _run_tool(name, args, state, scan_fn, sort_fn, report_fn,
-              max_sorts, out, live=None) -> tuple[dict, bool]:
-    """Execute one model tool call; return (result, stop_loop)."""
-    if live is not None:
-        live.before_tool(name, args)
-    if name == "scan_table":
-        out("agent -> scan_table()")
-        try:
-            found = scan_fn()
-        except Exception as exc:  # noqa: BLE001 - short, no key
-            result = {"outcome": "error",
-                      "reason": f"scan failed: {exc}"}
-            out(f"tool: {result['reason']}")
-            return result, False
-        result = agent_tools.store_scan(state, found)
-        count = len(result["parts"])
-        if count == 0:
-            out("tool: no parts found")
-        elif count == 1:
-            out("tool: 1 part found")
-        else:
-            out(f"tool: {count} parts found")
-        return result, False
-    if name == "inspect_and_sort":
-        part_id = args.get("part_id")
-        out(f"agent -> inspect_and_sort(part {part_id})")
-        position = state.lookup(part_id)
-        if position is None:
-            result = {"outcome": "refused",
-                      "reason": "unknown part id,"
-                      " call scan_table first"}
-            out(f"tool: part {part_id} refused: {result['reason']}")
-            return result, False
-        if state.already_sorted(position):
-            result = {"outcome": "refused",
-                      "reason": "part already sorted"}
-            out(f"tool: part {part_id} refused: {result['reason']}")
-            return result, False
-        if state.attempts_at(position) >= MAX_PER_POSITION:
-            result = {"outcome": "refused",
-                      "reason": "already tried twice, skipping part"}
-            out(f"tool: part {part_id} refused: {result['reason']}")
-            return result, False
-        if state.sort_count >= max_sorts:
-            out(f"agent: sort limit reached ({max_sorts}), stopping")
-            return {"outcome": "refused",
-                    "reason": "sort limit reached"}, True
-        state.note_attempt(position)
-        state.sort_count += 1
-        lever = state.lever_of(part_id)
-        try:
-            result = dict(sort_fn(position, lever))
-        except Exception as exc:  # noqa: BLE001 - short, no key
-            result = {"outcome": "error", "levers": None,
-                      "verdict": None, "box": None, "record": None,
-                      "reason": f"sort failed: {exc}"}
-        result["lines"] = list(result.get("lines") or [])[-12:]
-        outcome = result.get("outcome")
-        if outcome == "sorted":
-            if result.get("record"):
-                state.records.append(str(result["record"]))
-            state.note_sorted(position)
-            out(f"tool: part {part_id} levers {result.get('levers')}"
-                f" {result.get('verdict')}, sorted")
-            result.update(agent_tools.rescan_after_sort(
-                state, scan_fn, out,
-                station_image=result.get("station_table_image")))
-        else:
-            # Any other outcome (missed grip, error, inspect_failed,
-            # interrupted, refused): the table may have changed, so
-            # the whole scan expires and the model must rescan.
-            state.mark_stale()
-        if outcome == "interrupted":
-            out(f"tool: part {part_id} interrupted")
-            return result, True
-        if outcome == "missed_grip":
-            out(f"tool: part {part_id} missed grip")
-        elif outcome == "inspect_failed":
-            out(f"tool: part {part_id} inspect failed")
-        elif outcome == "refused":
-            out(f"tool: part {part_id} refused:"
-                f" {result.get('reason')}")
-        elif outcome != "sorted":
-            out(f"tool: part {part_id} error: {result.get('reason')}")
-        return result, False
-    if name == "write_report":
-        out("agent -> write_report()")
-        try:
-            path = report_fn(list(state.records))
-        except Exception as exc:  # noqa: BLE001 - short, no key
-            result = {"outcome": "error",
-                      "reason": f"report failed: {exc}"}
-            out(f"tool: {result['reason']}")
-            return result, False
-        result = {"outcome": "written", "report": str(path)}
-        out(f"tool: report written to {path}")
-        return result, False
-    if name == "finish":
-        out("agent -> finish()")
-        text = str(args.get("summary", ""))
-        out(f"agent finished: {text}")
-        return {"outcome": "finished"}, False
-    out(f"agent -> {name}()")
-    result = {"outcome": "refused",
-              "reason": f"unknown tool {name}"}
-    out(f"tool: refused: {result['reason']}")
-    return result, False
 
 
 def main(argv=None, client_factory=None, toolset=None, input_fn=None,
@@ -340,6 +267,10 @@ def main(argv=None, client_factory=None, toolset=None, input_fn=None,
                         help="first order in plain words")
     parser.add_argument("--chat", action="store_true",
                         help="keep asking for the next order")
+    parser.add_argument("--plan-once", action="store_true",
+                        help="let the model choose the sorting order"
+                        " once, then run it without asking again"
+                        " unless a rescan deviates")
     args = parser.parse_args(argv)
     ask = input_fn if input_fn is not None else input
     if args.execute:
@@ -383,9 +314,10 @@ def main(argv=None, client_factory=None, toolset=None, input_fn=None,
         result = agent_chat.run_session(
             client, *toolset, task=args.task, chat=args.chat,
             ask=input_fn if input_fn is not None else input,
-            out=out, live=page)
+            out=out, live=page, plan_once=args.plan_once)
     else:
-        result = run_agent(client, *toolset, out=out, live=page)
+        result = run_agent(client, *toolset, out=out, live=page,
+                           plan_once=args.plan_once)
     return 0 if result["finished"] else 1
 
 
