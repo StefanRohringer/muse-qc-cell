@@ -247,8 +247,9 @@ def dry_run_session(sdk, stdin, out=print, find_port=None,
                     open_mm=OPEN_MM[2], hold_s=HOLD_S[2],
                     find_arm_node=None, read_key=None, arm_mode="mit-ff",
                     tau_scale=None, gravity_fn=None, use_station=None,
-                    station_j6_deg=None, solve_drop_fn_for_mit=None):
-    """Check every session plan including the transits; move nothing."""
+                    station_j6_deg=None, solve_drop_fn_for_mit=None,
+                    **_ignored):
+    """Check plans incl. transits; _ignored swallows execute-only options."""
     out(f"arm mode: {arm_mode}")
     if inspect_step.check_prereqs(out, find_arm_node, read_key) is None:
         return 2

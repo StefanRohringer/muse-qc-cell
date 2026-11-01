@@ -755,6 +755,40 @@ def test_main_requires_inspect_without_touching_sdk():
     assert info.value.code == 2
 
 
+def _main_dry_run(argv):
+    """Run main() without --execute on piped targets; (code, sdk, text)."""
+    lines: list = []
+    sdk = StoredFakeSdk()
+    stdin = io.StringIO(f"part {TABLE[0]} {TABLE[1]} 90\n"
+                        f"part {TABLE2[0]} {TABLE2[1]}\nend\n")
+    code = pick_session.main(
+        argv, sdk_factory=lambda *args, **kwargs: sdk, stdin=stdin,
+        out=lines.append, find_port=lambda: "/dev/ttyFAKE",
+        sensor_factory=lambda: PhaseSensor(sdk),
+        joint_limits=TEST_LIMITS, tip_fn=_fake_tip, solve_fn=_fake_solve,
+        solve_drop_fn=_fake_drop_solve, find_arm_node=lambda: "/dev/videoFAKE",
+        read_key=lambda: SECRET)
+    return code, sdk, "\n".join(lines)
+
+
+def test_main_dry_run_with_station():
+    code, sdk, text = _main_dry_run(
+        ["--inspect", "--station", "--gains", "default"])
+    assert code == 0
+    assert "session: dry run ok" in text
+    assert "enable_all" not in sdk.calls
+
+
+def test_main_dry_run_with_agent_arm_arguments():
+    from muse_qc.agent.agent_tools import arm_child_tail
+    argv = [flag for flag in arm_child_tail(scan_at_station=True)
+            if flag != "--execute"] + ["--gains", "default"]
+    code, sdk, text = _main_dry_run(argv)
+    assert code == 0
+    assert "session: dry run ok" in text
+    assert "enable_all" not in sdk.calls
+
+
 def test_confirmation_missing_enables_nothing(tmp_path):
     lines: list = []
     sdk = StoredFakeSdk()
