@@ -246,6 +246,73 @@ def test_run_plan_session_over_mid_order_is_deviation():
     assert session.closed == ["done"]
 
 
+def _error_outcome():
+    return {"outcome": "error", "levers": None,
+            "verdict": None, "box": None, "record": None,
+            "reason": "boom", "lines": ["motion failed: boom"]}
+
+
+def _retry_after_failed_sort(outcome):
+    """Missed/error sort, rescan at the same spot, retry: plan_done."""
+    from muse_qc.agent.agent_rescan import store_scan
+
+    state = RunState()
+    state.new_scan([P0], [None], [None])
+    first = FakeSession([dict(outcome)])
+    scan = _scan_fn_factory([[P0]])
+    result, _ = run_plan(
+        state, [0], None, scan, out=lambda text: None,
+        session_factory=lambda: first)
+    assert result["outcome"] == "plan_deviation"
+    assert first.closed == ["done"]
+    # The agent rescans (same table position, fresh id) and retries.
+    store_scan(state, {"parts": [{"table_mm": list(P0)}],
+                       "skipped": 0, "image": "recordings/fake.png"})
+    second = FakeSession([
+        _sorted_outcome(3, "good", "recordings/count_000001.json")])
+    result, _ = run_plan(
+        state, [0], None, scan, out=lambda text: None,
+        session_factory=lambda: second)
+    assert result["outcome"] == "plan_done"
+    assert second.closed == ["done"]
+
+
+def test_session_missed_grip_does_not_mark_sorted_allows_one_retry():
+    _retry_after_failed_sort(_missed_outcome())
+
+
+def test_session_error_does_not_mark_sorted_allows_one_retry():
+    _retry_after_failed_sort(_error_outcome())
+
+
+def test_no_session_started_when_plan_fully_refused():
+    """A plan with no part left to send starts no ArmSession at all."""
+    calls: list = []
+    state = RunState()
+    state.new_scan([P0], [None], [None])
+    state.note_sorted(P0)
+    scan = _scan_fn_factory([[P0]])
+    result, _ = run_plan(
+        state, [0], None, scan, out=lambda text: None,
+        session_factory=lambda: calls.append(1) or FakeSession([]))
+    assert result["outcome"] == "plan_deviation"
+    assert result["deviation"] == "part 0 refused."
+    assert calls == []
+
+
+def test_no_session_started_when_order_invalid():
+    """A refused order (unknown id) starts no ArmSession at all."""
+    calls: list = []
+    state = RunState()
+    state.new_scan([P0], [None], [None])
+    scan = _scan_fn_factory([[P0]])
+    result, _ = run_plan(
+        state, [99], None, scan, out=lambda text: None,
+        session_factory=lambda: calls.append(1) or FakeSession([]))
+    assert result["outcome"] == "refused"
+    assert calls == []
+
+
 def test_run_plan_without_factory_uses_sort_fn():
     seen: list = []
     scan = _scan_fn_factory([[P1], []])

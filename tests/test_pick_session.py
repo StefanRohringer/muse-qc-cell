@@ -368,16 +368,31 @@ def _fly_part(sdk, clock, loop):
     return "part" if loop.part_done.is_set() else "end"
 
 
-def _begin_session(targets, tmp_path, stdin=None, **overrides):
+def _begin_session(targets, tmp_path, stdin=None, start_joints=None,
+                   **overrides):
     """Start a session under test control; return (sdk, sensors, clock,
     thread, holder, lines). The caller pumps, then joins the thread."""
     clock: FakeClock = FakeClock()
     lines: list = []
     sensors: list = []
-    sdk = StoredFakeSdk()
+    sdk = StoredFakeSdk() if start_joints is None \
+        else StoredFakeSdk(joints_deg=start_joints)
+    # A sensor_factory override takes the sdk (the caller's scope has
+    # no sdk yet); it is built eagerly like the default sensor, so a
+    # plain no-arg lambda would capture nothing.
+    factory = overrides.pop("sensor_factory", None)
+    if factory is not None:
+        sensor = factory(sdk)
+        sensors.append(sensor)
+        overrides["sensor_factory"] = lambda: sensor
     if stdin is None:
         stdin = io.StringIO("".join(line + "\n" for line in targets))
     holder: dict = {}
+    # The fake historical start is far from home: expect it unless a
+    # test passes expected_rest_deg explicitly (None keeps the real
+    # clamped-home default under test).
+    overrides.setdefault("expected_rest_deg", list(REST if start_joints is None
+                                                   else start_joints))
     thread = _start_main(
         lambda: pick_session.execute_session(
             sdk, stdin,
@@ -545,20 +560,99 @@ def test_missed_grip_never_transits(tmp_path):
             **_session_kwargs(
                 sdk, sensors, clock, lines, tmp_path,
                 sensor_factory=lambda: PhaseSensor(
-                    sdk, held_phases=frozenset()))),
+                    sdk, held_phases=frozenset()),
+                expected_rest_deg=list(REST))),
         holder)
     _wait_main(lambda: sdk.loop_fn is not None, "created the loop")
     loop = sdk.loop_fn
-    assert _fly_part(sdk, clock, loop) == "end"
+    _pump_until(sdk, clock,
+                lambda: any("missed grip" in line for line in lines),
+                "missed the grip")
+    marked = len(_arm_sends(sdk))
+    miss_deg = [math.degrees(v) for v in loop.cmd_arm_rad]
     _pump_until(sdk, clock, loop.done.is_set, "returned to rest")
     assert _finish_session(thread, holder) == 1
     text = "\n".join(lines)
     assert "missed grip" in text
+    assert "REFUSED" not in text
+    assert "return refused" not in text
     assert "session: part done" not in text
     assert "session: end (missed grip)" in text
+    _assert_no_planned_return_walked(loop, sdk, marked)
+    _assert_vertical_ascent(loop, sdk, marked, miss_deg)
     assert sdk.calls.count("disable_all") == 1
     # One init send plus the return ramp endpoint plus the rest settle.
     assert len(_arm_rest_sends(sdk)) == SETTLE_HOLD_CYCLES + 2
+
+
+HOME_LIKE = [-3.64, -0.27, -2.94, +5.54, +1.45, +0.03]
+NOT_AT_REST_LINE = ("arm is not at rest, move it to rest by hand"
+                    " with the power supply off")
+
+
+def test_start_pose_refused_when_away_from_rest(tmp_path):
+    """A session never enables away from rest: exit 2, nothing enabled.
+
+    The historical fake start sits far from the clamped-home rest
+    reference (like the real bad disable pose), so the production
+    default must refuse before enabling anything.
+    """
+    lines: list = []
+    sdk = StoredFakeSdk()
+    stdin = io.StringIO(f"part {TABLE[0]} {TABLE[1]} 90\nend\n")
+    code = pick_session.execute_session(
+        sdk, stdin, out=lines.append, input_fn=lambda prompt: "yes",
+        joint_limits=TEST_LIMITS, expected_rest_deg=None)
+    assert code == 2
+    assert NOT_AT_REST_LINE in "\n".join(lines)
+    assert "enable_all" not in sdk.calls and "loop" not in sdk.calls
+
+
+def _clamped_home_tip(joints_deg):
+    """Fake tip clamped into the workspace for a home-like start.
+
+    The plain fake tip maps the home joints to a tip below the table,
+    which no real start has; clamping keeps the chained and per-cycle
+    checks on the plan geometry while the start-pose check itself
+    stays under test with the production default.
+    """
+    _, _, z_mm = _fake_tip(joints_deg)
+    return (0.30, 0.0, min(max(z_mm, 0.03), 0.45))
+
+
+def test_start_pose_ok_at_home_sorts(tmp_path):
+    """A session parked at rest (production default) sorts normally."""
+    sdk, _, clock, thread, holder, lines = _begin_session(
+        [f"part {TABLE[0]} {TABLE[1]} 90", "end"],
+        tmp_path, start_joints=HOME_LIKE, expected_rest_deg=None,
+        tip_fn=_clamped_home_tip)
+    loop = sdk.loop_fn
+    assert _fly_part(sdk, clock, loop) == "part"
+    _wait_main(lambda: loop.end_reason is not None or loop.done.is_set(),
+               "ended the session")
+    _pump_until(sdk, clock, loop.done.is_set, "returned to rest")
+    assert _finish_session(thread, holder) == 0
+    text = "\n".join(lines)
+    assert NOT_AT_REST_LINE not in text
+    assert text.count("session: part done") == 1
+    assert "session: end (end)" in text
+    assert sdk.calls.count("enable_all") == 1
+    assert sdk.calls.count("disable_all") == 1
+
+
+def test_start_pose_boundary_is_ten_deg():
+    """The rest check tolerates 10 deg per joint, refuses above it."""
+    from muse_qc.pick.session_driver import REST_TOL_DEG, check_start_pose
+
+    assert REST_TOL_DEG == 10.0
+    even = [10.0, -10.0, 10.0, -10.0, 10.0, -10.0]
+    assert check_start_pose(even, TEST_LIMITS, lambda text: None,
+                            [0.0] * 6) is True
+    over = [10.0, -10.01, 10.0, -10.0, 10.0, -10.0]
+    said: list = []
+    assert check_start_pose(over, TEST_LIMITS, said.append,
+                            [0.0] * 6) is False
+    assert said == [NOT_AT_REST_LINE]
 
 
 def test_second_part_plan_exception_ends_session(tmp_path):
@@ -672,7 +766,8 @@ def test_tty_confirm_leaves_leading_stdin_yes_as_target(tmp_path):
     code = pick_session.execute_session(
         sdk, stdin, out=lines.append, input_fn=None,
         tty_opener=_tty_yes, find_arm_node=lambda: "/dev/videoFAKE",
-        read_key=lambda: SECRET, joint_limits=TEST_LIMITS)
+        read_key=lambda: SECRET, joint_limits=TEST_LIMITS,
+        expected_rest_deg=list(REST))
     assert code == 1
     assert "bad line 'yes'" in "\n".join(lines)
     assert "enable_all" not in sdk.calls
@@ -833,7 +928,9 @@ def test_install_resets_per_part_state():
         -87.0, REST_GRIP, 50, False, object(), lambda text: None,
         lambda *args: {"ok": True}, _fake_tip, None, -40.0,
         inspect=True, ranges_by_box=None, shared_ranges=None,
-        arm_sender=None, tracking_guard=None, hold_wait_s=3.0)
+        arm_sender=None, tracking_guard=None, hold_wait_s=3.0,
+        rest_deg=list(REST), home_speed_deg_s=15.0,
+        home_accel_deg_s2=30.0)
     loop.part_done.set()
     loop.drop_box = "good"
     loop.confirmed = True
@@ -939,6 +1036,332 @@ def test_part2_return_targets_clamped_rest():
     finally:
         _safety.set_j6_ref(old_ref)
     assert open_deg is not None, built
+
+
+def _step_limit_check(target, current, **extra):
+    """Step-only safety double: 0.05 m cartesian, 10 deg joint.
+
+    No workspace, floor or limit checks, so the test needs no SDK
+    limits and stays deterministic; the crafted jump below fails
+    exactly like the real step-cartesian refusal.
+    """
+    del extra
+    if math.dist((target.x, target.y, target.z),
+                 (current.x, current.y, current.z)) > 0.05:
+        return {"ok": False, "reason": "step-cartesian",
+                "value": 0.10, "limit": 0.05}
+    peak = max(abs(got - want) for got, want in
+               zip(target.joints_deg, current.joints_deg))
+    if peak > 10.0:
+        return {"ok": False, "reason": "step-joint",
+                "value": peak, "limit": 10.0}
+    return {"ok": True}
+
+
+class _EmptySensor:
+    """Touch sensor that never reports a contact (missed grip)."""
+
+    def read(self, timeout):
+        del timeout
+        return FakeReading(set())
+
+    def close(self):
+        pass
+
+
+def _failing_solve(table_xy, height_mm, seed, yaw_offset_deg=0.0):
+    del table_xy, height_mm, seed, yaw_offset_deg
+    return {"ok": False, "reason": "unreachable"}
+
+
+def _miss_home_loop(lines, solve_fn=None):
+    """Bare SessionLoop whose planned return jumps 100 mm in tip.
+
+    Hover/lower/lift sit above the table (fake tip z 50 to 100 mm)
+    while the return starts 100 mm higher, exactly the table pose
+    versus box exit shape of the real missed-grip refusal. The old
+    planned-index abort is refused at that junction; the fresh home
+    ramp from the commanded pose is not.
+    """
+    from muse_qc.bringup.first_move_plan import ramp_waypoints
+    from muse_qc.pick.session_loop import SessionLoop
+
+    bottom = (-3.0, -95.0, -80.0, 75.0, 1.0, -4.0)
+    top = (-3.0, -100.0, -80.0, 75.0, 1.0, -4.0)
+    box = (-3.0, -110.0, -80.0, 75.0, 1.0, -4.0)
+    hover = list(ramp_waypoints(tuple(REST), bottom, speed_deg_s=15.0,
+                                accel_deg_s2=30.0))
+    lower = [bottom]
+    lift = list(ramp_waypoints(bottom, top, speed_deg_s=15.0,
+                               accel_deg_s2=30.0))
+    back = list(ramp_waypoints(box, tuple(REST), speed_deg_s=15.0,
+                               accel_deg_s2=30.0))
+    plan = ([("hover", point, False) for point in hover]
+            + [("lower", point, True) for point in lower]
+            + [("lift", point, True) for point in lift]
+            + [("return", box, False)]
+            + [("return", point, False) for point in back])
+    tips = [_fake_tip(list(point)) for _, point, _ in plan]
+    ranges = {"hover": (0, len(hover)),
+              "lower": (len(hover), len(hover) + len(lower)),
+              "lift": (len(hover) + len(lower),
+                       len(hover) + len(lower) + len(lift)),
+              "return": (len(hover) + len(lower) + len(lift), len(plan))}
+    arm, grip = FakeArmGroup(REST), FakeGripperGroup(REST_GRIP)
+    loop = SessionLoop(
+        arm, grip, VLIMS, [1.0], [math.radians(v) for v in REST],
+        plan, tips, ranges, _fake_tip(list(top))[2],
+        -87.0, REST_GRIP, 50, False, _EmptySensor(), lines.append,
+        _step_limit_check, _fake_tip, None, None,
+        inspect=False, ranges_by_box=None, shared_ranges=None,
+        arm_sender=None, tracking_guard=None, hold_wait_s=3.0,
+        rest_deg=list(REST), home_speed_deg_s=15.0,
+        home_accel_deg_s2=30.0,
+        home_solve_fn=_fake_solve if solve_fn is None else solve_fn)
+    return loop, arm
+
+
+def test_unbuildable_ascent_holds_with_message():
+    """An unreachable ascent never joint-ramps from low: hold and end.
+
+    With every rung unsolvable the fresh home return cannot be built,
+    so the loop holds the commanded pose with the power-supply line
+    instead of turning joint 1 at table height.
+    """
+    lines: list = []
+    loop, arm = _miss_home_loop(lines, solve_fn=_failing_solve)
+    for _ in range(30000):
+        loop(None, 0.01)
+        if loop.done.is_set():
+            break
+    assert loop.done.is_set(), "loop never held the pose"
+    text = "\n".join(lines)
+    assert "missed grip" in text
+    assert ("return refused, hold the arm and switch off"
+            " the power supply") in text
+    assert [math.degrees(v) for v in arm.get_positions()] != \
+        pytest.approx(list(REST), abs=1e-6)
+
+
+def test_missed_grip_returns_home_from_commanded_pose():
+    """Missed grip ramps home from the commanded joints, never the plan.
+
+    The planned return starts 100 mm above the lift end (the real
+    table-versus-box shape): the old index abort was refused there
+    and disabled at the grip pose. Now every step is small, the arm
+    settles at rest and the end note stays "missed grip".
+    """
+    lines: list = []
+    loop, arm = _miss_home_loop(lines)
+    for _ in range(30000):
+        loop(None, 0.01)
+        if loop.done.is_set():
+            break
+    assert loop.done.is_set(), "loop never finished the home return"
+    text = "\n".join(lines)
+    assert "missed grip" in text
+    assert "REFUSED" not in text
+    assert "return refused" not in text
+    assert loop.end_note == "missed grip"
+    assert [math.degrees(v) for v in arm.get_positions()] == \
+        pytest.approx(list(REST), abs=1e-6)
+
+
+def _arm_sends(sdk):
+    """All arm send calls (the calls list mixes in reads and modes)."""
+    return [call for call in sdk.groups["arm"].calls
+            if isinstance(call, tuple) and call[0] == "send"]
+
+
+def _assert_no_planned_return_walked(loop, sdk, marked):
+    """No post-fault send may equal a planned return waypoint.
+
+    The old index abort walked the lift ladder plus the return
+    segment verbatim from the fault pose; the fresh home ramp
+    shares only the rest settle with it (excluded here), so any
+    other match means the loop jumped to a planned index.
+    """
+    low, high = loop.ranges["return"]
+    planned = [tuple(point) for _, point, _ in loop.plan[low:high]
+               if not all(abs(point[joint] - REST[joint]) < 1e-9
+                          for joint in range(6))]
+    assert planned, "no return ramp to check against"
+    for call in _arm_sends(sdk)[marked:]:
+        sent = tuple(math.degrees(v) for v in call[1])
+        for waypoint in planned:
+            assert not all(abs(got - want) < 1e-6
+                           for got, want in zip(sent, waypoint)), \
+                "aborted into the planned return"
+
+
+def _assert_vertical_ascent(loop, sdk, marked, miss_deg):
+    """Below-hover home waypoints rise straight up from the miss pose.
+
+    Every home send with the tip below the part hover height keeps
+    joint 1 within 0.5 deg of the miss pose and its tip xy within 5
+    mm of the miss tip (no sweep over the neighbouring parts); the
+    walk ends exactly at rest.
+    """
+    miss_tip = _fake_tip(list(miss_deg))
+    hover_z = loop.hover_z
+    sends = [tuple(math.degrees(v) for v in call[1])
+             for call in _arm_sends(sdk)[marked:]]
+    assert sends, "no home sends after the miss"
+    assert all(abs(got - want) < 1e-9
+               for got, want in zip(sends[-1], REST)), \
+        "home walk ends at rest"
+    assert any(_fake_tip(list(sent))[2] >= hover_z - 1e-9
+               for sent in sends), \
+        "home walk never reached hover height"
+    for sent in sends:
+        tip = _fake_tip(list(sent))
+        if tip[2] < hover_z - 1e-9:
+            assert abs(sent[0] - miss_deg[0]) <= 0.5, \
+                f"joint 1 turned low: {sent[0]:+.2f} vs miss {miss_deg[0]:+.2f}"
+            assert math.dist(tip[:2], miss_tip[:2]) * 1000.0 <= 5.0, \
+                "tip moved sideways while still below hover"
+
+
+class _SecondMissSensor(PhaseSensor):
+    """Holds the first part, misses every later one (real run shape)."""
+
+    def __init__(self, sdk, held_phases=HELD_PHASES):
+        super().__init__(sdk, held_phases)
+        self._latched_empty = False
+
+    def read(self, timeout):
+        # part_done is set and cleared while the test-held loop is
+        # frozen for planning, so latch the release instead (seen
+        # mid-flight): every later close sees an empty gripper, while
+        # the first carry still sees its contacts.
+        loop = self._sdk.loop_fn
+        if loop is not None and loop.phase in ("release", "release_hold"):
+            self._latched_empty = True
+        if self._latched_empty:
+            return FakeReading(set())
+        return super().read(timeout)
+
+
+def test_missed_grip_second_part_returns_home_without_transit(tmp_path):
+    """Missed grip as second part: no transit, home from the miss pose.
+
+    First part sorts (transit flown), the second misses its grip.
+    The session must end "missed grip" after opening, ramping home
+    from the commanded miss pose and settling at rest: no REFUSED
+    step, no planned return waypoint walked, disable exactly once.
+    """
+    sdk, sensors, clock, thread, holder, lines = _begin_session(
+        [f"part {TABLE[0]} {TABLE[1]} 90",
+         f"part {TABLE2[0]} {TABLE2[1]}",
+         "end"],
+        tmp_path,
+        sensor_factory=_SecondMissSensor)
+    loop = sdk.loop_fn
+    assert _fly_part(sdk, clock, loop) == "part"
+    _wait_main(lambda: loop._pending is not None
+               or loop.end_reason is not None or loop.done.is_set(),
+               "planned part 2")
+    assert loop.end_reason is None
+    sdk.pump(clock, 1)  # install
+    _pump_until(sdk, clock,
+                lambda: any("missed grip" in line for line in lines),
+                "missed the grip")
+    marked = len(_arm_sends(sdk))
+    miss_deg = [math.degrees(v) for v in loop.cmd_arm_rad]
+    _pump_until(sdk, clock, loop.done.is_set, "returned to rest")
+    assert _finish_session(thread, holder) == 1
+    text = "\n".join(lines)
+    assert text.count("session: part done") == 1
+    assert "missed grip" in text
+    assert "REFUSED" not in text
+    assert "return refused" not in text
+    assert "inspect skipped: no part held" in text
+    assert "session: end (missed grip)" in text
+    _assert_no_planned_return_walked(loop, sdk, marked)
+    _assert_vertical_ascent(loop, sdk, marked, miss_deg)
+    assert sdk.calls.count("enable_all") == 1
+    assert sdk.calls.count("disable_all") == 1
+    assert len(_arm_rest_sends(sdk)) == SETTLE_HOLD_CYCLES + 2
+
+
+class _ArmedRefusal:
+    """Live-loop refusal double: real checks until the test arms it.
+
+    With refuse_all every later check refuses too (the home ramp
+    cannot verify); otherwise only the first armed check refuses and
+    the home ramp passes. Planning before arming always passes.
+    """
+
+    def __init__(self, refuse_all=False):
+        from muse_qc.arm import safety as _safety
+        self._safety = _safety
+        self._refuse_all = bool(refuse_all)
+        self.armed = False
+        self._fired = False
+
+    def __call__(self, target, current, **extra):
+        if self.armed and (self._refuse_all or not self._fired):
+            self._fired = True
+            return {"ok": False, "reason": "step-cartesian",
+                    "value": 0.99, "limit": 0.05}
+        return self._safety.check_target(target, current, **extra)
+
+
+def test_refusal_mid_plan_returns_home_from_commanded_pose(tmp_path):
+    """Refusal mid-plan ramps home from the commanded pose.
+
+    The check refuses one lower step; the session must end with that
+    refusal after ramping home from the commanded joints and settling
+    at rest: exactly one REFUSED line, no planned return walked.
+    """
+    gate = _ArmedRefusal()
+    sdk, _, clock, thread, holder, lines = _begin_session(
+        [f"part {TABLE[0]} {TABLE[1]} 90", "end"],
+        tmp_path, check_fn=gate)
+    loop = sdk.loop_fn
+    _pump_until(sdk, clock, lambda: loop.phase == "lower",
+                "started lowering")
+    gate.armed = True
+    marked = len(_arm_sends(sdk))
+    _pump_until(sdk, clock, loop.done.is_set, "returned to rest")
+    assert _finish_session(thread, holder) == 1
+    text = "\n".join(lines)
+    assert text.count("REFUSED") == 1
+    assert "return refused" not in text
+    assert "session: end (step-cartesian" in text
+    _assert_no_planned_return_walked(loop, sdk, marked)
+    assert sdk.calls.count("enable_all") == 1
+    assert sdk.calls.count("disable_all") == 1
+    assert len(_arm_rest_sends(sdk)) == SETTLE_HOLD_CYCLES + 2
+
+
+def test_refused_home_ramp_holds_with_message(tmp_path):
+    """A refused home ramp holds with the power-supply line, then ends.
+
+    After the mid-plan refusal every later check refuses too, so the
+    fresh ramp cannot verify: the arm must hold the commanded pose,
+    print the hold line and end with the original refusal, disabling
+    exactly once without ever reaching rest.
+    """
+    gate = _ArmedRefusal(refuse_all=True)
+    sdk, _, clock, thread, holder, lines = _begin_session(
+        [f"part {TABLE[0]} {TABLE[1]} 90", "end"],
+        tmp_path, check_fn=gate)
+    loop = sdk.loop_fn
+    _pump_until(sdk, clock, lambda: loop.phase == "lower",
+                "started lowering")
+    gate.armed = True
+    _pump_until(sdk, clock, loop.done.is_set, "held the pose")
+    assert _finish_session(thread, holder) == 1
+    text = "\n".join(lines)
+    assert text.count("REFUSED") == 1
+    assert ("return refused, hold the arm and switch off"
+            " the power supply") in text
+    assert "session: end (step-cartesian" in text
+    assert sdk.calls.count("enable_all") == 1
+    assert sdk.calls.count("disable_all") == 1
+    # Only the enable-time send aimed at rest: held, never homed.
+    assert len(_arm_rest_sends(sdk)) == 1
 
 
 def test_chained_refusal_names_joint_value_limit():

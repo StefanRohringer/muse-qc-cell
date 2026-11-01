@@ -29,12 +29,45 @@ from muse_qc.pick.pick_test import _lever_solve
 from muse_qc.pick.session_loop import SessionLoop, join_done, wait_next_line, wait_part
 from muse_qc.pick.session_protocol import _EOF, parse_session_line
 from muse_qc.bringup.first_move_plan import LOOP_RATE_HZ
+from muse_qc.bringup.first_move_plan import HOME_DEG
 from muse_qc.bringup.first_move_plan import clamp_to_limits, read_sdk_vlims, real_tip_m, scale_vlim
 from muse_qc.gripper.gripper_grip import width_to_deg
 from muse_qc.gripper.gripper_motor import GRIPPER_CONFIG_VLIM
 from muse_qc.gripper.grip_speed import GRIPPER_VLIM_FRACTION
 from muse_qc.gripper.gripper_stream import open_touch_sensor
 from muse_qc.inspection import inspect_step, station_shot
+
+
+REST_TOL_DEG = 10.0
+
+
+def check_start_pose(start_deg, joint_limits, out, expected_rest_deg=None):
+    """Compare the read start joints with the session rest reference.
+
+    The reference is first_move's HOME_DEG clamped to the limits
+    (the folded support pose every session returns to); tests pass
+    their fake start as expected_rest_deg. Any joint further than
+    REST_TOL_DEG refuses with the hand-move line, so a session
+    never enables away from rest. True means enabling is allowed.
+    """
+    if expected_rest_deg is None:
+        limits = (safety.JOINT_LIMITS_DEG if joint_limits is None
+                  else joint_limits)
+        expected = (tuple(float(v) for v in HOME_DEG) if limits is None
+                    else tuple(clamp_to_limits(HOME_DEG, limits)))
+    else:
+        expected = tuple(float(v) for v in expected_rest_deg)
+    read = [float(v) for v in start_deg]
+    line = ("arm is not at rest, move it to rest by hand"
+            " with the power supply off")
+    if len(read) != 6 or len(expected) != 6:
+        out(line)
+        return False
+    if any(abs(got - want) > REST_TOL_DEG
+           for got, want in zip(read, expected)):
+        out(line)
+        return False
+    return True
 
 
 def box_exit_joints(built, box):
@@ -158,6 +191,7 @@ def plan_part(start_joints, table_xy, lever_deg, box_exit, out, deps,
         "plan": built["plan"], "tips": tips, "ranges": built["ranges"],
         "hover_z": tips[built["ranges"]["hover"][1] - 1][2],
         "open_deg": open_deg,
+        "solve_fn": solve_fn,
         "release_open_deg": width_to_deg(RELEASE_OPEN_MM),
         "ranges_by_box": built.get("ranges_by_box"),
         "shared_ranges": built.get("shared_ranges"),
@@ -283,6 +317,7 @@ def run_parts(sdk, lines, out, deps, hw, arm_start_deg, first_open_deg,
             "plan": built["plan"], "tips": tips, "ranges": built["ranges"],
             "hover_z": tips[built["ranges"]["hover"][1] - 1][2],
             "open_deg": open_deg, "release_open_deg": release_open_deg,
+            "solve_fn": built.get("solve_fn"),
             "ranges_by_box": built.get("ranges_by_box"),
             "shared_ranges": built.get("shared_ranges"),
             "hold_cycles": round(deps["hold_s"] * LOOP_RATE_HZ),
@@ -299,7 +334,10 @@ def run_parts(sdk, lines, out, deps, hw, arm_start_deg, first_open_deg,
         first["release_open_deg"], inspect=True,
         ranges_by_box=first["ranges_by_box"],
         shared_ranges=first["shared_ranges"], arm_sender=arm_sender,
-        tracking_guard=guard, hold_wait_s=hw["hold_wait_s"])
+        tracking_guard=guard, hold_wait_s=hw["hold_wait_s"],
+        rest_deg=hold_deg, home_speed_deg_s=deps["speed_deg_s"],
+        home_accel_deg_s2=deps["accel_deg_s2"],
+        home_solve_fn=first.get("solve_fn"))
     owned["stream"] = loop
     # The spin thread only registers the loop callback and returns;
     # aliveness says nothing (a stored callback means a finished

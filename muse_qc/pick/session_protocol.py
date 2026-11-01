@@ -12,13 +12,18 @@ from __future__ import annotations
 
 import math
 import queue
+import sys
 import threading
 import time
+
+from muse_qc.bringup.first_move import CONFIRM_WORD
+from muse_qc.gripper.gripper_motor import CONFIRM_PROMPT
 
 HOLD_WAIT_S = 30.0
 PART_DONE_LINE = "session: part done"
 END_PREFIX = "session: end"
 _EOF = object()
+_CONFIRM_TIMEOUT_S = 60.0
 
 
 class SessionClock:
@@ -80,6 +85,32 @@ def parse_session_line(line: str):
             return None
         return ("part", x, y, lever)
     return None
+
+
+def confirm_session(input_fn, lines, out, tty_opener=open,
+                    from_stdin=False) -> bool:
+    """Confirm --execute (see pick_session for the routing).
+
+    With --confirm-stdin the first stdin line is the confirmation
+    and must read exactly CONFIRM_WORD; it is never parsed as a
+    target. Otherwise the confirmation comes only from /dev/tty
+    (tty_opener is injectable for tests); stdin is never read
+    for it.
+    """
+    if input_fn is not None:
+        return input_fn(CONFIRM_PROMPT).strip() == CONFIRM_WORD
+    if from_stdin:
+        try:
+            first = lines.get(timeout=_CONFIRM_TIMEOUT_S)
+        except queue.Empty:
+            return False
+        return first is not _EOF and str(first).strip() == CONFIRM_WORD
+    try:
+        with tty_opener("/dev/tty", "r", encoding="utf-8") as handle:
+            print(CONFIRM_PROMPT, end="", file=sys.stderr)
+            return handle.readline().strip() == CONFIRM_WORD
+    except OSError:
+        return False
 
 
 def feed_lines(stdin, out_queue: queue.Queue) -> None:

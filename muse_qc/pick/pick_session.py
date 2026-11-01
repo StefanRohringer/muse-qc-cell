@@ -56,41 +56,12 @@ from muse_qc.pick.session_loop import join_done
 from muse_qc.pick.session_protocol import (
     HOLD_WAIT_S,
     _EOF,
+    confirm_session,
     feed_lines,
 )
 from muse_qc.gripper.gripper_grip import deg_to_width
 from muse_qc.gripper.gripper_stream import open_touch_sensor
 from muse_qc.inspection import inspect_step
-from muse_qc.bringup.first_move import CONFIRM_WORD
-from muse_qc.gripper.gripper_motor import CONFIRM_PROMPT
-
-_CONFIRM_TIMEOUT_S = 60.0
-
-
-def _confirm_session(input_fn, lines, out, tty_opener=open,
-                     from_stdin=False) -> bool:
-    """Confirm --execute (see the module docstring for the routing).
-
-    With --confirm-stdin the first stdin line is the confirmation
-    and must read exactly CONFIRM_WORD; it is never parsed as a
-    target. Otherwise the confirmation comes only from /dev/tty
-    (tty_opener is injectable for tests); stdin is never read
-    for it.
-    """
-    if input_fn is not None:
-        return input_fn(CONFIRM_PROMPT).strip() == CONFIRM_WORD
-    if from_stdin:
-        try:
-            first = lines.get(timeout=_CONFIRM_TIMEOUT_S)
-        except queue.Empty:
-            return False
-        return first is not _EOF and str(first).strip() == CONFIRM_WORD
-    try:
-        with tty_opener("/dev/tty", "r", encoding="utf-8") as handle:
-            print(CONFIRM_PROMPT, end="", file=sys.stderr)
-            return handle.readline().strip() == CONFIRM_WORD
-    except OSError:
-        return False
 
 
 def _teardown(sdk, owned, out) -> None:
@@ -136,13 +107,13 @@ def execute_session(sdk, stdin, out=print, find_port=None,
                     station_j6_deg=None, station_table_shot=False,
                     open_table_camera=None, hold_wait_s=HOLD_WAIT_S,
                     input_fn=None, clock=None, confirm_stdin=False,
-                    tty_opener=None):
+                    tty_opener=None, expected_rest_deg=None):
     """Run one arm session over the stdin targets. --execute only."""
     out(f"arm mode: {arm_mode}")
     lines: queue.Queue = queue.Queue()
     threading.Thread(target=feed_lines, args=(stdin, lines),
                      daemon=True).start()
-    if not _confirm_session(
+    if not confirm_session(
             input_fn, lines, out,
             tty_opener=open if tty_opener is None else tty_opener,
             from_stdin=confirm_stdin):
@@ -168,6 +139,9 @@ def execute_session(sdk, stdin, out=print, find_port=None,
         out(f"rest joints deg: {[f'{v:+.2f}' for v in arm_start_deg]}")
         out(f"gripper rest deg: {grip_start_deg:+.2f}"
             f" (width about {deg_to_width(grip_start_deg):.1f} mm)")
+        if not session_driver.check_start_pose(
+                arm_start_deg, joint_limits, out, expected_rest_deg):
+            return 2
         if inspect_step.check_prereqs(out, find_arm_node, read_key) is None:
             return 2
         deps = {"grip_start_deg": grip_start_deg, "grip_z_mm": grip_z_mm,

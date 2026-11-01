@@ -2152,9 +2152,7 @@ uv run python -m muse_qc.agent --execute --plan-once --scan-at-station --arm-ses
 Per part the child prints the same lines as `pick_test`
 plus one framing line `session: part done`; the session ends
 with one line `session: end (<reason>)` after the single
-return, settle and disable. Any missed grip, uncertain grip
-state, refusal, timeout or interrupt returns to rest instead
-of transiting.
+return, settle and disable. After a missed grip in a session the gripper opens and the arm ramps back to the session rest pose from the joints actually commanded at that moment (never from a planned waypoint), then settles and ends; every other abnormal end (refusal, timeout, tracking error) returns the same way, and a refused return holds in place with `return refused, hold the arm and switch off the power supply` before the motors are disabled.
 
 Only the human runs it, never CI and never an agent.
 
