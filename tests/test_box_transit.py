@@ -159,6 +159,27 @@ def test_retarget_return_points_both_branches_at_rest():
     assert len(built["plan"]) == 12  # input unchanged
 
 
+def test_retarget_return_ranges_match_segment_labels():
+    from muse_qc.pick.box_transit import retarget_return
+
+    built = _two_branch_built()
+    target = (-3.33, -99.0, -79.0, 74.0, 0.91, -3.97)
+    result = retarget_return(built, target, free_speed_deg_s=50.0,
+                             accel_deg_s2=100.0)
+    assert result["ok"]
+    fixed = result["built"]
+    good_return = built["ranges_by_box"]["good"]["return"]
+    for box in ("good", "bad"):
+        branch = fixed["ranges_by_box"][box]
+        assert branch["return"][1] - branch["return"][0] > 2
+        for seg, (low, high) in branch.items():
+            assert fixed["plan"][low][0] == seg
+            assert fixed["plan"][high - 1][0] == seg
+    bad_tobox_low, _ = fixed["ranges_by_box"]["bad"]["to-box"]
+    assert (tuple(fixed["plan"][bad_tobox_low][1])
+            == tuple(built["plan"][good_return[1]][1]))
+
+
 def test_retarget_return_bad_rest_refused():
     from muse_qc.pick.box_transit import retarget_return
 

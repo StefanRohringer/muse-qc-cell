@@ -2104,7 +2104,7 @@ No deviation, no replan; the human checked the boxes by hand
 
 Only the human runs it, never CI and never an agent.
 
-## 40. Arm session without returning home between parts (not yet run on hardware)
+## 40. Arm session without returning home between parts (run on hardware 2026-11-01)
 
 With `--arm-session` (only together with `--plan-once` and
 `--execute`, otherwise the agent refuses with a clear error)
@@ -2142,17 +2142,34 @@ printf 'part 495.9 322.7 90\npart 500.0 330.0\nend\n' \
 The dry run builds and checks every plan including the
 transits and prints the plan summary per part plus
 `session: dry run ok`; it sends nothing to the arm. Agent
-run on hardware (human only, not yet done at the time of
-writing):
+run on hardware (human only, run on 2026-11-01, see
+docs/DEVLOG.md):
 
 ```bash
 uv run python -m muse_qc.agent --execute --plan-once --scan-at-station --arm-session
 ```
 
+Real output of the 2-part stage 3 run (shortened, full log in
+docs/DEVLOG.md under 2026-11-01):
+
+```text
+inspect: levers 3 verdict good
+dropped into the good box
+session: part done
+transit: 202 waypoints, lowest tip z 99.4 mm
+return: retargeted at the session rest pose
+session plan waypoints ok
+inspect: levers 2 verdict bad
+dropped into the bad box
+session: part done
+session: end (end)
+end readings: arm [-3.38 +0.36 -2.70 +4.67 +1.41 +0.01] gripper -126.30 deg
+```
+
 Per part the child prints the same lines as `pick_test`
 plus one framing line `session: part done`; the session ends
 with one line `session: end (<reason>)` after the single
-return, settle and disable. After a missed grip in a session the gripper opens and the arm ramps back to the session rest pose from the joints actually commanded at that moment (never from a planned waypoint), then settles and ends; every other abnormal end (refusal, timeout, tracking error) returns the same way, and a refused return holds in place with `return refused, hold the arm and switch off the power supply` before the motors are disabled.
+return, settle and disable. After a missed grip in a session the gripper opens, the arm first lifts straight up to the hover height, then ramps to rest, settles and ends; every other abnormal end (refusal, timeout, tracking error) returns the same way, and a refused return holds in place with `return refused, hold the arm and switch off the power supply` before the motors are disabled.
 
 Only the human runs it, never CI and never an agent.
 

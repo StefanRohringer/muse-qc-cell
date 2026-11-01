@@ -1240,3 +1240,60 @@ Result: OK. Grip on the first try (contacts L2 R2, then L1 L2 R1 R2 while liftin
 - Human ran (2026-11-01 ~01:30, no hardware) `uv run python -m muse_qc.agent --plan-once` (simulate: fake table, real Muse Spark): the model scanned, chose "nearest-first" and called sort_in_order once for parts [0, 1, 2]; part 0 sorted good, then the fake table's built-in missed grip gave "deviation: part 0 missed its grip."; the model rescanned and replanned with sort_in_order [0, 1]; both sorted (good, bad); the final scan_table found no parts; write_report, finish. "agent: 7 model calls". Result: OK.
 - Human ran (2026-11-01 01:31:57 to 01:33:23 CET, power supply on, hand on the switch) `uv run python -u -m muse_qc.agent --execute --plan-once --scan-at-station --task "Sort all parts on the table."` with 2 parts on the table. scan_table found 2 parts; the model wrote "Found two parts — sorting nearest-first." and called sort_in_order once for parts [0, 1] ("plan: [0, 1]"). Part 1 gripped on the first try (contacts L2 R2, then L1 L2 R1 R2 while lifting), "inspect: levers 2 verdict bad", station table shot saved, "dropped into the bad box"; "tool: rescan from station image", "table mapping: from last full scan 20261101_013203", "tool: rescan found 1 part". Part 2 gripped on the first try, "inspect: levers 3 verdict good", station table shot saved, "dropped into the good box"; the rescan from the station image found no parts. No deviation, no replan; the model wrote "Plan complete with no issues", scan_table found no parts, write_report, finish "Sorted 2 parts: 1 good (3 levers), 1 bad (2 levers). No failures.". "agent: 5 model calls", 1 min 26 s for 2 parts including first scan, final scan and report. The human confirmed the boxes are right (the bad part really was bad, the good part really good) and the arm ran smoothly. The arm still returns to the rest pose after each part (each sort is its own pick_test child). Result: OK.
 - Human ran (2026-11-01, no hardware) `uv run pytest -q tests/test_inspect.py -k sorts_good_end_to_end` 10 times locally: 10 passed (about 1.4 s each). Context: the CI run on main after merging PR #5 failed this test once on a slow runner (suite 8 min instead of about 1 min; "dropped into the good box" missing), the re-run passed (901 passed). Result: 10 of 10 passed locally; the CI failure is treated as timing dependent, a separate fix follows.
+
+## 2026-11-01
+
+- Human ran (2026-11-01, dry run, no motion) `uv run python -m muse_qc.pick.pick_session --inspect` with 2 parts: part 2 was refused (joint 2 rest +0.32 deg above the 0.0 deg limit in the unclamped return retarget, plus stale bad-box ranges after the retarget). Fixed in 9b11955 ("Aim the session return at the clamped rest pose and keep the box branch ranges aligned"); the dry run then passed with `session: dry run ok`. Result: OK after the fix.
+- Human ran (2026-11-01, power supply on, hand on the switch) `uv run python -m muse_qc.pick.pick_session --inspect --execute` with 1 part (stage 2): grip on the first try, count record recordings/count_20261101_210642.json (`levers 3 verdict good`), dropped into the good box, one return, end readings near rest. Key output lines:
+```text
+inspect: levers 3 verdict good
+dropped into the good box
+session: part done
+session: end (end)
+```
+Result: ran fine.
+- Human ran (2026-11-01, power supply on, hand on the switch) `uv run python -m muse_qc.pick.pick_session --inspect --execute` with 2 parts (stage 3, full output saved as ~/session_2parts.txt): after the good-box release the arm went straight to the next part without returning to rest (`transit: 202 waypoints, lowest tip z 99.4 mm`, `return: retargeted at the session rest pose`, `session plan waypoints ok`); both parts gripped on the first try, `inspect: levers 3 verdict good` then `dropped into the good box`, `inspect: levers 2 verdict bad` then `dropped into the bad box`. Key output lines:
+```text
+contact: gripper commanded deg -45.12 measured deg -48.45 contacts L2 R2
+inspect: levers 3 verdict good
+dropped into the good box
+session: part done
+transit: 202 waypoints, lowest tip z 99.4 mm
+return: retargeted at the session rest pose
+session plan waypoints ok
+inspect: levers 2 verdict bad
+dropped into the bad box
+session: part done
+session: end (end)
+end readings: arm [-3.38 +0.36 -2.70 +4.67 +1.41 +0.01] gripper -126.30 deg
+```
+The count stamps (recordings/count_20261101_210912.json at 20:09:12 UTC, recordings/count_20261101_210940.json at 20:09:40 UTC) are 28 s apart. Boxes checked by hand: correct. Result: OK.
+- Human ran (2026-11-01, power supply on, hand on the switch) `uv run python -m muse_qc.agent --execute --plan-once --scan-at-station --arm-session` with 4 parts on the table (full output saved as ~/agent_session.txt, transcript recordings/agent_20261101_211609.json): one session sorted all 4 parts, every grip on the first try (`attempt 1 ok: True` four times), `inspect: levers 3 verdict good` three times and `inspect: levers 2 verdict bad` once, `dropped into the good box` three times and `dropped into the bad box` once. The count stamps (recordings/count_20261101_211345.json 20:13:45 UTC, _211411 20:14:11 UTC, _211437 20:14:37 UTC, _211505 20:15:05 UTC) are 26 s, 26 s and 28 s apart. Boxes checked by hand: correct. Then the human put a 5th part down on purpose and slid it away while the arm moved to it: `missed grip`, `inspect skipped: no part held`, then `REFUSED step-cartesian (0.29670369103820227 vs 0.05), holding position` with `session: end (missed grip)`; the arm held at the grip pose and was disabled there, then sank slowly; nothing damaged. The rescanned part was refused as already sorted because it lay 12 mm from an already sorted position (SAME_PART_MM 15 mm, intended):
+```text
+agent finished: Sorted 4 parts: 3 good, 1 bad. 1 part failed to sort (missed grip then refused) and table empty on final scan.
+end readings: arm [-30.65 -95.72 -83.26 +80.71 -0.05 +7.09] gripper -87.48 deg
+tool: part 0 refused: part already sorted
+agent: 9 model calls
+```
+Result: 4 of 4 sorted correctly; the missed-grip return refusal led to fix b56bc4d.
+- Human ran the retest 1 (2026-11-01, power supply on, hand on the switch) `uv run python -m muse_qc.agent --execute --plan-once --scan-at-station --arm-session` after fix b56bc4d (full output saved as ~/agent_miss.txt, transcript recordings/agent_20261101_222118.json): 2 parts sorted, each grip on the first try (`inspect: levers 3 verdict good`, `dropped into the good box`, `inspect: levers 2 verdict bad`, `dropped into the bad box`); the third part was slid away during the approach: `missed grip`, the arm lifted straight up and returned to rest (human watched), no refusal, end readings near rest (`end readings: arm [-0.75 -0.23 -2.48 +4.23 +2.57 -1.58] gripper -87.48 deg`). SAM did not confirm the slid part (find_parts "sam=no box" at table (382.4, 273.1)), so the last scan reported no parts; the human then reran the test with the part slid flat. Key output lines:
+```text
+session: end (missed grip)
+end readings: arm [-0.75 -0.23 -2.48 +4.23 +2.57 -1.58] gripper -87.48 deg
+tool: no parts found
+agent finished: Sorted 2 parts: 1 good (3 levers), 1 bad (2 levers). 1 missed grip deviation, rescan found no remaining parts. Report written.
+agent: 5 model calls
+```
+Result: OK.
+- Human ran the retest 2 (2026-11-01, power supply on, hand on the switch) `uv run python -m muse_qc.agent --execute --plan-once --scan-at-station --arm-session` with the part slid flat (full output saved as ~/agent_miss2.txt, transcript recordings/agent_20261101_222723.json): part 1 good on the first try (`inspect: levers 3 verdict good`, `dropped into the good box`); part 2 slid away during the approach: `missed grip`, straight up and back to rest, no refusal (`end readings: arm [-0.97 -0.38 -2.94 +5.54 +2.59 -1.19] gripper -87.50 deg`); the agent rescanned, found the part at its new place, started a new session and sorted it (`inspect: levers 2 verdict bad`, `dropped into the bad box`) on the first try; the final scan found no parts. Key output lines:
+```text
+tool: 1 part found
+inspect: levers 2 verdict bad
+dropped into the bad box
+tool: rescan found no parts, call scan_table
+tool: no parts found
+agent finished: Sorted 2 parts: 1 good, 1 bad. 1 missed grip retried. Final scan found no parts.
+agent: 7 model calls
+```
+Human: worked. Result: OK.
+- Timing note for the 2026-11-01 arm session runs: the count-stamp gaps are 28 s for the 2-part stage 3 run and 26 s, 26 s, 28 s for the 4-part agent run. These are inspection-to-inspection gaps only (no first scan, final scan, report, homing or hand checks included), so they are not directly comparable with the about 43 s per part of run 3 on 31 Oct (README), which covered the whole run of about 6.5 min. No full per-part cycle time and no API cost were measured for the arm session runs.
