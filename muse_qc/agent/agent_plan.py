@@ -170,7 +170,8 @@ def _report(sorted_entries, sentence, update, outcome=None) -> dict:
 
 def run_plan(state, part_ids, sort_fn, scan_fn, out=print,
              max_sorts=DEFAULT_MAX_SORTS,
-             max_per_position=DEFAULT_MAX_PER_POSITION):
+             max_per_position=DEFAULT_MAX_PER_POSITION,
+             session_factory=None):
     """Execute the ordered ids; return (result, stop_loop).
 
     Every id is sorted with sort_single and rescanned as usual;
@@ -178,8 +179,29 @@ def run_plan(state, part_ids, sort_fn, scan_fn, out=print,
     position. The first deviation stops the plan: what was sorted
     so far, the deviation in one short sentence and the current
     table list with new ids. A full plan returns plan_done with
-    the sorted list plus the final rescan result.
+    the sorted list plus the final rescan result. With
+    session_factory (a zero-argument ArmSession maker for
+    --arm-session) one child serves the whole order: sorts run
+    through the session and it is closed ("end") on every exit.
     """
+    if session_factory is None:
+        return _execute_plan(state, part_ids, sort_fn, scan_fn, out,
+                             max_sorts, max_per_position)
+    session = session_factory()
+    try:
+        return _execute_plan(state, part_ids, session.sort, scan_fn, out,
+                             max_sorts, max_per_position)
+    finally:
+        try:
+            session.close()
+        except Exception:  # noqa: BLE001 - the plan result wins
+            pass
+
+
+def _execute_plan(state, part_ids, sort_fn, scan_fn, out=print,
+                  max_sorts=DEFAULT_MAX_SORTS,
+                  max_per_position=DEFAULT_MAX_PER_POSITION):
+    """Run one order part by part; see run_plan."""
     reason = validate_order(state, part_ids)
     if reason is not None:
         out(f"tool: sort_in_order refused: {reason}")
@@ -218,6 +240,11 @@ def run_plan(state, part_ids, sort_fn, scan_fn, out=print,
             "record": result.get("record"),
         })
         remaining = pending[index + 1:]
+        if remaining and result.get("session_over"):
+            sentence = "the arm session ended."
+            out(f"deviation: {sentence}")
+            return _report(sorted_entries, sentence, result,
+                           "session_over"), False
         if not remaining:
             done = {"outcome": "plan_done",
                     "sorted": sorted_entries}

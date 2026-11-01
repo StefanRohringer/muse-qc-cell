@@ -14,7 +14,7 @@ from muse_qc.agent import agent_plan, agent_tools
 
 def run_tool(name, args, state, scan_fn, sort_fn, report_fn,
              max_sorts, max_per_position, out, live=None,
-             plan_once=False) -> tuple[dict, bool]:
+             plan_once=False, session_factory=None) -> tuple[dict, bool]:
     """Execute one model tool call; return (result, stop_loop)."""
     if live is not None:
         live.before_tool(name, args)
@@ -53,7 +53,7 @@ def run_tool(name, args, state, scan_fn, sort_fn, report_fn,
         out(f"agent -> sort_in_order(parts {part_ids})")
         return agent_plan.run_plan(
             state, part_ids, sort_fn, scan_fn, out, max_sorts,
-            max_per_position)
+            max_per_position, session_factory=session_factory)
     if name == "write_report":
         out("agent -> write_report()")
         try:
