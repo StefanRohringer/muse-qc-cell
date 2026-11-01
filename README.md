@@ -46,6 +46,7 @@ All numbers come from human-run tests, recorded in `docs/DEVLOG.md`.
 | 30 Oct, run 1 | first 10-part run, close-up right after the lift | 10/10 | not checked: 5 parts on the left half read 0 levers (light), so they were sorted bad without a count | 7 min 20 s, about 44 s per part | 0.22 USD (about 2 cents per part, 14 Muse Spark calls) |
 | 31 Oct, run 3 | lever direction from the slot axis, rescan after every part, fixed inspection station | 9/9 | **10/10** (9 in this agent run plus 1 single pick just before it; boxes checked by hand) | about 6.5 min, about 43 s per part | not measured (the credits page did not load) |
 | 1 Nov, arm session | one session for all 4 parts, no return home between parts | 4/4 | **4/4** (boxes checked by hand) | about 27 s between counts (count to count, not a full cycle) | not measured |
+| 2 Nov, 10 parts, arm session | one session for all 10 parts (`--plan-once --scan-at-station --arm-session`), new empty-table image after turning the lamp away | 10/10 | **10/10** (7 good, 3 bad; 3 bad placed on purpose; boxes checked by hand, all correct) | 4 min 39 s first scan to report, about 28 s per part (24 to 28 s count to count) | not measured (5 Muse Spark calls) |
 
 Run 2 (31 Oct, first run with the inspection station) gripped 10/10, but
 several parts were gripped along the wrong axis because the lamp shadow
@@ -263,7 +264,9 @@ with its recorded output.
 - Missing and open levers were seen in the tests; broken levers are not
   tested yet.
 - SAM 3.1 does not always confirm a real part on the first try; a second
-  phrase and the rescan catch most of them.
+  phrase and the rescan catch most of them. An unconfirmed part is shown
+  yellow and is not picked. Bright lamp light on the left made this worse;
+  turning the lamp away and saving a new empty-table image helped.
 - Light matters: a lamp shadow once turned the lever direction by 90 deg,
   and poor light gave 0 levers on good parts. The fixed inspection station
   and the slot axis fixed this in run 3.
