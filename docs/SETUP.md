@@ -2043,6 +2043,40 @@ the station is not visible in the station image; the final
 scan_table from the table camera after the arm is home still
 sees it. Only the human runs it, never CI and never an agent.
 
+## 39. Plan once, replan on deviation
+
+With `--plan-once` the model decides the sorting order once
+after the first scan and Python then runs that order part by
+part without asking the model again, as long as every rescan
+matches the plan. The model stays the decision maker; it
+simply is not asked when nothing changed. The tool is called
+`sort_in_order(part_ids)` (ids from the latest list, no
+duplicates); every id is sorted with the same sort and the same
+limits as `inspect_and_sort` (at most 10 sorts, at most 2 tries
+per 15 mm position, never a part twice) and rescanned as usual.
+A deviation stops the plan at once: a missed grip, error,
+timeout or interrupt, a planned part that moved or is gone, a
+new part on the table, or a failed rescan while planned parts
+remain. The result reports what was sorted, the deviation in
+one short sentence and the current table list with new ids, so
+the model replans with `sort_in_order` or keeps using
+`inspect_and_sort` / `scan_table` as usual. A full plan ends
+with the sorted list plus the final rescan; the model then
+calls `scan_table` once more, `write_report` and `finish` as
+usual. The run prints `plan: [...]` and `deviation: ...` lines
+onto the live page like the other tool lines, and the model
+call count at the end (`agent: N model calls`). Without the
+flag the run behaves exactly as before: the tool is not
+offered, and no motion plan, speed, joint target, safety check
+or home/settle/disable step changes either way. Simulate first
+(simulate is the default, no `--execute` needed):
+
+```bash
+uv run python -m muse_qc.agent --plan-once
+```
+
+Only the human runs it, never CI and never an agent.
+
 ## Safety notes
 
 Read-only review of the SDK file
