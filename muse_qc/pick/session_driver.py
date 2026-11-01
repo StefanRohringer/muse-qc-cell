@@ -4,7 +4,8 @@ plan_part plans one part through the same _plan_and_check path
 as pick_test (every IK solve re-seeded with the joints the arm
 holds now: rest for part 1, the box exit for later parts) and
 splices the box-exit transit in front; the full spliced plan
-additionally goes through check_pick_plan. run_parts enables
+additionally goes through the same branch-chained check as
+_plan_and_check. run_parts enables
 once, starts the control loop once, and flies every part with
 the SessionLoop holding the box pose between parts.
 """
@@ -23,7 +24,6 @@ from muse_qc.pick.box_transit import (
     splice_hover,
 )
 from muse_qc.pick.drop_plan import RELEASE_OPEN_MM
-from muse_qc.pick.pick_plan import check_pick_plan
 from muse_qc.pick.pick_plan_check import _plan_and_check
 from muse_qc.pick.pick_test import _lever_solve
 from muse_qc.pick.session_loop import SessionLoop, join_done, wait_next_line, wait_part
@@ -61,6 +61,26 @@ def hold_matches_box(cmd_arm_rad, box_exit_deg, tol_deg=2.0) -> bool:
         for held, planned in zip(held_deg, box_exit_deg))
 
 
+def _refusal_text(bad, total, segment, res) -> str:
+    """Chained-check refusal naming segment, joint, value and limit."""
+    reason = res.get("reason")
+    value, limit = res.get("value"), res.get("limit")
+    if isinstance(value, dict) and isinstance(limit, dict):
+        bits = []
+        for joint, val in value.items():
+            span = limit.get(joint)
+            if isinstance(span, (list, tuple)) and len(span) == 2:
+                bits.append(f"{joint} {val:+.2f} deg not in "
+                            f"[{span[0]:+.2f}, {span[1]:+.2f}]")
+            else:
+                bits.append(f"{joint} value {val}, limit {span}")
+        detail = "; ".join(bits) if bits else f"value {value}, limit {limit}"
+    else:
+        detail = f"value {value}, limit {limit}"
+    return (f"plan refused: waypoint {bad + 1}/{total} {segment} "
+            f"{reason} ({detail})")
+
+
 def _tips_of(plan, tip_fn):
     """Tip per waypoint with the session tip function."""
     tip_of = real_tip_m if tip_fn is None else tip_fn
@@ -78,7 +98,7 @@ def plan_part(start_joints, table_xy, lever_deg, box_exit, out, deps,
     exit. With rest_joints (parts 2+, built from the box
     exit) every return segment is retargeted at the measured
     session rest instead of the box. The full plan is checked
-    chained with check_pick_plan.
+    with the same branch chaining as _plan_and_check.
     """
     solve_fn = _lever_solve(table_xy, lever_deg, deps["solve_fn"], out)
     try:
@@ -110,7 +130,8 @@ def plan_part(start_joints, table_xy, lever_deg, box_exit, out, deps,
     if rest_joints is not None:
         retargeted = retarget_return(
             built, rest_joints, free_speed_deg_s=deps["speed_deg_s"],
-            accel_deg_s2=deps["accel_deg_s2"])
+            accel_deg_s2=deps["accel_deg_s2"],
+            joint_limits=deps["joint_limits"])
         if not retargeted.get("ok"):
             return None, f"plan refused: {retargeted.get('reason')}"
         built = retargeted["built"]
@@ -122,11 +143,15 @@ def plan_part(start_joints, table_xy, lever_deg, box_exit, out, deps,
                             else box_exit)
         else:
             chained_from = start_joints
-        ok, bad, res = check_pick_plan(
-            built["plan"], chained_from, check, deps["tip_fn"] or real_tip_m)
+        # Same branch chaining as _plan_and_check (shared plus good
+        # from the hold pose, bad from the lift seed): chaining the
+        # bad branch after the good return at rest would refuse
+        # every plan on the step limits.
+        ok, bad, res = inspect_step.check_inspect_plan(
+            built, chained_from, check, deps["tip_fn"] or real_tip_m)
         if not ok:
-            return None, (f"plan refused: waypoint {bad + 1}/"
-                          f"{len(built['plan'])} {res.get('reason')}")
+            return None, _refusal_text(
+                bad, len(built["plan"]), built["plan"][bad][0], res)
         out("session plan waypoints ok")
     tips = _tips_of(built["plan"], deps["tip_fn"])
     return open_deg, {

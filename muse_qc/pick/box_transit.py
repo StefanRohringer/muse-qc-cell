@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import math
 
+from muse_qc.arm import safety
 from muse_qc.bringup.first_move_plan import (
     SETTLE_HOLD_CYCLES,
+    clamp_to_limits,
     ramp_waypoints,
     real_tip_m,
 )
@@ -84,24 +86,29 @@ def _shifted(ranges: dict, delta: int) -> dict:
 
 def retarget_return(built: dict, rest_joints: object,
                     free_speed_deg_s: float = 15.0,
-                    accel_deg_s2: float = 30.0) -> dict:
+                    accel_deg_s2: float = 30.0,
+                    joint_limits: object = None) -> dict:
     """Point every return segment at the session rest pose. Pure.
 
     A part plan built with start = the box exit would return to
     the box (rest = clamp(start) inside the builders); the
     session must return to the measured rest once at its end.
-    Rebuilds each branch return as ramp_waypoints from the
-    release joints to rest plus the rest settle, keeping the
-    to-box and release waypoints bit for bit, and re-indexes
-    ranges, shared_ranges and ranges_by_box. Returns a copy;
-    the input dict is unchanged.
+    The rest pose is clamped into the limits with the builders'
+    rule first: a measured rest just outside a limit (joint 2
+    reads above 0.0) would otherwise rebuild a return that the
+    chained check must refuse. Rebuilds each branch return as
+    ramp_waypoints from the release joints to rest plus the rest
+    settle, keeping the to-box and release waypoints bit for
+    bit, and re-indexes ranges, shared_ranges and ranges_by_box.
+    Returns a copy; the input dict is unchanged.
     """
+    limits = safety.JOINT_LIMITS_DEG if joint_limits is None else joint_limits
+    if limits is None:
+        return {"ok": False, "reason": "joint limits unavailable"}
     try:
-        rest = tuple(float(v) for v in rest_joints)
-    except (TypeError, ValueError):
-        return {"ok": False, "reason": "bad rest joints"}
-    if len(rest) != 6 or not all(math.isfinite(v) for v in rest):
-        return {"ok": False, "reason": "bad rest joints"}
+        rest = tuple(clamp_to_limits(rest_joints, limits))
+    except (TypeError, ValueError, KeyError) as exc:
+        return {"ok": False, "reason": f"bad rest joints ({exc})"}
     plan = list(built["plan"])
     by_box = built.get("ranges_by_box")
     if not by_box:
@@ -113,10 +120,12 @@ def retarget_return(built: dict, rest_joints: object,
                     if box in by_box and "return" in by_box[box]]
     rebuilt = dict(built)
     new_plan = list(plan)
+    new_by_box = {box: dict(branch)
+                  for box, branch in (by_box or {}).items()}
+    growth = 0
     for box, (low, high), (rel_low, rel_high) in branches:
-        shift = len(new_plan) - len(plan)
-        low, high = low + shift, high + shift
-        rel_low, rel_high = rel_low + shift, rel_high + shift
+        low, high = low + growth, high + growth
+        rel_low, rel_high = rel_low + growth, rel_high + growth
         drop = tuple(new_plan[rel_high - 1][1])
         try:
             back = list(ramp_waypoints(drop, rest,
@@ -128,12 +137,24 @@ def retarget_return(built: dict, rest_joints: object,
         segment = [(SEG_RETURN, point, False)
                    for point in back + [rest] * SETTLE_HOLD_CYCLES]
         new_plan[low:high] = segment
+        gap = len(segment) - (high - low)
         span = (low, low + len(segment))
-        if by_box and box in rebuilt.get("ranges_by_box", {}):
-            branch = dict(rebuilt["ranges_by_box"][box])
-            branch["return"] = span
-            rebuilt["ranges_by_box"] = dict(rebuilt["ranges_by_box"])
-            rebuilt["ranges_by_box"][box] = branch
+        if new_by_box and box in new_by_box:
+            # The rebuilt return changes length: shift this branch
+            # with the growth so far, or the loop would fly the bad
+            # branch (and the check would slice it) at stale indices.
+            # Later branches are still original here; their turn adds
+            # the full growth including this gap.
+            shifted = {}
+            for seg, (slo, shi) in new_by_box[box].items():
+                if seg == "return":
+                    shifted[seg] = span
+                elif slo >= high - growth:
+                    shifted[seg] = (slo + growth + gap,
+                                    shi + growth + gap)
+                else:
+                    shifted[seg] = (slo + growth, shi + growth)
+            new_by_box[box] = shifted
             if box == "good" and SEG_RETURN in rebuilt.get("ranges", {}):
                 ranges = dict(rebuilt["ranges"])
                 ranges["return"] = span
@@ -142,6 +163,9 @@ def retarget_return(built: dict, rest_joints: object,
             ranges = dict(rebuilt["ranges"])
             ranges["return"] = span
             rebuilt["ranges"] = ranges
+        growth += gap
+    if new_by_box:
+        rebuilt["ranges_by_box"] = new_by_box
     rebuilt["plan"] = new_plan
     rebuilt["rest_joints"] = rest
     return {"ok": True, "built": rebuilt}

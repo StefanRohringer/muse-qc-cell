@@ -895,3 +895,63 @@ def _arm_rest_sends(sdk):
     rest = tuple(math.radians(v) for v in REST)
     return [call for call in sdk.groups["arm"].calls
             if call[0] == "send" and tuple(call[1]) == rest]
+
+
+def test_part2_return_targets_clamped_rest():
+    """Part 2 with a rest pose just outside joint 2 (hardware dry run).
+
+    The measured rest held joint 2 at +0.32 deg, above the 0.0 deg
+    URDF limit. The retargeted return must aim at the clamped rest
+    (the builders' rule), so the chained check passes what
+    _plan_and_check accepted. Real planners, real check_target,
+    real SDK limits; only the good drop solve is pinned.
+    """
+    from muse_qc.arm import safety as _safety
+    from muse_qc.pick.drop_plan import BOXES_TABLE_MM as _BOXES
+    from muse_qc.pick.drop_plan import solve_drop as _solve_drop
+
+    drop_good = [16.59, -91.53, -83.54, 52.01, -0.0, 0.0]
+    rest = [-3.01, 0.32, -2.20, 3.60, 1.34, -0.10]
+
+    def _pinned_drop(box_xy, seed):
+        real = _solve_drop(box_xy, seed)
+        for box, xy in _BOXES.items():
+            if list(box_xy) == list(xy) and box == "good" and real.get("ok"):
+                real = dict(real)
+                real["joints_deg"] = list(drop_good)
+                return real
+        return real
+
+    old_ref = _safety.J6_REF
+    _safety.set_j6_ref(rest[5])  # dry_run_session sets this from rest
+    try:
+        lines: list = []
+        open_deg, built = session_driver.plan_part(
+            list(drop_good), TABLE, 90.0, list(drop_good), lines.append,
+            {"grip_start_deg": REST_GRIP, "grip_z_mm": 8.0,
+             "open_mm": 28.0, "hold_s": 0.5, "joint_limits": None,
+             "solve_fn": None, "check_fn": None, "tip_fn": None,
+             "use_xy_correction": True,
+             "speed_deg_s": 50.0, "accel_deg_s2": 100.0,
+             "solve_drop_fn": _pinned_drop,
+             "use_station": False, "station_j6_deg": None},
+            rest_joints=list(rest), transit_from=list(drop_good))
+    finally:
+        _safety.set_j6_ref(old_ref)
+    assert open_deg is not None, built
+
+
+def test_chained_refusal_names_joint_value_limit():
+    text = session_driver._refusal_text(
+        1021, 1633, "return",
+        {"ok": False, "reason": "joint-limit",
+         "value": {"joint2": 0.02355},
+         "limit": {"joint2": [-179.9087476710785, 0.0]}})
+    assert "1022/1633" in text
+    assert "return" in text and "joint-limit" in text
+    assert "joint2" in text and "+0.02" in text
+    assert "-179.91" in text and "+0.00" in text
+    fallback = session_driver._refusal_text(
+        0, 10, "hover",
+        {"ok": False, "reason": "step-joint", "value": 5.0, "limit": 2.0})
+    assert "step-joint" in fallback and "5.0" in fallback
