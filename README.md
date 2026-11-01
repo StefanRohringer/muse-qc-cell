@@ -45,10 +45,15 @@ All numbers come from human-run tests, recorded in `docs/DEVLOG.md`.
 | --- | --- | --- | --- | --- | --- |
 | 30 Oct, run 1 | first 10-part run, close-up right after the lift | 10/10 | not checked: 5 parts on the left half read 0 levers (light), so they were sorted bad without a count | 7 min 20 s, about 44 s per part | 0.22 USD (about 2 cents per part, 14 Muse Spark calls) |
 | 31 Oct, run 3 | lever direction from the slot axis, rescan after every part, fixed inspection station | 9/9 | **10/10** (9 in this agent run plus 1 single pick just before it; boxes checked by hand) | about 6.5 min, about 43 s per part | not measured (the credits page did not load) |
+| 1 Nov, arm session | one session for all 4 parts, no return home between parts | 4/4 | **4/4** (boxes checked by hand) | about 27 s between counts (count to count, not a full cycle) | not measured |
 
 Run 2 (31 Oct, first run with the inspection station) gripped 10/10, but
 several parts were gripped along the wrong axis because the lamp shadow
 fooled the lever direction. That led to the slot axis fix used in run 3.
+
+Missed-grip recovery was shown in a retest: a part slid away by hand
+during the approach was missed, the arm lifted and returned to rest, and
+the agent rescanned and sorted the part at its new place.
 
 ### Building blocks
 
@@ -58,7 +63,7 @@ fooled the lever direction. That led to the slot axis fix used in run 3.
 | Lever direction from the table camera (7 parts vs. photo) | 7/7 within about 10 deg with the slot axis (before: 3/7) |
 | Control loop | 100 Hz, cycle period 10.09 ms mean, 10.20 ms max |
 | Grip | touch contact on both fingers before the lift, every grip of run 3 on the first try |
-| Offline test suite | 848 tests, no hardware, camera or network needed |
+| Offline test suite | 972 tests, no hardware, camera or network needed |
 
 ## How it works
 
@@ -95,9 +100,11 @@ flowchart TD
    enlarged and SAM 3.1 counts the levers. Exactly 3 levers = good. A
    doubtful count is retried on fresh frames; a part is only good when
    the count is confirmed.
-5. **Sort:** the part is dropped into the good or bad box, the arm returns
-   to rest, and the table is scanned again, so a part that moved is
-   found again.
+5. **Sort:** the part is dropped into the good or bad box, and the
+   table is scanned again, so a part that moved is found again. With
+   `--arm-session` the arm goes from the box straight to the next part
+   and returns to rest once at the end; without it (default) it returns
+   to rest after every part.
 6. **Report:** every step is saved as JSON, and a live page in the browser
    shows the table, each part's close-up, its lever count and its box.
 
@@ -260,7 +267,8 @@ with its recorded output.
 - Light matters: a lamp shadow once turned the lever direction by 90 deg,
   and poor light gave 0 levers on good parts. The fixed inspection station
   and the slot axis fixed this in run 3.
-- After every part the arm returns to rest, which costs about 7 s per part.
+- Without `--arm-session`, after every part the arm returns to rest, which costs about 7 s per part.
+- A part within 15 mm of an already sorted position is not picked again.
 
 ## Next
 

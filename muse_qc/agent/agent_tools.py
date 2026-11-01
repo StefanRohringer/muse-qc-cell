@@ -22,6 +22,7 @@ the --simulate run.
 
 from __future__ import annotations
 
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -230,6 +231,27 @@ def real_scan(known=None) -> dict:
     return scan_frame(frame, known)
 
 
+def arm_child_tail(scan_at_station=False) -> list:
+    """Shared arm flags for every pick child command.
+
+    Both pick_test (one child per part) and pick_session (one
+    child per plan) take exactly these arm arguments, so a new
+    flag added here reaches both entry points and they cannot
+    drift. Callers add only their target arguments (and
+    --confirm-stdin for the session).
+    """
+    cmd = ["--inspect", "--execute"]
+    if scan_at_station:
+        cmd += ["--station", "--station-table-shot"]
+    return cmd
+
+
+def pick_session_cmd(scan_at_station=False) -> list:
+    """Full pick_session child command for --arm-session (with confirm)."""
+    return ([sys.executable, "-m", "muse_qc.pick.pick_session"]
+            + arm_child_tail(scan_at_station) + ["--confirm-stdin"])
+
+
 def real_sort(table_mm, lever_deg=None, popen_factory=None,
               timeout_s=None, clock=None, scan_at_station=False) -> dict:
     """Run one real pick_test inspect sort as a child. --execute only.
@@ -243,18 +265,15 @@ def real_sort(table_mm, lever_deg=None, popen_factory=None,
     the child command is exactly the command used so far.
     Returns the parsed result with the last lines and exit_code.
     """
-    import sys
-
     from muse_qc.agent.agent_io import SORT_TIMEOUT_S, default_popen, run_child
 
     limit = SORT_TIMEOUT_S if timeout_s is None else timeout_s
     factory = popen_factory if popen_factory is not None \
         else default_popen
-    cmd = [sys.executable, "-m", "muse_qc.pick.pick_test",
-           "--table-mm", f"{float(table_mm[0])}",
-           f"{float(table_mm[1])}", "--inspect", "--execute"]
-    if scan_at_station:
-        cmd += ["--station", "--station-table-shot"]
+    cmd = ([sys.executable, "-m", "muse_qc.pick.pick_test",
+            "--table-mm", f"{float(table_mm[0])}",
+            f"{float(table_mm[1])}"]
+           + arm_child_tail(scan_at_station))
     if lever_deg is not None:
         cmd += ["--lever-deg", f"{float(lever_deg)}"]
     try:

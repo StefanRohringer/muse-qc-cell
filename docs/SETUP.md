@@ -2104,6 +2104,75 @@ No deviation, no replan; the human checked the boxes by hand
 
 Only the human runs it, never CI and never an agent.
 
+## 40. Arm session without returning home between parts (run on hardware 2026-11-01)
+
+With `--arm-session` (only together with `--plan-once` and
+`--execute`, otherwise the agent refuses with a clear error)
+each `sort_in_order` plan runs in one `pick_session` child:
+after the release the arm keeps holding the box exit pose for
+up to 30 s (`HOLD_WAIT_S`) while the agent rescans from the
+station image, then a transit segment goes straight from the
+box to the next hover. Return to rest, settle and disable
+happen once at the end of the session. Without the flag every
+motion plan, speed, joint target, safety check and the
+return/settle/disable sequence stay exactly as today
+(`real_sort` and `pick_test` are untouched in behaviour).
+`inspect_and_sort` keeps using one child per part either way;
+a replanned order opens a new session. The new files are
+`muse_qc/pick/session_protocol.py` (stdin lines),
+`muse_qc/pick/session_loop.py` (hold between parts, no change
+to `pick_loop.py`), `muse_qc/pick/session_driver.py` (per-part
+planning through the same `_plan_and_check` path) and
+`muse_qc/pick/pick_session.py` (entry point), plus the
+transit builder `muse_qc/pick/box_transit.py` (same speed and
+accel as the to-box ramp, same transit floor, no detours) and
+`muse_qc/agent/agent_session.py` (one child per plan). Every
+transit waypoint passes the same chained pre-check and the
+same per-cycle `safety.check_target` as every other segment.
+The agent always passes `--confirm-stdin` (the first stdin line is the
+confirmation word, never a target); a manual run without it confirms on the
+terminal via `/dev/tty`. Manual dry run with piped targets (confirmation
+comes from `/dev/tty`, stdin keeps only the targets):
+
+```bash
+printf 'part 495.9 322.7 90\npart 500.0 330.0\nend\n' \
+  | uv run python -m muse_qc.pick.pick_session --inspect
+```
+
+The dry run builds and checks every plan including the
+transits and prints the plan summary per part plus
+`session: dry run ok`; it sends nothing to the arm. Agent
+run on hardware (human only, run on 2026-11-01, see
+docs/DEVLOG.md):
+
+```bash
+uv run python -m muse_qc.agent --execute --plan-once --scan-at-station --arm-session
+```
+
+Real output of the 2-part stage 3 run (shortened, full log in
+docs/DEVLOG.md under 2026-11-01):
+
+```text
+inspect: levers 3 verdict good
+dropped into the good box
+session: part done
+transit: 202 waypoints, lowest tip z 99.4 mm
+return: retargeted at the session rest pose
+session plan waypoints ok
+inspect: levers 2 verdict bad
+dropped into the bad box
+session: part done
+session: end (end)
+end readings: arm [-3.38 +0.36 -2.70 +4.67 +1.41 +0.01] gripper -126.30 deg
+```
+
+Per part the child prints the same lines as `pick_test`
+plus one framing line `session: part done`; the session ends
+with one line `session: end (<reason>)` after the single
+return, settle and disable. After a missed grip in a session the gripper opens, the arm first lifts straight up to the hover height, then ramps to rest, settles and ends; every other abnormal end (refusal, timeout, tracking error) returns the same way, and a refused return holds in place with `return refused, hold the arm and switch off the power supply` before the motors are disabled.
+
+Only the human runs it, never CI and never an agent.
+
 ## Safety notes
 
 Read-only review of the SDK file

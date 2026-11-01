@@ -26,7 +26,7 @@ import functools
 import json
 import sys
 
-from muse_qc.agent import agent_chat, agent_tools
+from muse_qc.agent import agent_chat, agent_session, agent_tools
 from muse_qc.agent.agent_io import (
     field,
     iter_calls,
@@ -105,7 +105,8 @@ def _loop_instructions(plan_once):
 def run_agent(client, scan_fn, sort_fn, report_fn, out=print,
               recordings_dir="recordings", max_steps=MAX_STEPS,
               max_sorts=MAX_SORTS, live=None, first_text=None,
-              history=None, state=None, plan_once=False) -> dict:
+              history=None, state=None, plan_once=False,
+              session_factory=None) -> dict:
     """Run the tool-calling loop; return the run summary dict.
 
     scan_fn returns {"parts", "skipped", "image"}, sort_fn takes a
@@ -175,7 +176,7 @@ def run_agent(client, scan_fn, sort_fn, report_fn, out=print,
                 result, stop = run_tool(
                     name, args, state, scan_fn, sort_fn, report_fn,
                     max_sorts, MAX_PER_POSITION, out, live,
-                    plan_once)
+                    plan_once, session_factory=session_factory)
                 if live is not None:
                     live.after_tool(name, result)
                 entry["results"].append(result)
@@ -271,8 +272,15 @@ def main(argv=None, client_factory=None, toolset=None, input_fn=None,
                         help="let the model choose the sorting order"
                         " once, then run it without asking again"
                         " unless a rescan deviates")
+    parser.add_argument("--arm-session", action="store_true",
+                        help="run each sort_in_order plan in one arm"
+                        " session without returning home between"
+                        " parts (needs --plan-once and --execute)")
     args = parser.parse_args(argv)
+    if args.arm_session and not (args.plan_once and args.execute):
+        parser.error("--arm-session needs --plan-once and --execute")
     ask = input_fn if input_fn is not None else input
+    session_factory = None
     if args.execute:
         if toolset is None:
             try:
@@ -294,6 +302,10 @@ def main(argv=None, client_factory=None, toolset=None, input_fn=None,
                 sort_fn,
                 agent_tools.real_report,
             )
+            if args.arm_session:
+                cmd = agent_tools.pick_session_cmd(args.scan_at_station)
+                session_factory = functools.partial(agent_session.ArmSession,
+                                                    cmd)
     elif toolset is None:
         fake = agent_tools.FakeTable()
         toolset = (fake.scan, fake.sort, agent_tools.fake_report)
@@ -314,10 +326,12 @@ def main(argv=None, client_factory=None, toolset=None, input_fn=None,
         result = agent_chat.run_session(
             client, *toolset, task=args.task, chat=args.chat,
             ask=input_fn if input_fn is not None else input,
-            out=out, live=page, plan_once=args.plan_once)
+            out=out, live=page, plan_once=args.plan_once,
+            session_factory=session_factory)
     else:
         result = run_agent(client, *toolset, out=out, live=page,
-                           plan_once=args.plan_once)
+                           plan_once=args.plan_once,
+                           session_factory=session_factory)
     return 0 if result["finished"] else 1
 
 
