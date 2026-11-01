@@ -2043,7 +2043,7 @@ the station is not visible in the station image; the final
 scan_table from the table camera after the arm is home still
 sees it. Only the human runs it, never CI and never an agent.
 
-## 39. Plan once, replan on deviation
+## 39. Plan once, replan on deviation (run on hardware 2026-11-01)
 
 With `--plan-once` the model decides the sorting order once
 after the first scan and Python then runs that order part by
@@ -2074,6 +2074,33 @@ or home/settle/disable step changes either way. Simulate first
 ```bash
 uv run python -m muse_qc.agent --plan-once
 ```
+
+Real run on hardware (2026-11-01, 2 parts,
+`--execute --plan-once --scan-at-station`, order "Sort all parts
+on the table.", 1 min 26 s, excerpt of the recorded output:
+some lines left out, none changed):
+
+```text
+agent -> scan_table()
+tool: 2 parts found
+agent -> sort_in_order(parts [0, 1])
+plan: [0, 1]
+tool: part 0 levers 2 bad, sorted
+tool: rescan from station image
+table mapping: from last full scan 20261101_013203
+tool: rescan found 1 part
+tool: part 0 levers 3 good, sorted
+tool: rescan from station image
+tool: rescan found no parts, call scan_table
+agent -> scan_table()
+tool: no parts found
+agent -> write_report()
+agent finished: Sorted 2 parts: 1 good (3 levers), 1 bad (2 levers). No failures. Table empty, report written.
+agent: 5 model calls
+```
+
+No deviation, no replan; the human checked the boxes by hand
+(the bad part really was bad, the good part really good).
 
 Only the human runs it, never CI and never an agent.
 
