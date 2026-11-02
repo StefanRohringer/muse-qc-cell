@@ -2183,6 +2183,55 @@ return, settle and disable. After a missed grip in a session the gripper opens, 
 
 Only the human runs it, never CI and never an agent.
 
+## 41. Spoken orders (muse-voice-transcribe-1.0)
+
+`muse_qc/agent/voice_order.py` turns a spoken order into the chat
+order text through Meta's speech-to-text model
+`muse-voice-transcribe-1.0`. At an order prompt the human types
+`v` instead of text: the module records 5 s from the default
+microphone with `arecord` (alsa-utils, a system tool that is only
+called, not bundled), sends the WAV as `audio/wav` plus a JSON
+`request` part (`model`, `audioEncoding: WAV`, `mode:
+PUSH_TO_TALK`, biasing `keywords`) in one `POST
+/v1/asr/transcribe` call with an Authorization header and `Accept:
+application/json` header, prints the heard text and asks `use
+this order? (Enter = yes, anything else = no): `. Enter uses the
+transcript as the order; anything else, an empty transcript or a
+transcription error asks for the order again. Any other typed
+text passes through unchanged. The WAV goes to
+`recordings/voice_<timestamp>.wav` (`recordings/` stays
+gitignored). Voice only replaces typing the order text: every
+order still goes through the same agent loop, limits and safety
+checks, and the live page shows the order line as today
+(`order: ...`).
+
+Hand check without the arm (records, transcribes, prints the
+transcript and the audio duration; needs the microphone and the
+key, so only the human runs it, never CI and never an agent):
+
+```bash
+uv run python -m muse_qc.agent.voice_order [--seconds N] [--file path.wav]
+```
+
+`--seconds` is 1 to 15 (default 5); `--file` reuses a saved WAV
+instead of recording. `arecord` comes from alsa-utils and must
+be installed. `--mic DEVICE` (for example `plughw:0,0`) picks
+the microphone; without it the system default records. `arecord
+-l` lists the devices.
+
+Spoken orders in the agent (only together with `--chat`; the
+typed `yes` confirmation at the start stays typed and is never
+taken from voice):
+
+```bash
+uv run python -m muse_qc.agent --chat --voice
+uv run python -m muse_qc.agent --execute --chat --voice --task "sort all parts"
+```
+
+The agent takes the same `--mic DEVICE` (needs `--voice`).
+The human hand check below worked (see docs/DEVLOG.md
+2026-11-02); a spoken agent order follows.
+
 ## Safety notes
 
 Read-only review of the SDK file
