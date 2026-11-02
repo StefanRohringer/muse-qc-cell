@@ -110,6 +110,18 @@ class RunState:
         """Expire the latest scan; the table changed after a sort."""
         self.fresh = False
 
+    def new_order(self) -> None:
+        """Forget one chat order's attempts and sorted positions.
+
+        A new human order starts with a clean order memory: the
+        15 mm already-sorted rule and the two-tries-per-position
+        rule apply within one order only. The latest scan and the
+        sort count are untouched: the chat loop expires the scan
+        separately and the sort limit spans the whole session.
+        """
+        self.attempts = []
+        self.sorted_positions = []
+
     def attempts_at(self, position) -> int:
         """Count inspect_and_sort calls near this position."""
         return sum(1 for seen in self.attempts

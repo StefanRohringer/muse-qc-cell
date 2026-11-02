@@ -1930,6 +1930,11 @@ order in plain words; with `--chat`, `main` asks
 non-empty line continues the same run with that line as a new
 user message (same history, same `RunState`, same limits and
 safety; the `yes` confirmation is asked only once at the start).
+A new chat order clears the remembered sorted positions and
+attempt counts (`RunState.new_order`), so the 15 mm
+already-sorted rule and the two-tries-per-position rule apply
+within one order only; a run with `--task` and no chat is one
+order and behaves as before.
 The chat logic lives in `muse_qc/agent/agent_chat.py` (the transcript
 writer moved there from `agent.py` to keep it within 400 lines).
 Each human order and the final summary go through the console

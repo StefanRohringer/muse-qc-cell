@@ -50,9 +50,14 @@ def run_session(client, scan_fn, sort_fn, report_fn, *, task=None,
     each new chat order (not the first) the scan expires
     (state.fresh is set to False), so the model must call
     scan_table again: the human may have moved parts between
-    orders. Every human order and every final summary goes
-    through out, hence onto the live page console when live is
-    given. Returns the last run summary dict.
+    orders. The same new order also clears the remembered sorted
+    positions and attempt counts (state.new_order), so the 15 mm
+    already-sorted rule and the two-tries-per-position rule apply
+    within one order only. A run with --task and no chat is one
+    order and behaves as before. Every human order and every
+    final summary goes through out, hence onto the live page
+    console when live is given. Returns the last run summary
+    dict.
     """
     from muse_qc.agent.agent import (MAX_SORTS, MAX_STEPS, START_TEXT,
                                run_agent)
@@ -85,6 +90,7 @@ def run_session(client, scan_fn, sort_fn, report_fn, *, task=None,
                 {"type": "input_text", "text": pending}]})
             if state is not None:
                 state.fresh = False
+                state.new_order()
         result = run_agent(
             client, scan_fn, sort_fn, report_fn, out=emit,
             recordings_dir=recordings_dir, max_steps=max_steps,
