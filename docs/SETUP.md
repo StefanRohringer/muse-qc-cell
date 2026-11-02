@@ -2195,9 +2195,11 @@ called, not bundled), sends the WAV as `audio/wav` plus a JSON
 PUSH_TO_TALK`, biasing `keywords`) in one `POST
 /v1/asr/transcribe` call with an Authorization header and `Accept:
 application/json` header, prints the heard text and asks `use
-this order? (Enter = yes, anything else = no): `. Enter uses the
-transcript as the order; anything else, an empty transcript or a
-transcription error asks for the order again. Any other typed
+this order? (Enter or y = yes, anything else = no): `. An empty
+answer, `y` or `yes` (case-insensitive, surrounding spaces
+ignored) uses the transcript as the order; anything else, an
+empty transcript or a transcription error asks for the order
+again. Any other typed
 text passes through unchanged. The WAV goes to
 `recordings/voice_<timestamp>.wav` (`recordings/` stays
 gitignored). Voice only replaces typing the order text: every
@@ -2230,7 +2232,7 @@ uv run python -m muse_qc.agent --execute --chat --voice --task "sort all parts"
 
 The agent takes the same `--mic DEVICE` (needs `--voice`).
 The human hand check below worked (see docs/DEVLOG.md
-2026-11-02); a spoken agent order follows.
+2026-11-02); a real spoken agent order sorted 2 parts on 2026-11-02 (see docs/DEVLOG.md); the model heard sort as short, the confirmation shows the text, and Muse Spark still read it as a sort order.
 
 ## Safety notes
 

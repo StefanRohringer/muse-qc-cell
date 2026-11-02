@@ -11,6 +11,28 @@ from pathlib import Path
 _INSPECT_RE = re.compile(r"inspect: levers (\d+) verdict (good|bad)")
 _BOX_RE = re.compile(r"dropped into the (good|bad) box")
 _STATION_TABLE_RE = re.compile(r"^station table shot: (\S+)\s*$")
+_EXCEPTION_RE = re.compile(r"(?:[A-Za-z_]\w*\.)+([A-Z]\w*)\s*:.*$")
+
+
+def _crash_reason(lines: list[str]) -> str:
+    """Build an error reason from a crashed pick run (no result lines).
+
+    Returns the last exception-like line's short reason: a joint
+    feedback failure names the power supply, any other exception
+    names only its class (never a traceback), and output without
+    such a line reports that the program ended without a result.
+    """
+    name = None
+    for line in lines:
+        match = _EXCEPTION_RE.search(line.strip())
+        if match is not None:
+            name = match.group(1)
+    if name == "JointStateUnavailable":
+        return ("no joint feedback from the arm "
+                "(is the arm power supply on?)")
+    if name is not None:
+        return f"arm program crashed: {name}"
+    return "arm program ended without a result"
 
 
 def parse_pick_lines(lines: list[str]) -> dict:
@@ -24,7 +46,11 @@ def parse_pick_lines(lines: list[str]) -> dict:
     reason; "inspect skipped" alone never counts as sorted.
     record is the last count_*.json path in the lines, or None.
     station_table_image is the "station table shot:" path, or None
-    when the line is missing or the shot failed.
+    when the line is missing or the shot failed. An error with no
+    known error line takes its reason from the last exception-like
+    line (JointStateUnavailable names the power supply, any other
+    exception only its class name, otherwise the program ended
+    without a result); known error lines always win.
     """
     levers = None
     verdict = None
@@ -68,6 +94,10 @@ def parse_pick_lines(lines: list[str]) -> dict:
         outcome = "inspect_failed"
     else:
         outcome = "error"
+    if outcome == "error":
+        reason = err_reason if err_reason is not None else _crash_reason(lines)
+    else:
+        reason = halted or failed
     return {
         "outcome": outcome,
         "levers": levers,
@@ -75,5 +105,5 @@ def parse_pick_lines(lines: list[str]) -> dict:
         "box": box,
         "record": record,
         "station_table_image": station_table_image,
-        "reason": err_reason if outcome == "error" else halted or failed,
+        "reason": reason,
     }

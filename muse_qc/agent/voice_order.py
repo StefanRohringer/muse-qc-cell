@@ -147,13 +147,15 @@ def voice_ask(ask, record_fn, transcribe_fn, out=print):
     """Wrap a chat ask function with spoken orders.
 
     Typing exactly "v" at an order prompt records, transcribes,
-    prints the heard text and asks "use this order? (Enter = yes,
-    anything else = no): ". Enter returns the transcript as the
-    order; anything else, an empty transcript or a VoiceError
-    prints one short line and asks for the order again (typed or
-    "v"). Any other typed text passes through unchanged. Order
-    prompts gain the hint "(v = speak)"; all other prompts
-    (including the "use this order?" confirmation) stay exact.
+    prints the heard text and asks "use this order? (Enter or y
+    = yes, anything else = no): ". An empty answer, "y" or "yes"
+    (case-insensitive, surrounding spaces ignored) returns the
+    transcript as the order; anything else, an empty transcript
+    or a VoiceError prints one short line and asks for the order
+    again (typed or "v"). Any other typed text passes through
+    unchanged. Order prompts gain the hint "(v = speak)"; all
+    other prompts (including the "use this order?"
+    confirmation) stay exact.
     """
 
     def wrapped(prompt):
@@ -174,8 +176,8 @@ def voice_ask(ask, record_fn, transcribe_fn, out=print):
                 continue
             out(f"voice: heard \"{heard.strip()}\"")
             confirm = ask("use this order? "
-                          "(Enter = yes, anything else = no): ")
-            if confirm == "":
+                          "(Enter or y = yes, anything else = no): ")
+            if confirm.strip().lower() in ("", "y", "yes"):
                 return heard.strip()
             out("voice: discarded, type the order or press v")
 

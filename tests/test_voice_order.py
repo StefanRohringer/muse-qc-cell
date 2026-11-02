@@ -203,7 +203,7 @@ def test_voice_accepted_on_enter():
     assert ask("order (empty line to quit): ") == "sort all parts"
     assert prompts[0] == "order (empty line to quit) (v = speak): "
     assert prompts[1] == ("use this order? "
-                          "(Enter = yes, anything else = no): ")
+                          "(Enter or y = yes, anything else = no): ")
     assert lines[0] == "voice: recording 5 s, speak now"
     assert lines[1] == 'voice: heard "sort all parts"'
 
@@ -264,7 +264,33 @@ def test_confirmation_prompt_stays_exact():
                     out=lambda text: None)
     ask("order (empty line to quit): ")
     assert prompts[1] == ("use this order? "
-                          "(Enter = yes, anything else = no): ")
+                          "(Enter or y = yes, anything else = no): ")
+
+
+@pytest.mark.parametrize("answer", ["y", "yes", "Y", "YES", " yes ",
+                                    "  Yes  "])
+def test_voice_accepted_on_y_variants(answer):
+    prompts = []
+    lines = []
+    ask = voice_ask(_ask_script(["v", answer], prompts),
+                    record_fn=lambda: "recordings/voice_x.wav",
+                    transcribe_fn=lambda path: "sort all parts",
+                    out=lines.append)
+    assert ask("order (empty line to quit): ") == "sort all parts"
+    assert 'voice: heard "sort all parts"' in lines
+    assert not any(line.startswith("voice: discarded") for line in lines)
+
+
+@pytest.mark.parametrize("answer", ["n", "no", "N", "NO", "maybe", "yep"])
+def test_voice_discarded_on_no_variants(answer):
+    prompts = []
+    lines = []
+    ask = voice_ask(_ask_script(["v", answer, "sort the rest"], prompts),
+                    record_fn=lambda: "recordings/voice_x.wav",
+                    transcribe_fn=lambda path: "sort all parts",
+                    out=lines.append)
+    assert ask("order (empty line to quit): ") == "sort the rest"
+    assert lines[-1].startswith("voice: discarded")
 
 
 def test_voice_needs_chat(monkeypatch, tmp_path):

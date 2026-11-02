@@ -127,7 +127,7 @@ text after one Enter confirmation.
   (`sessionId`, `transcript`, `audioDurationMs`, `turns`).
 - Voice only replaces typing the order text: every order still
   goes through the same agent loop, limits and safety checks.
-- Measured results: the live endpoint returned a transcript for a 5 s, 16 kHz recording (see docs/DEVLOG.md 2026-11-02); a spoken agent order follows.
+- Measured results: the live endpoint returned a transcript for a 5 s, 16 kHz recording (see docs/DEVLOG.md 2026-11-02); a real spoken agent order sorted 2 parts on 2026-11-02 (see docs/DEVLOG.md); the model heard sort as short, the confirmation shows the text, and Muse Spark still read it as a sort order.
 
 ## Muse Code
 
@@ -137,8 +137,9 @@ repository, task by task, logged in `docs/MUSE_CODE_LOG.md`
 started by the human by hand. Muse Code is a coding tool, not a
 separate model; it ran with "--model muse-spark-1.3" and signs
 in with its own login ("muse login"), not with `MODEL_API_KEY`
-from `.env`. So the project uses three Meta tools: Muse Spark
-(agent), SAM 3.1 (vision) and Muse Code (coding).
+from `.env`. So the project uses four Meta tools: Muse Spark
+(agent), SAM 3.1 (vision), Muse Voice Transcribe (spoken orders)
+and Muse Code (coding).
 
 ## How to verify
 

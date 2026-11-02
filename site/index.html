@@ -53,14 +53,14 @@
 <tr><td>Lever direction from the table camera (7 parts vs. photo)</td><td>7/7 within about 10 deg with the slot axis (before: 3/7)</td></tr>
 <tr><td>Control loop</td><td>100 Hz, cycle period 10.09 ms mean, 10.20 ms max</td></tr>
 <tr><td>Grip</td><td>touch contact on both fingers before the lift, every grip of run 3 on the first try</td></tr>
-<tr><td>Offline test suite</td><td>1013 tests, no hardware, camera or network needed</td></tr>
+<tr><td>Offline test suite</td><td>1030 tests, no hardware, camera or network needed</td></tr>
 </table>
 </section>
 
 <section>
 <h2>How it works</h2>
 <ol>
-<li><strong>Order:</strong> I type an order in plain words. The Muse Spark agent decides which tool to call next: <code>scan_table</code>, <code>inspect_and_sort(part_id)</code>, <code>write_report</code> or <code>finish</code>.</li>
+<li><strong>Order:</strong> I type or speak an order in plain words (with --voice, Muse Voice Transcribe turns the spoken order into text and I confirm it). The Muse Spark agent decides which tool to call next: <code>scan_table</code>, <code>inspect_and_sort(part_id)</code>, <code>sort_in_order(part_ids)</code>, <code>write_report</code> or <code>finish</code> (with --plan-once the model picks the order once and the parts run in one go).</li>
 <li><strong>Scan:</strong> the table camera finds four ArUco markers and maps pixels to table millimeters with a checkerboard calibration. An empty-table reference shows what changed, SAM 3.1 confirms each candidate, and the lever direction is read from the dark slot at one end of the part.</li>
 <li><strong>Pick:</strong> the arm moves above the part, turns the gripper so the fingers close across the levers, lowers, closes until the touch sensors report contact on both sides, and lifts.</li>
 <li><strong>Inspect:</strong> the arm carries the part to a fixed inspection station. The arm camera takes a close-up, SAM 3.1 finds the part, the crop is enlarged and SAM 3.1 counts the levers. Exactly 3 levers = good. A doubtful count is retried on fresh frames; a part is only good when the count is confirmed.</li>

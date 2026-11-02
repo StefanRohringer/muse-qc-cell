@@ -808,6 +808,64 @@ def test_parse_pick_lines_error_reasons():
     assert ok["reason"] is None
 
 
+def test_parse_pick_lines_crash_joint_feedback():
+    lines = [
+        "Traceback (most recent call last):",
+        '  File "muse_qc/pick/pick_test.py", line 10, in <module>',
+        "    joints = arm.read_joints()",
+        '  File "muse_qc/arm/arm.py", line 180, in read_joints',
+        "    raise JointStateUnavailable(msg)",
+        "muse_qc.arm.arm.JointStateUnavailable: No joint feedback "
+        "for 'joint1': the SDK reports 0.0 when feedback is missing.",
+    ]
+    parsed = agent_tools.parse_pick_lines(lines)
+    assert parsed["outcome"] == "error"
+    assert parsed["reason"] == ("no joint feedback from the arm "
+                                "(is the arm power supply on?)")
+    assert "Traceback" not in (parsed["reason"] or "")
+
+
+def test_parse_pick_lines_crash_other_exception():
+    lines = [
+        "starting session",
+        "muse_qc.pick.pick_test.SessionError: box range missing",
+    ]
+    parsed = agent_tools.parse_pick_lines(lines)
+    assert parsed["outcome"] == "error"
+    assert parsed["reason"] == "arm program crashed: SessionError"
+    assert "box range missing" not in (parsed["reason"] or "")
+
+
+def test_parse_pick_lines_crash_takes_last_exception_line():
+    lines = [
+        "muse_qc.pick.pick_test.SessionError: first failure",
+        "muse_qc.arm.arm.JointStateUnavailable: No joint feedback "
+        "for 'joint1'.",
+    ]
+    parsed = agent_tools.parse_pick_lines(lines)
+    assert parsed["outcome"] == "error"
+    assert parsed["reason"] == ("no joint feedback from the arm "
+                                "(is the arm power supply on?)")
+
+
+def test_parse_pick_lines_crash_without_exception_line():
+    parsed = agent_tools.parse_pick_lines(["starting session", "weird"])
+    assert parsed["outcome"] == "error"
+    assert parsed["reason"] == "arm program ended without a result"
+
+
+def test_parse_pick_lines_known_error_beats_crash_line():
+    lines = [
+        "muse_qc.arm.arm.JointStateUnavailable: No joint feedback "
+        "for 'joint1'.",
+        "request failed: new_dm_serial failed: Device or resource busy",
+    ]
+    parsed = agent_tools.parse_pick_lines(lines)
+    assert parsed["outcome"] == "error"
+    assert parsed["reason"] == ("request failed: new_dm_serial failed: "
+                                "Device or resource busy")
+
+
 def test_reports_use_local_time(tmp_path):
     fixed = datetime(2026, 10, 29, 21, 55, 12)
     fake = agent_tools.fake_report(
