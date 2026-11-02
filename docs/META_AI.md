@@ -57,14 +57,12 @@ reacts to failures and rescans, and writes the summary.
   `encrypted_content`) are replayed into the history but never
   written to the transcript in `recordings/`.
 - Measured use: the first 10-part run (30 Oct) took 14 Muse Spark
-  calls and cost about 0.22 USD (credits 5.37 to 5.15 USD, about
-  2 cents per part) over 7 min 20 s, about 44 s per part. The 10
-  of 10 run 3 (31 Oct) took about 6.5 min, about 43 s per part;
-  its cost was not measured (the credits page did not load). A
+  calls over 7 min 20 s, about 44 s per part. The 10
+  of 10 run 3 (31 Oct) took about 6.5 min, about 43 s per part. A
   simulate run (29 Oct) used between 830 and 3160 input tokens
   and 46 to 495 output tokens per call. The 10-part arm session
   run (2 Nov) took 5 Muse Spark calls, 10840 input and 739 output
-  tokens in total; cost not measured.
+  tokens in total.
 
 ## SAM 3.1 (sam-3.1)
 
