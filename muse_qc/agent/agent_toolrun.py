@@ -14,8 +14,14 @@ from muse_qc.agent import agent_plan, agent_tools
 
 def run_tool(name, args, state, scan_fn, sort_fn, report_fn,
              max_sorts, max_per_position, out, live=None,
-             plan_once=False, session_factory=None) -> tuple[dict, bool]:
-    """Execute one model tool call; return (result, stop_loop)."""
+             plan_once=False, session_factory=None,
+             on_part=None) -> tuple[dict, bool]:
+    """Execute one model tool call; return (result, stop_loop).
+
+    on_part reports each finished sort_in_order part at once;
+    with a live page and no explicit callback each part is shown
+    the same way as after a single inspect_and_sort call.
+    """
     if live is not None:
         live.before_tool(name, args)
     if name == "scan_table":
@@ -51,9 +57,15 @@ def run_tool(name, args, state, scan_fn, sort_fn, report_fn,
             return result, False
         part_ids = args.get("part_ids")
         out(f"agent -> sort_in_order(parts {part_ids})")
+        callback = on_part
+        if callback is None and live is not None:
+            def callback(part_result, _live=live):
+                _live.after_tool("inspect_and_sort",
+                                 dict(part_result))
         return agent_plan.run_plan(
             state, part_ids, sort_fn, scan_fn, out, max_sorts,
-            max_per_position, session_factory=session_factory)
+            max_per_position, session_factory=session_factory,
+            on_part=callback)
     if name == "write_report":
         out("agent -> write_report()")
         try:

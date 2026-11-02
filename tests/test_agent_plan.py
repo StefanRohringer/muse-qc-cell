@@ -383,3 +383,197 @@ def test_tool_definition_describes_order():
     assert SORT_IN_ORDER_TOOL["name"] == "sort_in_order"
     assert "no" in SORT_IN_ORDER_TOOL["description"].lower()
     assert agent_plan.PLAN_PROMPT.count(".") == 1
+
+
+def _found(positions):
+    """Fake scan result with one entry per position."""
+    return {"parts": [{"table_mm": list(pos)} for pos in positions],
+            "skipped": 0, "image": "recordings/fake.png"}
+
+
+def test_forgotten_spot_accepts_new_part():
+    state = RunState()
+    state.note_sorted(P0)
+    agent_tools.store_scan(state, _found([P1]))
+    assert state.already_sorted(P0) is False
+    agent_tools.store_scan(state, _found([[P0[0] + 5.0, P0[1]]]))
+    sort = _sort_fn_factory([_sorted_outcome(3, "good", "a.json")])
+    result, _ = agent_plan.sort_single(
+        state, 0, sort, _scan_fn_factory([[]]),
+        out=lambda line: None)
+    assert result["outcome"] == "sorted"
+    assert len(sort.seen) == 1
+
+
+def test_kept_spot_still_refused():
+    state = RunState()
+    state.note_sorted(P0)
+    agent_tools.store_scan(state, _found([P0]))
+    assert state.already_sorted(P0) is True
+    sort = _sort_fn_factory([])
+    result, _ = agent_plan.sort_single(
+        state, 0, sort, _scan_fn_factory([[]]),
+        out=lambda line: None)
+    assert result["outcome"] == "refused"
+    assert result["reason"] == "part already sorted"
+    assert sort.seen == []
+
+
+def test_attempts_at_empty_spot_forgotten():
+    state = RunState()
+    state.note_sorted(P0)
+    state.note_attempt(P0)
+    state.note_attempt(P1)
+    agent_tools.store_scan(state, _found([P1]))
+    assert state.already_sorted(P0) is False
+    assert state.attempts_at(P0) == 0
+    assert state.attempts_at(P1) == 1
+
+
+def test_plan_once_forgets_empty_spot():
+    state = RunState()
+    state.note_sorted([100.0, 100.0])
+    agent_tools.store_scan(state, _found([P0]))
+    sort = _sort_fn_factory([_sorted_outcome(3, "good", "a.json")])
+    result, stop = run_plan(state, [0], sort, _scan_fn_factory([[]]),
+                            out=lambda line: None)
+    assert stop is False
+    assert result["outcome"] == "plan_done"
+    assert len(sort.seen) == 1
+
+
+def test_run_plan_reports_each_part():
+    def fresh():
+        state = RunState()
+        state.new_scan([P0, P1, P2], [None, None, None],
+                       [None, None, None])
+        return state
+
+    specs = [("a.json", 3, "good"), ("b.json", 3, "good"),
+             ("c.json", 2, "bad")]
+
+    def make_sort():
+        return _sort_fn_factory(
+            [_sorted_outcome(levers, verdict, record)
+             for record, levers, verdict in specs])
+
+    scans = [[P1, P2], [P2], []]
+    seen = []
+    result, stop = run_plan(
+        fresh(), [0, 1, 2], make_sort(), _scan_fn_factory(scans),
+        out=lambda line: None, on_part=seen.append)
+    assert stop is False
+    assert result["outcome"] == "plan_done"
+    assert [item["record"] for item in seen] == [
+        "a.json", "b.json", "c.json"]
+    assert [item["verdict"] for item in seen] == [
+        "good", "good", "bad"]
+    assert all("table after sort" in item for item in seen)
+    plain, _ = run_plan(
+        fresh(), [0, 1, 2], make_sort(), _scan_fn_factory(scans),
+        out=lambda line: None)
+    assert result == plain
+
+
+class _FakePage:
+    """Minimal live page mirror: records calls plus page state."""
+
+    def __init__(self):
+        self.events: list = []
+        self.cards: list = []
+        self.good = 0
+        self.bad = 0
+        self.failed = 0
+        self.parts: list = []
+
+    def line(self, text):
+        """Record one console line."""
+        self.events.append(("line", str(text)))
+
+    def before_tool(self, name, args):
+        """Record one upcoming tool call."""
+        self.events.append(("before", name))
+
+    def after_tool(self, name, result):
+        """Feed one tool result into the fake page state."""
+        self.events.append(("after", name))
+        if name == "inspect_and_sort":
+            self._single(result)
+        elif name == "sort_in_order":
+            for planned in result.get("sorted") or []:
+                self._single({"outcome": "sorted",
+                              "levers": planned.get("levers"),
+                              "verdict": planned.get("verdict"),
+                              "box": planned.get("box"),
+                              "record": planned.get("record")})
+            if result.get("deviation_outcome") in (
+                    "missed_grip", "error", "inspect_failed",
+                    "interrupted"):
+                self.failed += 1
+            if isinstance(result.get("table after sort"), list):
+                self.parts = [dict(part)
+                              for part in result["table after sort"]]
+
+    def _single(self, result):
+        if result.get("outcome") != "sorted":
+            self.failed += 1
+            return
+        if result.get("verdict") == "good":
+            self.good += 1
+        else:
+            self.bad += 1
+        self.cards.insert(0, {
+            "levers": result.get("levers"),
+            "verdict": result.get("verdict"),
+            "box": result.get("box"),
+            "record": result.get("record"),
+        })
+        if isinstance(result.get("table after sort"), list):
+            self.parts = [dict(part)
+                          for part in result["table after sort"]]
+
+    def finish(self, summary):
+        """Record the final status line."""
+        self.events.append(("finish", str(summary)))
+
+    def snapshot(self):
+        """Return the comparable page state."""
+        return (self.good, self.bad, self.failed,
+                self.cards, self.parts)
+
+
+def test_plan_once_updates_live_page_per_part(tmp_path):
+    fake = FakeTable()
+    fake._tried.add(fake._missed_key)
+    page = _FakePage()
+    script = [
+        [_call("c1", "scan_table", {})],
+        [_call("c2", "sort_in_order", {"part_ids": [0, 1, 2]})],
+        [_call("c3", "scan_table", {})],
+        [_message("done"), _call("c4", "finish",
+                                {"summary": "2 good, 1 bad"})],
+    ]
+    result = run_agent(FakeClient(script), fake.scan, fake.sort,
+                       _report_fn_factory(tmp_path),
+                       out=lambda line: None,
+                       recordings_dir=str(tmp_path), live=page,
+                       plan_once=True)
+    assert result["finished"] is True
+    kinds = [event for event in page.events if event[0] != "line"]
+    start = kinds.index(("before", "sort_in_order"))
+    assert kinds[start + 1:start + 5] == [
+        ("after", "inspect_and_sort"),
+        ("after", "inspect_and_sort"),
+        ("after", "inspect_and_sort"),
+        ("after", "sort_in_order"),
+    ]
+    assert [card["verdict"] for card in page.cards] == [
+        "bad", "good", "good"]
+    assert (page.good, page.bad) == (2, 1)
+    loaded = _transcript(tmp_path)
+    full = loaded["steps"][1]["results"][0]
+    assert full["outcome"] == "plan_done"
+    assert len(full["sorted"]) == 3
+    reference = _FakePage()
+    reference.after_tool("sort_in_order", full)
+    assert page.snapshot() == reference.snapshot()

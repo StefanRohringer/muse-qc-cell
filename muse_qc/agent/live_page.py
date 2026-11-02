@@ -180,12 +180,19 @@ class LivePage:
             if result.get("outcome") is None:
                 self.scan(result.get("image"), result.get("parts") or [])
         elif name == "sort_in_order":
+            shown = {card.get("record") for card in self._cards
+                     if card.get("record") is not None}
             for planned in result.get("sorted") or []:
+                record = planned.get("record")
+                if record is not None and str(record) in shown:
+                    continue
                 self.sorted({"outcome": "sorted",
                              "levers": planned.get("levers"),
                              "verdict": planned.get("verdict"),
                              "box": planned.get("box"),
                              "record": planned.get("record")})
+                if record is not None:
+                    shown.add(str(record))
             if result.get("deviation_outcome") in (
                     "missed_grip", "error", "inspect_failed",
                     "interrupted"):

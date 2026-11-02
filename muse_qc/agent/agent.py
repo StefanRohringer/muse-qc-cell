@@ -173,12 +173,29 @@ def run_agent(client, scan_fn, sort_fn, report_fn, out=print,
                 if not isinstance(args, dict):
                     args = {}
                 entry["calls"].append({"name": name, "arguments": args})
+                reported: list[dict] = []
+                part_cb = None
+                if live is not None and name == "sort_in_order":
+                    def part_cb(part_result, _live=live,
+                                _seen=reported):
+                        update = dict(part_result)
+                        _seen.append(update)
+                        _live.after_tool("inspect_and_sort",
+                                         dict(update))
                 result, stop = run_tool(
                     name, args, state, scan_fn, sort_fn, report_fn,
                     max_sorts, MAX_PER_POSITION, out, live,
-                    plan_once, session_factory=session_factory)
+                    plan_once, session_factory=session_factory,
+                    on_part=part_cb)
                 if live is not None:
-                    live.after_tool(name, result)
+                    if part_cb is not None:
+                        rest = list(result.get("sorted") or [])
+                        live.after_tool(name, {
+                            **result,
+                            "sorted": rest[len(reported):],
+                        })
+                    else:
+                        live.after_tool(name, result)
                 entry["results"].append(result)
                 outputs.append({
                     "type": "function_call_output",

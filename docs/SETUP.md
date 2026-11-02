@@ -1934,7 +1934,10 @@ A new chat order clears the remembered sorted positions and
 attempt counts (`RunState.new_order`), so the 15 mm
 already-sorted rule and the two-tries-per-position rule apply
 within one order only; a run with `--task` and no chat is one
-order and behaves as before.
+order and behaves as before. Within an order, every scan also
+forgets sorted spots it sees empty
+(`RunState.forget_empty_spots`), so a new part laid near an old
+spot is accepted.
 The chat logic lives in `muse_qc/agent/agent_chat.py` (the transcript
 writer moved there from `agent.py` to keep it within 400 lines).
 Each human order and the final summary go through the console
@@ -2070,7 +2073,9 @@ with the sorted list plus the final rescan; the model then
 calls `scan_table` once more, `write_report` and `finish` as
 usual. The run prints `plan: [...]` and `deviation: ...` lines
 onto the live page like the other tool lines, and the model
-call count at the end (`agent: N model calls`). Without the
+call count at the end (`agent: N model calls`). With a live
+page, every part of a `sort_in_order` plan appears on the page
+as soon as it is done. Without the
 flag the run behaves exactly as before: the tool is not
 offered, and no motion plan, speed, joint target, safety check
 or home/settle/disable step changes either way. Simulate first

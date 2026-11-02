@@ -140,3 +140,25 @@ class RunState:
         """Remember a successful sort at this position."""
         self.sorted_positions.append(
             [float(position[0]), float(position[1])])
+
+    def forget_empty_spots(self, positions) -> None:
+        """Forget sorted spots (and attempts) with no part nearby.
+
+        Called after every scan that stores new positions: a sorted
+        position with no part of that scan within SAME_PART_MM is
+        dropped, so a new part laid near that old spot is accepted
+        again. A sorted position the scan still sees a part at
+        stays, so picking the same part twice stays refused.
+        """
+        spots = [[float(pos[0]), float(pos[1])] for pos in positions]
+        gone = [seen for seen in self.sorted_positions
+                if not any(_dist(seen, pos) <= SAME_PART_MM
+                           for pos in spots)]
+        if not gone:
+            return
+        self.sorted_positions = [
+            seen for seen in self.sorted_positions if seen not in gone]
+        self.attempts = [
+            seen for seen in self.attempts
+            if not any(_dist(seen, spot) <= SAME_PART_MM
+                       for spot in gone)]
