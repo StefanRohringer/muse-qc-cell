@@ -1,15 +1,21 @@
 # muse-qc-cell
 
-![tests](https://github.com/StefanRohringer/muse-qc-cell/actions/workflows/ci.yml/badge.svg)
+[![demo video](https://img.shields.io/badge/demo%20video-3%20min-red)](https://youtu.be/AedP_7rSauo) [![demo page](https://img.shields.io/badge/demo%20page-replay%20of%20a%20real%20run-blue)](https://stefanrohringer.github.io/muse-qc-cell/) [![tests](https://github.com/StefanRohringer/muse-qc-cell/actions/workflows/ci.yml/badge.svg)](https://github.com/StefanRohringer/muse-qc-cell/actions/workflows/ci.yml) [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
+Built for the Meta Global AI Developer Hackathon 2026 (26 Oct to 4 Nov 2026), Indie Developer track.
 
 **Demo page (replay of a real run):** https://stefanrohringer.github.io/muse-qc-cell/
+
+**Quick links:** [Hackathon demo video](https://youtu.be/AedP_7rSauo) · [Demo page (replay of a real run)](https://stefanrohringer.github.io/muse-qc-cell/) · [Results](#results-real-hardware-measured) · [Where Meta AI is used](#where-meta-ai-is-used) · [Safety](#safety) · [Known limits](#known-limits) · [Run it](#run-it)
+
+**Docs:** [Results in detail](docs/RESULTS.md) · [Dev log, every human hardware run](docs/DEVLOG.md) · [Meta models](docs/META_AI.md) · [Muse Code log](docs/MUSE_CODE_LOG.md) · [Setup](docs/SETUP.md) · [Third-party code](docs/THIRD_PARTY.md) · [Lever count evaluation](eval/results.md)
 
 An AI quality inspection cell for injection-molded parts. A low-cost
 reBot Arm B601-DM picks each part from the table, a Muse Spark agent
 decides every step, SAM 3.1 counts the levers in a close-up, and the
 part goes into the good box or the bad box. The order can be typed or spoken. Real hardware, no simulation.
 
-<!-- VIDEO: add the demo video link here on Mon 2 Nov, e.g. "Demo video (3 min): <link>". -->
+**Hackathon demo video:** https://youtu.be/AedP_7rSauo
 
 <p align="center">
 <img src="docs/media/table_scan_10_parts.png" width="64%" alt="Table camera view: ten parts found on the table, each with its id and table millimeters, next to the two sorting boxes and the arm">
@@ -37,16 +43,19 @@ cell running over a weekend.
 
 ## Results (real hardware, measured)
 
+**Hackathon demo video:** https://youtu.be/AedP_7rSauo
+
 All numbers come from human-run tests, recorded in `docs/DEVLOG.md`.
 
-### Sorting runs with 10 parts
+### Sorting runs
 
-| Run | What changed | Gripped on the first try | Sorted correctly | Time | Meta API cost |
-| --- | --- | --- | --- | --- | --- |
-| 30 Oct, run 1 | first 10-part run, close-up right after the lift | 10/10 | not checked: 5 parts on the left half read 0 levers (light), so they were sorted bad without a count | 7 min 20 s, about 44 s per part | 0.22 USD (about 2 cents per part, 14 Muse Spark calls) |
-| 31 Oct, run 3 | lever direction from the slot axis, rescan after every part, fixed inspection station | 9/9 | **10/10** (9 in this agent run plus 1 single pick just before it; boxes checked by hand) | about 6.5 min, about 43 s per part | not measured (the credits page did not load) |
-| 1 Nov, arm session | one session for all 4 parts, no return home between parts | 4/4 | **4/4** (boxes checked by hand) | about 27 s between counts (count to count, not a full cycle) | not measured |
-| 2 Nov, 10 parts, arm session | one session for all 10 parts (`--plan-once --scan-at-station --arm-session`), new empty-table image after turning the lamp away | 10/10 | **10/10** (7 good, 3 bad; 3 bad placed on purpose; boxes checked by hand, all correct) | 4 min 39 s first scan to report, about 28 s per part (24 to 28 s count to count) | not measured (5 Muse Spark calls) |
+| Run | What changed | Gripped on the first try | Sorted correctly | Time |
+| --- | --- | --- | --- | --- |
+| 30 Oct, run 1 | first 10-part run, close-up right after the lift | 10/10 | not checked: 5 parts on the left half read 0 levers (light), so they were sorted bad without a count | 7 min 20 s, about 44 s per part, 14 Muse Spark calls |
+| 31 Oct, run 3 | lever direction from the slot axis, rescan after every part, fixed inspection station | 9/9 | **10/10** (9 in this agent run plus 1 single pick just before it; boxes checked by hand) | about 6.5 min, about 43 s per part |
+| 1 Nov, arm session | one session for all 4 parts, no return home between parts | 4/4 | **4/4** (boxes checked by hand) | about 27 s between counts (count to count, not a full cycle) |
+| 2 Nov, 10 parts, arm session | one session for all 10 parts (`--plan-once --scan-at-station --arm-session`), new empty-table image after turning the lamp away | 10/10 | **10/10** (7 good, 3 bad; 3 bad placed on purpose; boxes checked by hand, all correct) | 4 min 39 s first scan to report, about 28 s per part (24 to 28 s count to count), 5 Muse Spark calls |
+| 2 Nov, long run with disturbances | spoken order, 10 parts at the start, no sort limit; the human added parts and moved some just before the grip | 34 of 41 arm runs (5 missed grips on parts moved by hand, 2 failures on the last part) | **33/33** lever counts correct (29 good, 4 bad), 1 unverified part into the bad box, no bad part in the good box; boxes checked by hand | about 19 min for 34 parts (16:32 to 16:51), 25 to 27 s per part inside one arm session, 24 Muse Spark calls |
 
 Run 2 (31 Oct, first run with the inspection station) gripped 10/10, but
 several parts were gripped along the wrong axis because the lamp shadow
@@ -299,7 +308,6 @@ with its recorded output.
 
 - A longer test series with known good and bad parts, including broken
   and open levers.
-- Measure the Meta API cost of a full run again.
 - Make spoken orders more robust (the voice model heard sort as short; a shorter fixed phrase or more keywords may help).
 - Other parts with other rules, given in plain words.
 

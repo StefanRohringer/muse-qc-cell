@@ -16,8 +16,18 @@
 
 <section>
 <h2>Demo video</h2>
-<!-- VIDEO: YouTube embed on Mon 2 Nov -->
-<p>Demo video: coming on 2 Nov</p>
+<p><a href="https://youtu.be/AedP_7rSauo">Watch the hackathon demo video on YouTube</a></p>
+<div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 960px;">
+<iframe src="https://www.youtube-nocookie.com/embed/AedP_7rSauo" title="muse-qc-cell hackathon demo video" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0;" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+</div>
+</section>
+
+<section>
+<h2>Quick links</h2>
+<ul>
+<li><strong>Quick links:</strong> <a href="https://youtu.be/AedP_7rSauo">Hackathon demo video</a> · <a href="https://stefanrohringer.github.io/muse-qc-cell/">Demo page (replay of a real run)</a> · <a href="https://github.com/StefanRohringer/muse-qc-cell#results-real-hardware-measured">Results</a> · <a href="https://github.com/StefanRohringer/muse-qc-cell#where-meta-ai-is-used">Where Meta AI is used</a> · <a href="https://github.com/StefanRohringer/muse-qc-cell#safety">Safety</a> · <a href="https://github.com/StefanRohringer/muse-qc-cell#known-limits">Known limits</a> · <a href="https://github.com/StefanRohringer/muse-qc-cell#run-it">Run it</a></li>
+<li><strong>Docs:</strong> <a href="https://github.com/StefanRohringer/muse-qc-cell/blob/main/docs/RESULTS.md">Results in detail</a> · <a href="https://github.com/StefanRohringer/muse-qc-cell/blob/main/docs/DEVLOG.md">Dev log, every human hardware run</a> · <a href="https://github.com/StefanRohringer/muse-qc-cell/blob/main/docs/META_AI.md">Meta models</a> · <a href="https://github.com/StefanRohringer/muse-qc-cell/blob/main/docs/MUSE_CODE_LOG.md">Muse Code log</a> · <a href="https://github.com/StefanRohringer/muse-qc-cell/blob/main/docs/SETUP.md">Setup</a> · <a href="https://github.com/StefanRohringer/muse-qc-cell/blob/main/docs/THIRD_PARTY.md">Third-party code</a> · <a href="https://github.com/StefanRohringer/muse-qc-cell/blob/main/eval/results.md">Lever count evaluation</a></li>
+</ul>
 </section>
 
 <section>
@@ -37,14 +47,16 @@
 
 <section>
 <h2>Results (real hardware, measured)</h2>
+<p><strong>Hackathon demo video:</strong> <a href="https://youtu.be/AedP_7rSauo">https://youtu.be/AedP_7rSauo</a></p>
 <p>All numbers come from human-run tests, recorded in <code>docs/DEVLOG.md</code>.</p>
-<h3>Sorting runs with 10 parts</h3>
+<h3>Sorting runs</h3>
 <table>
-<tr><th>Run</th><th>What changed</th><th>Gripped on the first try</th><th>Sorted correctly</th><th>Time</th><th>Meta API cost</th></tr>
-<tr><td>30 Oct, run 1</td><td>first 10-part run, close-up right after the lift</td><td>10/10</td><td>not checked: 5 parts on the left half read 0 levers (light), so they were sorted bad without a count</td><td>7 min 20 s, about 44 s per part</td><td>0.22 USD (about 2 cents per part, 14 Muse Spark calls)</td></tr>
-<tr><td>31 Oct, run 3</td><td>lever direction from the slot axis, rescan after every part, fixed inspection station</td><td>9/9</td><td><strong>10/10</strong> (9 in this agent run plus 1 single pick just before it; boxes checked by hand)</td><td>about 6.5 min, about 43 s per part</td><td>not measured (the credits page did not load)</td></tr>
-<tr><td>1 Nov, arm session</td><td>one session for all 4 parts, no return home between parts</td><td>4/4</td><td><strong>4/4</strong> (boxes checked by hand)</td><td>about 27 s between counts (count to count, not a full cycle)</td><td>not measured</td></tr>
-<tr><td>2 Nov, 10 parts, arm session</td><td>one session for all 10 parts (--plan-once --scan-at-station --arm-session), new empty-table image after turning the lamp away</td><td>10/10</td><td><strong>10/10</strong> (7 good, 3 bad; 3 bad placed on purpose; boxes checked by hand, all correct)</td><td>4 min 39 s first scan to report, about 28 s per part (24 to 28 s count to count)</td><td>not measured (5 Muse Spark calls)</td></tr>
+<tr><th>Run</th><th>What changed</th><th>Gripped on the first try</th><th>Sorted correctly</th><th>Time</th></tr>
+<tr><td>30 Oct, run 1</td><td>first 10-part run, close-up right after the lift</td><td>10/10</td><td>not checked: 5 parts on the left half read 0 levers (light), so they were sorted bad without a count</td><td>7 min 20 s, about 44 s per part, 14 Muse Spark calls</td></tr>
+<tr><td>31 Oct, run 3</td><td>lever direction from the slot axis, rescan after every part, fixed inspection station</td><td>9/9</td><td><strong>10/10</strong> (9 in this agent run plus 1 single pick just before it; boxes checked by hand)</td><td>about 6.5 min, about 43 s per part</td></tr>
+<tr><td>1 Nov, arm session</td><td>one session for all 4 parts, no return home between parts</td><td>4/4</td><td><strong>4/4</strong> (boxes checked by hand)</td><td>about 27 s between counts (count to count, not a full cycle)</td></tr>
+<tr><td>2 Nov, 10 parts, arm session</td><td>one session for all 10 parts (--plan-once --scan-at-station --arm-session), new empty-table image after turning the lamp away</td><td>10/10</td><td><strong>10/10</strong> (7 good, 3 bad; 3 bad placed on purpose; boxes checked by hand, all correct)</td><td>4 min 39 s first scan to report, about 28 s per part (24 to 28 s count to count), 5 Muse Spark calls</td></tr>
+<tr><td>2 Nov, long run with disturbances</td><td>spoken order, 10 parts at the start, no sort limit; the human added parts and moved some just before the grip</td><td>34 of 41 arm runs (5 missed grips on parts moved by hand, 2 failures on the last part)</td><td><strong>33/33</strong> lever counts correct (29 good, 4 bad), 1 unverified part into the bad box, no bad part in the good box; boxes checked by hand</td><td>about 19 min for 34 parts (16:32 to 16:51), 25 to 27 s per part inside one arm session, 24 Muse Spark calls</td></tr>
 </table>
 <p>Run 2 (31 Oct, first run with the inspection station) gripped 10/10, but several parts were gripped along the wrong axis because the lamp shadow fooled the lever direction. That led to the slot axis fix used in run 3.</p>
 <h3>Building blocks</h3>
