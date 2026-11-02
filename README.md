@@ -64,17 +64,18 @@ the agent rescanned and sorted the part at its new place.
 | Lever direction from the table camera (7 parts vs. photo) | 7/7 within about 10 deg with the slot axis (before: 3/7) |
 | Control loop | 100 Hz, cycle period 10.09 ms mean, 10.20 ms max |
 | Grip | touch contact on both fingers before the lift, every grip of run 3 on the first try |
-| Offline test suite | 1013 tests, no hardware, camera or network needed |
+| Offline test suite | 1030 tests, no hardware, camera or network needed |
 
 ## How it works
 
 ```mermaid
 flowchart TD
-    A["Order in plain words<br/>e.g. 'sort all parts on the table'"] --> B["Muse Spark agent<br/>muse-spark-1.3, tool calling"]
+    A["Order in plain words, typed or spoken<br/>e.g. 'sort all parts on the table'"] --> B["Muse Spark agent<br/>muse-spark-1.3, tool calling"]
+    V["spoken: Muse Voice Transcribe<br/>muse-voice-transcribe-1.0"] -.-> A
     B -->|scan_table| C["Table camera<br/>empty-table reference + SAM 3.1 'grey object'"]
     C --> D["Part IDs with table mm<br/>and lever direction"]
     D --> B
-    B -->|"inspect_and_sort(part ID)"| E["Safety check of every waypoint<br/>safety.py"]
+    B -->|"inspect_and_sort(part ID)<br/>or sort_in_order(plan, --plan-once)"| E["Safety check of every waypoint<br/>safety.py"]
     E --> F["Pick: hover, turn gripper,<br/>lower, touch-sensed grip, lift"]
     F --> G["Inspection station<br/>arm camera close-up"]
     G --> H["SAM 3.1: find the part,<br/>count the 'brown bar' levers"]
@@ -86,9 +87,11 @@ flowchart TD
     B -->|"write_report, finish"| L["JSON records,<br/>HTML report, live page"]
 ```
 
-1. **Order:** I type an order in plain words. The Muse Spark agent decides
+1. **Order:** I type or speak an order in plain words (with --voice, Muse Voice Transcribe turns the spoken order into text and I confirm it). The Muse Spark agent decides
    which tool to call next: `scan_table`, `inspect_and_sort(part_id)`,
-   `write_report` or `finish`.
+   `sort_in_order(part_ids)`, `write_report` or `finish` (with
+   --plan-once the model picks the order once and the parts run in
+   one go).
 2. **Scan:** the table camera finds four ArUco markers and maps pixels to
    table millimeters with a checkerboard calibration. An empty-table
    reference shows what changed, SAM 3.1 confirms each candidate, and the
@@ -281,16 +284,15 @@ with its recorded output.
 
 - A longer test series with known good and bad parts, including broken
   and open levers.
-- Go straight from the box to the next part without returning to rest.
 - Measure the Meta API cost of a full run again.
+- Make spoken orders more robust (the voice model heard sort as short; a shorter fixed phrase or more keywords may help).
 - Other parts with other rules, given in plain words.
 
 ## Credits
 
 Built during the Meta Global AI Developer Hackathon (26 Oct to 4 Nov 2026).
 
-- **Meta models:** Muse Spark 1.3 and SAM 3.1 through the Meta Model API;
-  Muse Code (powered by Muse Spark) wrote the code.
+- **Meta models:** Muse Spark 1.3, SAM 3.1 and Muse Voice Transcribe 1.0 through the Meta Model API; Muse Code (powered by Muse Spark) wrote the code.
 - **Hardware:** reBot Arm B601-DM by Seeed Studio, Orbbec Gemini 305 on the
   arm, a USB webcam above the table, and my pre-existing Touch-Sensing
   Fin-Ray Gripper ([repository](https://github.com/StefanRohringer/Touch-Sensing-Fin-Ray-Gripper)).
