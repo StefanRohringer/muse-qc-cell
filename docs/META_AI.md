@@ -35,8 +35,8 @@ reacts to failures and rescans, and writes the summary.
     parts with these scan ids in this order; execution stops and
     reports back at the first deviation. Ids come from the latest
     list with no duplicates." A part that appears during the plan
-    joins the running plan automatically and is reported in the
-    result.
+    joins the running plan automatically while planned parts are still waiting and is reported in the
+    result (see the known limit in README.md).
   - `write_report` (no arguments): build the HTML report from
     this run's records.
   - `finish` (`summary`: string, required): end the run with a
