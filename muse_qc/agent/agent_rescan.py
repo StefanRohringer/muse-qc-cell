@@ -25,6 +25,7 @@ def store_scan(state, found) -> dict:
         [part.get("lever_deg") for part in items],
         [part.get("confidence") for part in items],
     )
+    state.forget_empty_spots(positions)
     skipped = int(found.get("skipped", 0) or 0)
     return {"parts": [
         {"id": index,

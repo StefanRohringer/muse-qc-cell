@@ -196,7 +196,7 @@ class _LazySession:
 def run_plan(state, part_ids, sort_fn, scan_fn, out=print,
              max_sorts=DEFAULT_MAX_SORTS,
              max_per_position=DEFAULT_MAX_PER_POSITION,
-             session_factory=None):
+             session_factory=None, on_part=None):
     """Execute the ordered ids; return (result, stop_loop).
 
     Every id is sorted with sort_single and rescanned as usual;
@@ -208,14 +208,20 @@ def run_plan(state, part_ids, sort_fn, scan_fn, out=print,
     session_factory (a zero-argument ArmSession maker for
     --arm-session) one child serves the whole order: sorts run
     through the session and it is closed ("end") on every exit.
+    on_part (a one-argument callback, or None) reports each
+    finished part at once with its single sort result (verdict,
+    levers, image after sort, rescan image); without it the
+    returned result is unchanged.
     """
     if session_factory is None:
         return _execute_plan(state, part_ids, sort_fn, scan_fn, out,
-                             max_sorts, max_per_position)
+                             max_sorts, max_per_position,
+                             on_part=on_part)
     session = _LazySession(session_factory)
     try:
         return _execute_plan(state, part_ids, session.sort, scan_fn, out,
-                             max_sorts, max_per_position)
+                             max_sorts, max_per_position,
+                             on_part=on_part)
     finally:
         try:
             session.close()
@@ -225,7 +231,8 @@ def run_plan(state, part_ids, sort_fn, scan_fn, out=print,
 
 def _execute_plan(state, part_ids, sort_fn, scan_fn, out=print,
                   max_sorts=DEFAULT_MAX_SORTS,
-                  max_per_position=DEFAULT_MAX_PER_POSITION):
+                  max_per_position=DEFAULT_MAX_PER_POSITION,
+                  on_part=None):
     """Run one order part by part; see run_plan."""
     reason = validate_order(state, part_ids)
     if reason is not None:
@@ -264,6 +271,8 @@ def _execute_plan(state, part_ids, sort_fn, scan_fn, out=print,
             "box": result.get("box"),
             "record": result.get("record"),
         })
+        if on_part is not None:
+            on_part(dict(result))
         remaining = pending[index + 1:]
         if remaining and result.get("session_over"):
             sentence = "the arm session ended."

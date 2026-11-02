@@ -64,7 +64,7 @@ the agent rescanned and sorted the part at its new place.
 | Lever direction from the table camera (7 parts vs. photo) | 7/7 within about 10 deg with the slot axis (before: 3/7) |
 | Control loop | 100 Hz, cycle period 10.09 ms mean, 10.20 ms max |
 | Grip | touch contact on both fingers before the lift, every grip of run 3 on the first try |
-| Offline test suite | 976 tests, no hardware, camera or network needed |
+| Offline test suite | 982 tests, no hardware, camera or network needed |
 
 ## How it works
 
@@ -272,7 +272,9 @@ with its recorded output.
   and the slot axis fixed this in run 3.
 - Without `--arm-session`, after every part the arm returns to rest, which costs about 7 s per part.
 - A part within 15 mm of an already sorted position is not picked again
-  within one order; a new chat order starts with a clean order memory.
+  while the scans still see a part there; once a scan sees that spot
+  empty, the spot is forgotten, and a new chat order starts with a
+  clean order memory.
 
 ## Next
 
