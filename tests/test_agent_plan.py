@@ -216,28 +216,56 @@ def test_moved_part_deviates(tmp_path):
     assert plan["table after sort"][0]["table_mm"] == moved
 
 
-def test_new_part_deviates(tmp_path):
+def test_new_part_joins_plan_and_sorts_last(tmp_path):
     extra = [600.0, 320.0]
-    scan = _scan_fn_factory([[P0, P1], [P1, extra]])
+    scan = _scan_fn_factory([[P1, extra], [extra], []])
     sort = _sort_fn_factory([
         _sorted_outcome(3, "good", "a.json"),
+        _sorted_outcome(3, "good", "b.json"),
+        _sorted_outcome(2, "bad", "c.json"),
     ])
-    script = [
-        [_call("c1", "scan_table", {})],
-        [_call("c2", "sort_in_order", {"part_ids": [0, 1]})],
-        [_call("c3", "finish", {"summary": "replan needed"})],
-    ]
-    result, lines, _ = _run(script, scan, sort,
-                            _report_fn_factory(tmp_path), tmp_path,
-                            plan_once=True)
-    assert result["finished"] is True
-    assert len(sort.seen) == 1
-    assert "deviation: a new part appeared on the table." in \
-        "\n".join(lines)
-    loaded = _transcript(tmp_path)
-    plan = loaded["steps"][1]["results"][0]
-    assert plan["outcome"] == "plan_deviation"
-    assert len(plan["table after sort"]) == 2
+    state = RunState()
+    state.new_scan([P0, P1], [None, None], [None, None])
+    lines: list = []
+    result, stop = run_plan(state, [0, 1], sort, scan,
+                           out=lines.append)
+    assert stop is False
+    assert result["outcome"] == "plan_done"
+    assert sort.seen == [P0, P1, extra]
+    assert result["added during the run"] == [
+        {"id": 1, "table_mm": extra}]
+    text = "\n".join(lines)
+    assert "plan: new part 1 at (600.0, 320.0) mm added to the " \
+        "plan." in text
+    assert "deviation" not in text
+
+
+def test_two_new_parts_join_plan_together(tmp_path):
+    extra_a = [600.0, 320.0]
+    extra_b = [640.0, 300.0]
+    scan = _scan_fn_factory([[P1, extra_a, extra_b],
+                             [extra_a, extra_b], [extra_b], []])
+    sort = _sort_fn_factory([
+        _sorted_outcome(3, "good", "a.json"),
+        _sorted_outcome(3, "good", "b.json"),
+        _sorted_outcome(3, "good", "c.json"),
+        _sorted_outcome(2, "bad", "d.json"),
+    ])
+    state = RunState()
+    state.new_scan([P0, P1], [None, None], [None, None])
+    lines: list = []
+    result, stop = run_plan(state, [0, 1], sort, scan,
+                           out=lines.append)
+    assert stop is False
+    assert result["outcome"] == "plan_done"
+    assert sort.seen == [P0, P1, extra_a, extra_b]
+    assert result["added during the run"] == [
+        {"id": 1, "table_mm": extra_a},
+        {"id": 2, "table_mm": extra_b}]
+    text = "\n".join(lines)
+    assert text.index("plan: new part 1 ") < \
+        text.index("plan: new part 2 ")
+    assert "deviation" not in text
 
 
 def test_failed_rescan_deviates(tmp_path):
@@ -260,22 +288,20 @@ def test_failed_rescan_deviates(tmp_path):
     assert "deviation: the rescan failed." in lines
 
 
-def test_plan_limit_stops_loop(tmp_path):
-    scan = _scan_fn_factory([[P0, P1], [P1]])
+def test_plan_without_added_parts_reports_empty_added(tmp_path):
+    scan = _scan_fn_factory([[P1], []])
     sort = _sort_fn_factory([
         _sorted_outcome(3, "good", "a.json"),
         _sorted_outcome(2, "bad", "b.json"),
     ])
-    script = [
-        [_call("c1", "scan_table", {})],
-        [_call("c2", "sort_in_order", {"part_ids": [0, 1]})],
-    ]
-    result, lines, _ = _run(script, scan, sort,
-                            _report_fn_factory(tmp_path), tmp_path,
-                            plan_once=True, max_sorts=1)
-    assert result["finished"] is False
-    assert len(sort.seen) == 1
-    assert "sort limit reached (1)" in "\n".join(lines)
+    state = RunState()
+    state.new_scan([P0, P1], [None, None], [None, None])
+    result, stop = run_plan(state, [0, 1], sort, scan,
+                           out=lambda line: None)
+    assert stop is False
+    assert result["outcome"] == "plan_done"
+    assert len(sort.seen) == 2
+    assert result["added during the run"] == []
 
 
 def test_plan_two_tries_per_position(tmp_path):
@@ -382,7 +408,10 @@ def test_plan_run_writes_live_page(tmp_path):
 def test_tool_definition_describes_order():
     assert SORT_IN_ORDER_TOOL["name"] == "sort_in_order"
     assert "no" in SORT_IN_ORDER_TOOL["description"].lower()
-    assert agent_plan.PLAN_PROMPT.count(".") == 1
+    assert "added to the plan automatically" in \
+        SORT_IN_ORDER_TOOL["description"]
+    assert "added to the plan automatically" in agent_plan.PLAN_PROMPT
+    assert agent_plan.PLAN_PROMPT.count(".") == 2
 
 
 def _found(positions):

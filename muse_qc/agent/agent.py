@@ -42,7 +42,6 @@ from muse_qc.checks.model_check import BASE_URL, KEY_NAME, read_api_key
 
 MODEL = "muse-spark-1.3"
 MAX_STEPS = 40
-MAX_SORTS = 10
 MAX_PER_POSITION = 2
 FAIL_STOP = 2
 
@@ -104,9 +103,8 @@ def _loop_instructions(plan_once):
 
 def run_agent(client, scan_fn, sort_fn, report_fn, out=print,
               recordings_dir="recordings", max_steps=MAX_STEPS,
-              max_sorts=MAX_SORTS, live=None, first_text=None,
-              history=None, state=None, plan_once=False,
-              session_factory=None) -> dict:
+              live=None, first_text=None, history=None, state=None,
+              plan_once=False, session_factory=None) -> dict:
     """Run the tool-calling loop; return the run summary dict.
 
     scan_fn returns {"parts", "skipped", "image"}, sort_fn takes a
@@ -184,7 +182,7 @@ def run_agent(client, scan_fn, sort_fn, report_fn, out=print,
                                          dict(update))
                 result, stop = run_tool(
                     name, args, state, scan_fn, sort_fn, report_fn,
-                    max_sorts, MAX_PER_POSITION, out, live,
+                    MAX_PER_POSITION, out, live,
                     plan_once, session_factory=session_factory,
                     on_part=part_cb)
                 if live is not None:

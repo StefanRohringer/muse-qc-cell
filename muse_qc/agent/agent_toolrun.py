@@ -13,7 +13,7 @@ from muse_qc.agent import agent_plan, agent_tools
 
 
 def run_tool(name, args, state, scan_fn, sort_fn, report_fn,
-             max_sorts, max_per_position, out, live=None,
+             max_per_position, out, live=None,
              plan_once=False, session_factory=None,
              on_part=None) -> tuple[dict, bool]:
     """Execute one model tool call; return (result, stop_loop).
@@ -46,7 +46,7 @@ def run_tool(name, args, state, scan_fn, sort_fn, report_fn,
         part_id = args.get("part_id")
         out(f"agent -> inspect_and_sort(part {part_id})")
         return agent_plan.sort_single(
-            state, part_id, sort_fn, scan_fn, out, max_sorts,
+            state, part_id, sort_fn, scan_fn, out,
             max_per_position)
     if name == "sort_in_order":
         if not plan_once:
@@ -63,7 +63,7 @@ def run_tool(name, args, state, scan_fn, sort_fn, report_fn,
                 _live.after_tool("inspect_and_sort",
                                  dict(part_result))
         return agent_plan.run_plan(
-            state, part_ids, sort_fn, scan_fn, out, max_sorts,
+            state, part_ids, sort_fn, scan_fn, out,
             max_per_position, session_factory=session_factory,
             on_part=callback)
     if name == "write_report":

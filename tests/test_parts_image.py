@@ -1,10 +1,15 @@
-"""Tests for parts_image.crop_to_markers. Synthetic images only."""
+"""Tests for parts_image cropping. Synthetic images only."""
 
 from __future__ import annotations
 
 import numpy
 
-from muse_qc.vision.parts_image import CROP_MARGIN_PX, crop_to_markers
+from muse_qc.vision.parts_image import (
+    CROP_MARGIN_PX,
+    crop_to_box,
+    crop_to_markers,
+    marker_crop_box,
+)
 
 
 def _markers(boxes):
@@ -42,3 +47,26 @@ def test_crop_clamped_at_image_edge():
     ])
     cropped = crop_to_markers(image, markers)
     assert cropped.shape == (480, 640, 3)
+
+
+def test_marker_crop_box_matches_crop():
+    image = numpy.zeros((480, 640, 3), numpy.uint8)
+    markers = _markers([
+        [(100, 80), (140, 80), (140, 120), (100, 120)],
+        [(500, 80), (540, 80), (540, 120), (500, 120)],
+        [(100, 360), (140, 360), (140, 400), (100, 400)],
+        [(500, 360), (540, 360), (540, 400), (500, 400)],
+    ])
+    box = marker_crop_box(markers, 640, 480)
+    assert box == [100 - CROP_MARGIN_PX, 80 - CROP_MARGIN_PX,
+                   540 + CROP_MARGIN_PX, 400 + CROP_MARGIN_PX]
+    assert crop_to_markers(image, markers).shape == \
+        crop_to_box(image, box).shape
+
+
+def test_crop_to_box_clipped_to_image_size():
+    image = numpy.zeros((480, 640, 3), numpy.uint8)
+    cropped = crop_to_box(image, [-50, -40, 700, 520])
+    assert cropped.shape == (480, 640, 3)
+    cropped = crop_to_box(image, [100, 80, 540, 400])
+    assert cropped.shape == (400 - 80, 540 - 100, 3)

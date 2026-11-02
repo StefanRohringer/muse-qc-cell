@@ -643,3 +643,85 @@ def test_stale_mapping_stays_unavailable(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     with pytest.raises(RuntimeError, match="table mapping: unavailable"):
         _scan_without_marker_0(monkeypatch, tmp_path, known=None)
+
+
+def _inset_markers():
+    """Markers with corners, centres and sides for the crop box test."""
+    boxes = [
+        [(100, 80), (140, 80), (140, 120), (100, 120)],
+        [(500, 80), (540, 80), (540, 120), (500, 120)],
+        [(100, 360), (140, 360), (140, 400), (100, 400)],
+        [(500, 360), (540, 360), (540, 400), (500, 400)],
+    ]
+    markers = {}
+    for marker_id, corners in enumerate(boxes):
+        xs = [point[0] for point in corners]
+        ys = [point[1] for point in corners]
+        markers[marker_id] = {
+            "corners": corners,
+            "center": (sum(xs) / 4.0, sum(ys) / 4.0),
+            "side_px": 40.0,
+        }
+    markers["ignored_ids"] = [7]
+    return markers
+
+
+def _scan_empty_frame(monkeypatch, tmp_path, markers):
+    """Scan the plain background, return (results, image path)."""
+    monkeypatch.setattr(find_parts, "detect_table_markers",
+                        lambda frame: markers)
+    monkeypatch.setattr(find_parts, "load_table_calibration", lambda: None)
+    monkeypatch.chdir(tmp_path)
+    return find_parts.scan_table(
+        _background(), _background(), client=None,
+        recordings_dir=str(tmp_path))
+
+
+def test_full_scan_saves_crop_box(monkeypatch, tmp_path):
+    import json
+
+    _, path = _scan_empty_frame(monkeypatch, tmp_path, _inset_markers())
+    payload = json.loads(
+        (tmp_path / "table_mapping_last.json").read_text(
+            encoding="utf-8"))
+    assert payload["crop_box"] == [85, 65, 555, 415]
+    assert cv2.imread(str(path)).shape == (350, 470, 3)
+
+
+def test_missing_marker_crops_with_saved_box(monkeypatch, tmp_path):
+    _, full_path = _scan_empty_frame(
+        monkeypatch, tmp_path, _inset_markers())
+    full_shape = cv2.imread(str(full_path)).shape
+    assert full_shape == (350, 470, 3)
+
+    def no_marker_0(frame):
+        raise RuntimeError("missing table markers: [0]")
+
+    monkeypatch.setattr(find_parts, "detect_table_markers", no_marker_0)
+    results, path = find_parts.scan_table(
+        _background(), _background(), client=None,
+        recordings_dir=str(tmp_path))
+    assert results == []
+    assert cv2.imread(str(path)).shape == full_shape
+
+
+def test_missing_marker_without_saved_box_saves_uncropped(
+        monkeypatch, tmp_path):
+    from muse_qc.vision import table_mapping
+    from muse_qc.vision.table_coords import table_homography
+
+    table_mapping.save_last_mapping(
+        table_homography(_fake_markers(), None), _fake_markers(), 1.0,
+        tmp_path / "table_mapping_last.json")
+
+    def no_marker_0(frame):
+        raise RuntimeError("missing table markers: [0]")
+
+    monkeypatch.setattr(find_parts, "detect_table_markers", no_marker_0)
+    monkeypatch.setattr(find_parts, "load_table_calibration", lambda: None)
+    monkeypatch.chdir(tmp_path)
+    results, path = find_parts.scan_table(
+        _background(), _background(), client=None,
+        recordings_dir=str(tmp_path))
+    assert results == []
+    assert cv2.imread(str(path)).shape == (HEIGHT, WIDTH, 3)

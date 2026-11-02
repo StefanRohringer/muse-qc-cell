@@ -221,27 +221,26 @@ def test_coordinates_from_model_are_ignored(tmp_path):
     assert sort.seen == [P0]
 
 
-def test_max_sorts_stops_loop(tmp_path):
-    fresh = [580.0, 280.0]
-    scan = _scan_fn_factory([[P0], [P1], [P2], [fresh]])
+def test_twelve_sorts_finish_without_sort_limit(tmp_path):
+    positions = [[460.0 + 20.0 * index, 300.0] for index in range(12)]
+    scans = [positions[index:] for index in range(13)]
+    scan = _scan_fn_factory(scans)
     sort = _sort_fn_factory([
-        _sorted_outcome(3, "good", "a.json"),
-        _sorted_outcome(3, "good", "b.json"),
+        _sorted_outcome(3, "good", f"rec{index}.json")
+        for index in range(12)
     ])
-    script = [
-        [_call("c1", "scan_table", {})],
-        [_call("c2", "inspect_and_sort", {"part_id": 0})],
-        [_call("c3", "scan_table", {})],
-        [_call("c4", "inspect_and_sort", {"part_id": 0})],
-        [_call("c5", "scan_table", {})],
-        [_call("c6", "inspect_and_sort", {"part_id": 0})],
-    ]
+    script = [[_call("c1", "scan_table", {})]]
+    script += [[_call(f"c{index + 2}", "inspect_and_sort",
+                     {"part_id": 0})]
+               for index in range(12)]
+    script += [[_message("done"), _call("c14", "finish",
+                                       {"summary": "12 sorted"})]]
     result, lines, _ = _run(script, scan, sort,
-                             _report_fn_factory(tmp_path), tmp_path,
-                             max_sorts=2)
-    assert result["finished"] is False
-    assert len(sort.seen) == 2
-    assert "sort limit reached (2)" in "\n".join(lines)
+                             _report_fn_factory(tmp_path), tmp_path)
+    assert result["finished"] is True
+    assert sort.seen == positions
+    assert result["good"] == 12
+    assert "sort limit" not in "\n".join(lines)
 
 
 def test_max_steps_stops_loop(tmp_path):

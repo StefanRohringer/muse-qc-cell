@@ -232,6 +232,28 @@ def test_run_plan_deviation_closes_and_replan_opens_new_session():
     assert made == [first, second]
 
 
+def test_run_plan_added_part_uses_same_session():
+    made: list = []
+    extra = [600.0, 320.0]
+    session = FakeSession([
+        _sorted_outcome(3, "good", "recordings/count_000001.json"),
+        _sorted_outcome(3, "good", "recordings/count_000002.json"),
+        _sorted_outcome(2, "bad", "recordings/count_000003.json"),
+    ])
+    scan = _scan_fn_factory([[P1, extra], [extra], []])
+    lines: list = []
+    result, stop = run_plan(
+        _state_two_parts(), [0, 1], None, scan, out=lines.append,
+        session_factory=lambda: made.append(session) or session)
+    assert result["outcome"] == "plan_done"
+    assert stop is False
+    assert made == [session]
+    assert session.closed == ["done"]
+    assert [sent[0] for sent in session.sent] == [P0, P1, extra]
+    assert result["added during the run"] == [
+        {"id": 1, "table_mm": extra}]
+
+
 def test_run_plan_session_over_mid_order_is_deviation():
     outcome = _sorted_outcome(2, "bad", "recordings/count_000001.json")
     outcome["session_over"] = True
