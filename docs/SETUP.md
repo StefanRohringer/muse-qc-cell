@@ -2070,8 +2070,8 @@ A deviation stops the plan at once: a missed grip, error,
 timeout or interrupt, a planned part that moved or is gone,
 or a failed rescan while planned parts
 remain. A part that appears during the run joins the running
-plan instead (in the order of the rescan list) and is reported
-in the result, so no replan is needed for it. The result reports what was sorted, the deviation in
+plan while planned parts are still waiting instead (in the order of the rescan list) and is reported
+in the result, so no replan is needed for it (see the known limit in README.md: a part that appears while the last planned part is being sorted starts a new plan). The result reports what was sorted, the deviation in
 one short sentence and the current table list with new ids, so
 the model replans with `sort_in_order` or keeps using
 `inspect_and_sort` / `scan_table` as usual. A full plan ends
@@ -2136,7 +2136,7 @@ return/settle/disable sequence stay exactly as today
 `inspect_and_sort` keeps using one child per part either way;
 a replanned order opens a new session. A part that appears
 during the run joins the running plan in the same session
-instead of opening a new one. The new files are
+while planned parts are still waiting instead of opening a new one (see the known limit in README.md). The new files are
 `muse_qc/pick/session_protocol.py` (stdin lines),
 `muse_qc/pick/session_loop.py` (hold between parts, no change
 to `pick_loop.py`), `muse_qc/pick/session_driver.py` (per-part

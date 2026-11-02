@@ -66,6 +66,7 @@ the agent rescanned and sorted the part at its new place.
 | Grip | touch contact on both fingers before the lift, every grip of run 3 on the first try |
 | Lever count evaluation (10 labeled parts, 31 Oct) | lever count and verdict 10/10 correct (eval/results.md) |
 | Spoken order (Muse Voice Transcribe) | real agent run on 2 Nov sorted 2 parts; sort was heard as short and Muse Spark still read it as a sort order |
+| Long run with disturbances (2 Nov) | 34 parts in one spoken order, 33 of 33 lever counts correct, no bad part in the good box; parts added and moved by hand during the run, 1 unverified part sorted into the bad box, last part left after 2 consecutive failures |
 | Offline test suite | 1039 tests, no hardware, camera or network needed |
 
 ## How it works
@@ -108,7 +109,7 @@ flowchart TD
    the count is confirmed.
 5. **Sort:** the part is dropped into the good or bad box, and the
    table is scanned again, so a part that moved is found again. A part
-   that appears during the run joins the running plan automatically.
+   that appears while planned parts are still waiting joins the running plan; a part that appears after the last planned part is picked up by a new plan.
    With `--arm-session` the arm goes from the box straight to the next part
    and returns to rest once at the end; without it (default) it returns
    to rest after every part.
@@ -292,6 +293,7 @@ with its recorded output.
   empty, the spot is forgotten, and a new chat order starts with a
   clean order memory.
 - Spoken orders: the voice model sometimes mishears a word (sort as short); the heard text is shown and must be confirmed before it is used.
+- A part that appears while the last planned part is being sorted starts a new plan and a new arm session, so the arm returns to rest once before it is sorted.
 
 ## Next
 
