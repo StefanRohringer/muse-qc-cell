@@ -7,7 +7,7 @@ deviation the model is called again and replans. The model stays
 the decision maker; it simply is not asked when nothing changed.
 
 sort_single holds the one-part sort with the inspect_and_sort
-limits (MAX_SORTS, MAX_PER_POSITION, never sort a part twice);
+limits (MAX_PER_POSITION, never sort a part twice);
 the agent loop uses it for inspect_and_sort too, so both paths
 sort exactly the same way. run_plan loops it over the ordered
 ids and matches the remaining planned parts to every rescan by
@@ -19,7 +19,6 @@ from __future__ import annotations
 from muse_qc.agent.agent_rescan import rescan_after_sort
 from muse_qc.agent.agent_state import SAME_PART_MM, _dist
 
-DEFAULT_MAX_SORTS = 10
 DEFAULT_MAX_PER_POSITION = 2
 
 SORT_IN_ORDER_TOOL = {
@@ -29,7 +28,9 @@ SORT_IN_ORDER_TOOL = {
         "Sort the parts with these scan ids in this order; "
         "execution stops and reports back at the first "
         "deviation. Ids come from the latest list with no "
-        "duplicates."
+        "duplicates. Parts that appear during the plan are "
+        "added to the plan automatically and reported in "
+        "the result."
     ),
     "parameters": {
         "type": "object",
@@ -51,7 +52,9 @@ PLAN_PROMPT = (
     " the arm first) and call sort_in_order once, then when the"
     " plan result reports no deviation call scan_table once more"
     " before write_report and finish, and replan only when a"
-    " result reports a deviation."
+    " result reports a deviation. Parts that appear during the"
+    " plan are added to the plan automatically and reported in"
+    " the result."
 )
 
 
@@ -72,13 +75,12 @@ def validate_order(state, part_ids) -> str | None:
 
 
 def sort_single(state, part_id, sort_fn, scan_fn, out=print,
-                max_sorts=DEFAULT_MAX_SORTS,
                 max_per_position=DEFAULT_MAX_PER_POSITION):
     """Sort one part with the inspect_and_sort limits.
 
     Returns (result, stop_loop) exactly like the agent loop tool:
     the same checks, the same sort_fn call, the same rescan after
-    a sorted part and the same stop on limit or interrupt.
+    a sorted part and the same stop on interrupt.
     """
     position = state.lookup(part_id)
     if position is None:
@@ -97,12 +99,7 @@ def sort_single(state, part_id, sort_fn, scan_fn, out=print,
                   "reason": "already tried twice, skipping part"}
         out(f"tool: part {part_id} refused: {result['reason']}")
         return result, False
-    if state.sort_count >= max_sorts:
-        out(f"agent: sort limit reached ({max_sorts}), stopping")
-        return {"outcome": "refused",
-                "reason": "sort limit reached"}, True
     state.note_attempt(position)
-    state.sort_count += 1
     lever = state.lever_of(part_id)
     try:
         result = dict(sort_fn(position, lever))
@@ -171,8 +168,8 @@ def _report(sorted_entries, sentence, update, outcome=None) -> dict:
 class _LazySession:
     """ArmSession started on the first actual sort, never for refusals.
 
-    sort_single refuses unknown, already-sorted, twice-tried and
-    limited parts before calling the sort function, so creating the
+    sort_single refuses unknown, already-sorted and twice-tried
+    parts before calling the sort function, so creating the
     child inside sort means a plan with no part left to send never
     starts one. close only closes a started child.
     """
@@ -194,33 +191,35 @@ class _LazySession:
 
 
 def run_plan(state, part_ids, sort_fn, scan_fn, out=print,
-             max_sorts=DEFAULT_MAX_SORTS,
              max_per_position=DEFAULT_MAX_PER_POSITION,
              session_factory=None, on_part=None):
     """Execute the ordered ids; return (result, stop_loop).
 
     Every id is sorted with sort_single and rescanned as usual;
     the remaining planned parts are matched to every rescan by
-    position. The first deviation stops the plan: what was sorted
-    so far, the deviation in one short sentence and the current
-    table list with new ids. A full plan returns plan_done with
-    the sorted list plus the final rescan result. With
-    session_factory (a zero-argument ArmSession maker for
-    --arm-session) one child serves the whole order: sorts run
-    through the session and it is closed ("end") on every exit.
-    on_part (a one-argument callback, or None) reports each
-    finished part at once with its single sort result (verdict,
-    levers, image after sort, rescan image); without it the
-    returned result is unchanged.
+    position. A part the rescan finds that matches no remaining
+    planned part joins the end of the pending plan in the same
+    call (one "plan: new part ..." line each) and is reported in
+    the plan_done result under "added during the run". Any other
+    first deviation stops the plan: what was sorted so far, the
+    deviation in one short sentence and the current table list
+    with new ids. A full plan returns plan_done with the sorted
+    list plus the final rescan result. With session_factory (a
+    zero-argument ArmSession maker for --arm-session) one child
+    serves the whole order: sorts run through the session and
+    it is closed ("end") on every exit. on_part (a one-argument
+    callback, or None) reports each finished part at once with
+    its single sort result (verdict, levers, image after sort,
+    rescan image); without it the returned result is unchanged.
     """
     if session_factory is None:
         return _execute_plan(state, part_ids, sort_fn, scan_fn, out,
-                             max_sorts, max_per_position,
+                             max_per_position,
                              on_part=on_part)
     session = _LazySession(session_factory)
     try:
         return _execute_plan(state, part_ids, session.sort, scan_fn, out,
-                             max_sorts, max_per_position,
+                             max_per_position,
                              on_part=on_part)
     finally:
         try:
@@ -230,7 +229,6 @@ def run_plan(state, part_ids, sort_fn, scan_fn, out=print,
 
 
 def _execute_plan(state, part_ids, sort_fn, scan_fn, out=print,
-                  max_sorts=DEFAULT_MAX_SORTS,
                   max_per_position=DEFAULT_MAX_PER_POSITION,
                   on_part=None):
     """Run one order part by part; see run_plan."""
@@ -242,11 +240,12 @@ def _execute_plan(state, part_ids, sort_fn, scan_fn, out=print,
     expected = {pid: state.lookup(pid) for pid in pending}
     out(f"plan: {pending}")
     sorted_entries: list[dict] = []
+    added: list[dict] = []
     index = 0
     while index < len(pending):
         pid = pending[index]
         result, stop = sort_single(
-            state, pid, sort_fn, scan_fn, out, max_sorts,
+            state, pid, sort_fn, scan_fn, out,
             max_per_position)
         if result.get("outcome") == "interrupted":
             sentence = _deviation_sentence(pid, result)
@@ -281,7 +280,8 @@ def _execute_plan(state, part_ids, sort_fn, scan_fn, out=print,
                            "session_over"), False
         if not remaining:
             done = {"outcome": "plan_done",
-                    "sorted": sorted_entries}
+                    "sorted": sorted_entries,
+                    "added during the run": added}
             for key in ("table after sort", "image after sort",
                         "rescan"):
                 if key in result:
@@ -313,14 +313,20 @@ def _execute_plan(state, part_ids, sort_fn, scan_fn, out=print,
             used.add(found.get("id"))
         for part in new_parts:
             if part.get("id") not in used:
-                sentence = "a new part appeared on the table."
-                out(f"deviation: {sentence}")
-                return _report(sorted_entries, sentence, result,
-                               "new_part"), False
+                fresh = part.get("id")
+                table_mm = [float(part["table_mm"][0]),
+                            float(part["table_mm"][1])]
+                pending.append(fresh)
+                expected[fresh] = table_mm
+                added.append({"id": fresh, "table_mm": table_mm})
+                out(f"plan: new part {fresh} at "
+                    f"({table_mm[0]:.1f}, {table_mm[1]:.1f}) mm "
+                    "added to the plan.")
         for pos, old in enumerate(remaining):
             fresh = matched[old]["id"]
             pending[index + 1 + pos] = fresh
             expected[fresh] = matched[old]["table_mm"]
         index += 1
     return {"outcome": "plan_done",
-            "sorted": sorted_entries}, False
+            "sorted": sorted_entries,
+            "added during the run": added}, False

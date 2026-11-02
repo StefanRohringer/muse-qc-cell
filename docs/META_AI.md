@@ -34,15 +34,19 @@ reacts to failures and rescans, and writes the summary.
     parts, with `--arm-session` in one arm session): "Sort the
     parts with these scan ids in this order; execution stops and
     reports back at the first deviation. Ids come from the latest
-    list with no duplicates."
+    list with no duplicates." A part that appears during the plan
+    joins the running plan automatically and is reported in the
+    result.
   - `write_report` (no arguments): build the HTML report from
     this run's records.
   - `finish` (`summary`: string, required): end the run with a
     short summary.
 - Hard limits (all enforced in `muse_qc/agent/agent.py`):
-  40 model calls (`MAX_STEPS`), 10 sorts (`MAX_SORTS`), 2 tries
-  per part position (`MAX_PER_POSITION`), stop after 2
-  consecutive failures (`FAIL_STOP`).
+  40 model calls (`MAX_STEPS`), 2 tries per part position
+  (`MAX_PER_POSITION`), stop after 2 consecutive failures
+  (`FAIL_STOP`). There is no sort limit by design: the run ends
+  when the table is empty, after 2 consecutive failures, at the
+  model call limit or by Ctrl+C.
 - The model passes part IDs only, never coordinates. Positions
   come from our own latest scan (`state.lookup(part_id)`); an
   unknown, already-sorted, or twice-tried id is refused.

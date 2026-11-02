@@ -22,7 +22,13 @@ from muse_qc.vision.camera_top import open_table_camera
 from muse_qc.vision.detect_markers import detect_table_markers, scale_px_per_mm
 from muse_qc.vision.find_skip import classify_skip
 from muse_qc.vision.part_angle import lever_angle_deg
-from muse_qc.vision.parts_image import annotate, crop_to_markers, save_annotated
+from muse_qc.vision.parts_image import (
+    annotate,
+    crop_to_box,
+    crop_to_markers,
+    marker_crop_box,
+    save_annotated,
+)
 from muse_qc.vision.known_match import match_known
 from muse_qc.checks.model_check import (
     KEY_NAME,
@@ -166,16 +172,28 @@ def _request_error(exc):
     return f"request failed: {exc}"
 
 
-def _save_cropped(frame, results, markers, recordings_dir):
+def _save_cropped(frame, results, markers, recordings_dir,
+                  crop_box=None):
     """Annotate and save, cropped to the table markers.
 
     Only the saved image is cropped; the frame used for detection,
-    calibration and all table_mm numbers stays untouched. A failed
-    crop never raises: the uncropped image is saved instead.
+    calibration and all table_mm numbers stays untouched. When the
+    markers are missing (a rescan reusing the last mapping while
+    the arm covers one) the saved crop box of the last full scan
+    is used instead. A failed crop never raises: the uncropped
+    image is saved instead.
     """
     annotated = annotate(frame, results)
     try:
-        annotated = crop_to_markers(annotated, markers)
+        if markers is not None:
+            try:
+                annotated = crop_to_markers(annotated, markers)
+            except Exception:  # noqa: BLE001 - try the saved box
+                if crop_box is None:
+                    raise
+                annotated = crop_to_box(annotated, crop_box)
+        elif crop_box is not None:
+            annotated = crop_to_box(annotated, crop_box)
     except Exception:  # noqa: BLE001 - uncropped fallback, never raised
         pass
     return save_annotated(annotated, recordings_dir)
@@ -224,6 +242,7 @@ def scan_table(frame, empty, phrase=DEFAULT_PHRASE, client=None,
     MAPPING_MAX_AGE_H hours old is reused with one printed line.
     """
     mapping_path = str(Path(recordings_dir) / "table_mapping_last.json")
+    crop_box = None
     try:
         markers = detect_table_markers(frame)
         calibration = load_table_calibration()
@@ -233,7 +252,7 @@ def scan_table(frame, empty, phrase=DEFAULT_PHRASE, client=None,
         if loaded is None:
             raise RuntimeError(
                 f"table mapping: unavailable ({exc})") from exc
-        homography, scale, stamp = loaded
+        homography, scale, stamp, crop_box = loaded
         try:
             calibration = load_table_calibration()
         except (OSError, ValueError, KeyError):
@@ -243,8 +262,14 @@ def scan_table(frame, empty, phrase=DEFAULT_PHRASE, client=None,
     else:
         scale = scale_px_per_mm(markers)
         try:
+            height, width = frame.shape[0], frame.shape[1]
+            crop_box = marker_crop_box(markers, width, height)
+        except (ValueError, TypeError, AttributeError):
+            crop_box = None
+        try:
             table_mapping.save_last_mapping(homography, markers, scale,
-                                            mapping_path)
+                                            mapping_path,
+                                            crop_box=crop_box)
         except Exception as exc:  # noqa: BLE001 - never break a scan
             reason = str(exc).splitlines()
             short = reason[0][:160] if reason and reason[0] \
@@ -269,7 +294,8 @@ def scan_table(frame, empty, phrase=DEFAULT_PHRASE, client=None,
     if len(unskipped) > MAX_CANDIDATES:
         results.sort(key=lambda item: item["table_mm"][0])
         try:
-            path = _save_cropped(frame, results, markers, recordings_dir)
+            path = _save_cropped(frame, results, markers, recordings_dir,
+                                 crop_box)
         except (OSError, RuntimeError) as exc:
             raise RuntimeError(f"request failed: {exc}") from exc
         raise TooManyChanges(results, path)
@@ -313,7 +339,8 @@ def scan_table(frame, empty, phrase=DEFAULT_PHRASE, client=None,
             item["lever_reason"] = angle["reason"]
     results.sort(key=lambda item: item["table_mm"][0])
     try:
-        path = _save_cropped(frame, results, markers, recordings_dir)
+        path = _save_cropped(frame, results, markers, recordings_dir,
+                             crop_box)
     except (OSError, RuntimeError) as exc:
         raise RuntimeError(f"request failed: {exc}") from exc
     return results, path

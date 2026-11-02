@@ -66,7 +66,7 @@ the agent rescanned and sorted the part at its new place.
 | Grip | touch contact on both fingers before the lift, every grip of run 3 on the first try |
 | Lever count evaluation (10 labeled parts, 31 Oct) | lever count and verdict 10/10 correct (eval/results.md) |
 | Spoken order (Muse Voice Transcribe) | real agent run on 2 Nov sorted 2 parts; sort was heard as short and Muse Spark still read it as a sort order |
-| Offline test suite | 1030 tests, no hardware, camera or network needed |
+| Offline test suite | 1039 tests, no hardware, camera or network needed |
 
 ## How it works
 
@@ -107,8 +107,9 @@ flowchart TD
    doubtful count is retried on fresh frames; a part is only good when
    the count is confirmed.
 5. **Sort:** the part is dropped into the good or bad box, and the
-   table is scanned again, so a part that moved is found again. With
-   `--arm-session` the arm goes from the box straight to the next part
+   table is scanned again, so a part that moved is found again. A part
+   that appears during the run joins the running plan automatically.
+   With `--arm-session` the arm goes from the box straight to the next part
    and returns to rest once at the end; without it (default) it returns
    to rest after every part.
 6. **Report:** every step is saved as JSON, and a live page in the browser
@@ -180,7 +181,7 @@ Every layer below is in the code and covered by offline tests.
    table; every other waypoint stays at least 30 mm above it.
 8. **Agent limits:** the model passes part IDs only, never coordinates or
    motor commands. Positions come from our own scan. Hard limits on model
-   calls, sorts, tries per part and consecutive failures. Ctrl+C stops the
+   calls, tries per part and consecutive failures. Ctrl+C stops the
    run safely.
 9. **Devices:** found by USB ID, never by port order.
 

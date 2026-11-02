@@ -33,11 +33,41 @@ def test_save_and_load_roundtrip(tmp_path):
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert payload["marker_ids"] == [0, 1, 2, 3]
     assert payload["stamp"] == stamp
-    matrix, scale, back = table_mapping.load_last_mapping(
+    assert "crop_box" not in payload
+    matrix, scale, back, box = table_mapping.load_last_mapping(
         path, now=lambda: FIXED)
     assert matrix.shape == (3, 3)
     assert scale == 1.5
     assert back == stamp
+    assert box is None
+
+
+def test_save_and_load_crop_box(tmp_path):
+    path = tmp_path / "table_mapping_last.json"
+    table_mapping.save_last_mapping(
+        numpy.eye(3), _markers(), 1.5, path, now=lambda: FIXED,
+        crop_box=[85, 65, 555, 415])
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["crop_box"] == [85, 65, 555, 415]
+    matrix, scale, back, box = table_mapping.load_last_mapping(
+        path, now=lambda: FIXED)
+    assert matrix.shape == (3, 3)
+    assert back == "20261031_234847"
+    assert box == [85, 65, 555, 415]
+
+
+def test_old_file_without_box_loads_with_none(tmp_path):
+    path = tmp_path / "table_mapping_last.json"
+    path.write_text(json.dumps({
+        "homography": numpy.eye(3).tolist(),
+        "marker_ids": [0, 1, 2, 3],
+        "px_per_mm": 1.5,
+        "stamp": "20261031_234847",
+    }), encoding="utf-8")
+    loaded = table_mapping.load_last_mapping(
+        path, now=lambda: FIXED)
+    assert loaded is not None
+    assert loaded[3] is None
 
 
 def test_load_missing_file_returns_none(tmp_path):

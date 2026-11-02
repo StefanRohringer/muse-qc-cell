@@ -35,7 +35,7 @@ def write_transcript(recordings_dir, entries, summary, out) -> str:
 def run_session(client, scan_fn, sort_fn, report_fn, *, task=None,
                 chat=False, ask=None, out=print,
                 recordings_dir="recordings", max_steps=None,
-                max_sorts=None, live=None, plan_once=False,
+                live=None, plan_once=False,
                 session_factory=None) -> dict:
     """Run the first order, then keep asking while chat is on.
 
@@ -59,12 +59,10 @@ def run_session(client, scan_fn, sort_fn, report_fn, *, task=None,
     console when live is given. Returns the last run summary
     dict.
     """
-    from muse_qc.agent.agent import (MAX_SORTS, MAX_STEPS, START_TEXT,
+    from muse_qc.agent.agent import (MAX_STEPS, START_TEXT,
                                run_agent)
     if max_steps is None:
         max_steps = MAX_STEPS
-    if max_sorts is None:
-        max_sorts = MAX_SORTS
     emit = out
     if live is not None:
         def out(text, _emit=emit, _page=live):
@@ -94,7 +92,7 @@ def run_session(client, scan_fn, sort_fn, report_fn, *, task=None,
         result = run_agent(
             client, scan_fn, sort_fn, report_fn, out=emit,
             recordings_dir=recordings_dir, max_steps=max_steps,
-            max_sorts=max_sorts, live=live,
+            live=live,
             first_text=pending, history=history, state=state,
             plan_once=plan_once, session_factory=session_factory)
         history = result["history"]

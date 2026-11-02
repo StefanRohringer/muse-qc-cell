@@ -1760,10 +1760,12 @@ Tools offered to the model:
 - `finish(summary)` ends the run; the summary is printed and stored.
 
 Hard limits enforced by the code, not by the model: at most 40
-model calls, at most 10 sorts, at most 2 `inspect_and_sort` calls
+model calls, at most 2 `inspect_and_sort` calls
 per part position (positions within 15 mm count as the same
 part), stop after 2 consecutive "error"/"inspect_failed"
-outcomes. Ctrl+C during a pick aborts the pick safely and stops
+outcomes. There is no sort limit by design: the run ends when the
+table is empty, after 2 consecutive failures, at the model call
+limit or by Ctrl+C. Ctrl+C during a pick aborts the pick safely and stops
 the whole run ("agent: interrupted by human, stopping") instead of
 starting the next pick. Every step is printed (`agent: ...` model
 text, `agent -> ...` tool calls, one-line tool results, plus
@@ -2037,7 +2039,9 @@ in earlier station runs (not timed). The arm at the station
 covers roughly the lower left quarter of the table and hides
 marker 0, so a station image reuses the last full 4-marker
 mapping (`recordings/table_mapping_last.json`, at most 12 hours
-old) instead of failing:
+old) instead of failing. The rescan image is cropped with the
+crop box saved in the last full scan, so the live page shows
+the same table section as the first scan:
 
 ```text
 uv run python -m muse_qc.vision.find_parts --image recordings/station_table_20261031_234847.png
@@ -2060,12 +2064,14 @@ matches the plan. The model stays the decision maker; it
 simply is not asked when nothing changed. The tool is called
 `sort_in_order(part_ids)` (ids from the latest list, no
 duplicates); every id is sorted with the same sort and the same
-limits as `inspect_and_sort` (at most 10 sorts, at most 2 tries
+limits as `inspect_and_sort` (at most 2 tries
 per 15 mm position, never a part twice) and rescanned as usual.
 A deviation stops the plan at once: a missed grip, error,
-timeout or interrupt, a planned part that moved or is gone, a
-new part on the table, or a failed rescan while planned parts
-remain. The result reports what was sorted, the deviation in
+timeout or interrupt, a planned part that moved or is gone,
+or a failed rescan while planned parts
+remain. A part that appears during the run joins the running
+plan instead (in the order of the rescan list) and is reported
+in the result, so no replan is needed for it. The result reports what was sorted, the deviation in
 one short sentence and the current table list with new ids, so
 the model replans with `sort_in_order` or keeps using
 `inspect_and_sort` / `scan_table` as usual. A full plan ends
@@ -2128,7 +2134,9 @@ motion plan, speed, joint target, safety check and the
 return/settle/disable sequence stay exactly as today
 (`real_sort` and `pick_test` are untouched in behaviour).
 `inspect_and_sort` keeps using one child per part either way;
-a replanned order opens a new session. The new files are
+a replanned order opens a new session. A part that appears
+during the run joins the running plan in the same session
+instead of opening a new one. The new files are
 `muse_qc/pick/session_protocol.py` (stdin lines),
 `muse_qc/pick/session_loop.py` (hold between parts, no change
 to `pick_loop.py`), `muse_qc/pick/session_driver.py` (per-part

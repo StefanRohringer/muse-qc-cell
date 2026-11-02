@@ -40,13 +40,14 @@ def annotate(frame, results):
     return out
 
 
-def crop_to_markers(image, markers, margin_px=CROP_MARGIN_PX):
-    """Crop image to the bounding box of all table marker corners.
+def marker_crop_box(markers, width, height,
+                      margin_px=CROP_MARGIN_PX):
+    """Return the marker crop box as [x0, y0, x1, y1] ints.
 
-    markers is used as returned by detect_table_markers (integer keys
-    hold a "corners" list of four pixel points). The box is grown by
-    margin_px on every side and clamped to the image. Returns the
-    cropped copy; raises ValueError when no marker corners are found.
+    This is the pixel bounding box that crop_to_markers uses,
+    including the margin on every side and clipped to the
+    (width, height) image size. Raises ValueError when no marker
+    corners are found or the box is empty.
     """
     xs, ys = [], []
     for key, value in markers.items():
@@ -60,14 +61,43 @@ def crop_to_markers(image, markers, margin_px=CROP_MARGIN_PX):
             ys.append(point[1])
     if not xs:
         raise ValueError("no marker corners to crop to")
-    height, width = image.shape[0], image.shape[1]
     x0 = max(0, int(min(xs)) - margin_px)
     y0 = max(0, int(min(ys)) - margin_px)
     x1 = min(width, int(max(xs)) + margin_px)
     y1 = min(height, int(max(ys)) + margin_px)
     if x1 <= x0 or y1 <= y0:
         raise ValueError("marker crop box is empty")
+    return [x0, y0, x1, y1]
+
+
+def crop_to_box(image, box):
+    """Crop image to a saved [x0, y0, x1, y1] box, clipped to fit.
+
+    The box is clipped to the image size first, so a box saved
+    from a slightly different frame still crops. Raises
+    ValueError when the clipped box is empty.
+    """
+    height, width = image.shape[0], image.shape[1]
+    x0 = max(0, min(width, int(box[0])))
+    y0 = max(0, min(height, int(box[1])))
+    x1 = max(0, min(width, int(box[2])))
+    y1 = max(0, min(height, int(box[3])))
+    if x1 <= x0 or y1 <= y0:
+        raise ValueError("saved crop box is empty")
     return image[y0:y1, x0:x1].copy()
+
+
+def crop_to_markers(image, markers, margin_px=CROP_MARGIN_PX):
+    """Crop image to the bounding box of all table marker corners.
+
+    markers is used as returned by detect_table_markers (integer keys
+    hold a "corners" list of four pixel points). The box is grown by
+    margin_px on every side and clamped to the image. Returns the
+    cropped copy; raises ValueError when no marker corners are found.
+    """
+    height, width = image.shape[0], image.shape[1]
+    return crop_to_box(
+        image, marker_crop_box(markers, width, height, margin_px))
 
 
 def save_annotated(frame, recordings_dir="recordings"):

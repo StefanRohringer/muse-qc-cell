@@ -29,7 +29,6 @@ class RunState:
         self.attempts: list[list[float]] = []
         self.sorted_positions: list[list[float]] = []
         self.records: list[str] = []
-        self.sort_count = 0
 
     def new_scan(self, positions, levers=None,
                  confidences=None) -> dict[int, list[float]]:
@@ -115,9 +114,8 @@ class RunState:
 
         A new human order starts with a clean order memory: the
         15 mm already-sorted rule and the two-tries-per-position
-        rule apply within one order only. The latest scan and the
-        sort count are untouched: the chat loop expires the scan
-        separately and the sort limit spans the whole session.
+        rule apply within one order only. The latest scan is
+        untouched: the chat loop expires the scan separately.
         """
         self.attempts = []
         self.sorted_positions = []
