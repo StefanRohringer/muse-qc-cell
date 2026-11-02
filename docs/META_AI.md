@@ -103,6 +103,32 @@ held part plus its levers in the close-up.
   3 s from photo to verdict; a retried bad part took about 13 s
   over 5 attempts, with each count about 2 s.
 
+## Muse Voice Transcribe (muse-voice-transcribe-1.0)
+
+Spoken chat orders. Typing `v` at an order prompt records 5 s
+from the default microphone and uses the transcript as the order
+text after one Enter confirmation.
+
+- Call site: `muse_qc/agent/voice_order.py` (`record_wav()`
+  records 16 kHz mono S16_LE WAV with the system tool `arecord`;
+  `transcribe()` sends the request; `voice_ask()` wraps the chat
+  ask function; `--voice` in `muse_qc/agent/agent.py` enables it
+  with `--chat`).
+- Request shape: one `POST /v1/asr/transcribe` call with
+  multipart/form-data of exactly two parts: `request` (JSON text,
+  content type `application/json`) and `audio` (the WAV file,
+  content type `audio/wav`); headers carry an Authorization header and
+  `Accept: application/json`. The request JSON holds `model`
+  `muse-voice-transcribe-1.0`, `audioEncoding` `WAV`, `mode`
+  `PUSH_TO_TALK` and `keywords` (biasing terms: sort, parts,
+  table, good, bad, box, new part). Timeout 30 s. Audio is
+  mono 16-bit PCM at 16 kHz, at most 10 minutes and 32 MB.
+- Response: the `transcript` field of the returned JSON
+  (`sessionId`, `transcript`, `audioDurationMs`, `turns`).
+- Voice only replaces typing the order text: every order still
+  goes through the same agent loop, limits and safety checks.
+- Measured results: the live endpoint returned a transcript for a 5 s, 16 kHz recording (see docs/DEVLOG.md 2026-11-02); a spoken agent order follows.
+
 ## Muse Code
 
 Muse Code (powered by Muse Spark) wrote all the code in this

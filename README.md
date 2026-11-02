@@ -64,7 +64,7 @@ the agent rescanned and sorted the part at its new place.
 | Lever direction from the table camera (7 parts vs. photo) | 7/7 within about 10 deg with the slot axis (before: 3/7) |
 | Control loop | 100 Hz, cycle period 10.09 ms mean, 10.20 ms max |
 | Grip | touch contact on both fingers before the lift, every grip of run 3 on the first try |
-| Offline test suite | 982 tests, no hardware, camera or network needed |
+| Offline test suite | 1013 tests, no hardware, camera or network needed |
 
 ## How it works
 
@@ -116,6 +116,7 @@ flowchart TD
 | Muse Spark (`muse-spark-1.3`, Meta Model API) | `muse_qc/agent/agent.py` | The agent: reads the order, picks the next tool, reacts to failures and rescans, writes the summary |
 | SAM 3.1 (`sam-3.1`, Meta Model API) | `muse_qc/vision/find_parts.py`, `muse_qc/vision/vision_sam.py` | Confirms parts on the table image |
 | SAM 3.1 | `muse_qc/inspection/count_clips.py`, `muse_qc/inspection/count_retry.py` | Finds the held part and counts its levers in the close-up |
+| Muse Voice Transcribe (`muse-voice-transcribe-1.0`, Meta Model API) | `muse_qc/agent/voice_order.py` | Turns a spoken order into the chat order text |
 | Muse Code (powered by Muse Spark) | the whole repository | Wrote all the code, logged task by task in `docs/MUSE_CODE_LOG.md` |
 
 Details and request formats: `docs/META_AI.md`.

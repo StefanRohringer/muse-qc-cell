@@ -26,7 +26,7 @@ import functools
 import json
 import sys
 
-from muse_qc.agent import agent_chat, agent_session, agent_tools
+from muse_qc.agent import agent_chat, agent_session, agent_tools, voice_order
 from muse_qc.agent.agent_io import (
     field,
     iter_calls,
@@ -285,6 +285,13 @@ def main(argv=None, client_factory=None, toolset=None, input_fn=None,
                         help="first order in plain words")
     parser.add_argument("--chat", action="store_true",
                         help="keep asking for the next order")
+    parser.add_argument("--voice", action="store_true",
+                        help="speak the order at the chat prompt"
+                        " (needs --chat; typed \"v\" records 5 s"
+                        " through muse-voice-transcribe-1.0)")
+    parser.add_argument("--mic", default=None,
+                        help="arecord device for spoken orders"
+                        " (for example plughw:0,0; needs --voice)")
     parser.add_argument("--plan-once", action="store_true",
                         help="let the model choose the sorting order"
                         " once, then run it without asking again"
@@ -296,6 +303,10 @@ def main(argv=None, client_factory=None, toolset=None, input_fn=None,
     args = parser.parse_args(argv)
     if args.arm_session and not (args.plan_once and args.execute):
         parser.error("--arm-session needs --plan-once and --execute")
+    if args.voice and not args.chat:
+        parser.error("--voice needs --chat")
+    if args.mic is not None and not args.voice:
+        parser.error("--mic needs --voice")
     ask = input_fn if input_fn is not None else input
     session_factory = None
     if args.execute:
@@ -339,10 +350,19 @@ def main(argv=None, client_factory=None, toolset=None, input_fn=None,
         return 1
     page = LivePage()
     out(f"live page: {page.path} (open it in the browser)")
+    chat_ask = input_fn if input_fn is not None else input
+    if args.voice:
+        chat_ask = voice_order.voice_ask(
+            chat_ask,
+            record_fn=lambda _mic=args.mic: voice_order.record_default(
+                device=_mic),
+            transcribe_fn=lambda path, _key=key: voice_order.transcribe(
+                path, _key),
+            out=out)
     if args.task or args.chat:
         result = agent_chat.run_session(
             client, *toolset, task=args.task, chat=args.chat,
-            ask=input_fn if input_fn is not None else input,
+            ask=chat_ask,
             out=out, live=page, plan_once=args.plan_once,
             session_factory=session_factory)
     else:

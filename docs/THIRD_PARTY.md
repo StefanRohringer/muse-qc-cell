@@ -132,6 +132,19 @@ Official Seeed sources are used for the reBot Arm B601-DM. No third-party code i
   serial protocol.
 - The Touch-Sensing Fin-Ray Gripper is an additional open hardware component for the reBot arm, built by the author before the hackathon. It is listed in the official Seeed reBot-DevArm repository under "DIY Soft Finger" (https://github.com/Seeed-Projects/reBot-DevArm). Gripper hardware and firmware are not part of this hackathon submission. New in this hackathon: muse_qc/gripper.py, which reads the sensors over USB, and everything else in this repository.
 
+## arecord / alsa-utils (called system tool, not bundled)
+
+- Purpose: records the 5 s spoken order from the default
+  microphone as 16 kHz mono S16_LE WAV in
+  `muse_qc/agent/voice_order.py` (`record_wav()` calls `arecord`
+  through `subprocess`, no new Python dependency).
+- Source: the `alsa-utils` system package (provides `arecord`).
+- License: GPL (system tool).
+- Status: only called when the human speaks an order (`v` at the
+  chat prompt or `python -m muse_qc.agent.voice_order`); no code
+  is copied into this repository. Tests use fakes, never the
+  microphone.
+
 ## Meta workshop repo
 
 - Link: https://github.com/meta-models/legal-agent-workshop (ideas only, no code copied).
