@@ -48,26 +48,26 @@ Official Seeed sources are used for the reBot Arm B601-DM. No third-party code i
 ## opencv-python-headless (installed)
 
 - Purpose: table and arm camera capture and image saving
-  (`muse_qc/camera_top.py`, `muse_qc/camera_arm.py`), ArUco marker
-  generation and detection (`muse_qc/table_markers.py`,
-  `muse_qc/detect_markers.py`, cv2.aruco), checkerboard calibration
-  (`muse_qc/capture_calibration.py`, `muse_qc/calibrate_camera.py`),
-  annotation and grid drawing (`muse_qc/table_coords.py`,
+  (`muse_qc/vision/camera_top.py`, `muse_qc/vision/camera_arm.py`), ArUco marker
+  generation and detection (`muse_qc/vision/table_markers.py`,
+  `muse_qc/vision/detect_markers.py`, cv2.aruco), checkerboard calibration
+  (`muse_qc/vision/capture_calibration.py`, `muse_qc/vision/calibrate_camera.py`),
+  annotation and grid drawing (`muse_qc/vision/table_coords.py`,
   `muse_qc/inspection/draw.py`), and the SAM crop-and-enlarge step
-  (`muse_qc/count_clips.py`, `muse_qc/vision_sam.py`).
+  (`muse_qc/inspection/count_clips.py`, `muse_qc/vision/vision_sam.py`).
 - Source (PyPI): `opencv-python-headless>=5.0.0.93` (resolved to 5.0.0.93).
 - License: Apache 2.0 (PyPI package metadata).
 - Installed with: `uv add opencv-python-headless`.
 
 ## openai (installed)
 
-- Purpose: client for the Meta Model API in `muse_qc/model_check.py`
+- Purpose: client for the Meta Model API in `muse_qc/checks/model_check.py`
   (hand-run connection check: one `GET /v1/models` call against the
-  base URL `https://api.meta.ai/v1`), `muse_qc/vision_sam.py` (SAM 3.1
+  base URL `https://api.meta.ai/v1`), `muse_qc/vision/vision_sam.py` (SAM 3.1
   box detection through one `POST /v1/responses` call),
-  `muse_qc/count_clips.py` (through the `vision_sam.py` request code),
-  `muse_qc/agent.py` (Muse Spark agent through `POST /v1/responses`
-  with tool calling) and `muse_qc/find_parts.py` (SAM confirm through
+  `muse_qc/inspection/count_clips.py` (through the `vision_sam.py` request code),
+  `muse_qc/agent/agent.py` (Muse Spark agent through `POST /v1/responses`
+  with tool calling) and `muse_qc/vision/find_parts.py` (SAM confirm through
   the `vision_sam.py` request code).
 - Source (PyPI): `openai>=3.40.0` (resolved to 3.40.0).
 - License: Apache-2.0 (PyPI package metadata).
@@ -75,17 +75,17 @@ Official Seeed sources are used for the reBot Arm B601-DM. No third-party code i
 
 ## numpy (installed)
 
-- Purpose: array math used directly by `muse_qc/calibrate_camera.py`,
-  `muse_qc/capture_calibration.py`, `muse_qc/count_clips.py`,
-  `muse_qc/detect_markers.py`, `muse_qc/table_coords.py`,
-  `muse_qc/table_markers.py`, `muse_qc/vision_sam.py`, and
+- Purpose: array math used directly by `muse_qc/vision/calibrate_camera.py`,
+  `muse_qc/vision/capture_calibration.py`, `muse_qc/inspection/count_clips.py`,
+  `muse_qc/vision/detect_markers.py`, `muse_qc/vision/table_coords.py`,
+  `muse_qc/vision/table_markers.py`, `muse_qc/vision/vision_sam.py`, and
   `muse_qc/inspection/draw.py`.
 - Source (PyPI): `numpy>=2.4.6` (declared in `pyproject.toml`).
 - License: BSD-3-Clause.
 
 ## pinocchio (installed through the Seeed SDK)
 
-- Purpose: kinematics used by `muse_qc/fk_check.py` through the Seeed SDK
+- Purpose: kinematics used by `muse_qc/bringup/fk_check.py` through the Seeed SDK
   (`reBotArm_control_py.kinematics`).
 - License: BSD-2-Clause.
 
@@ -98,7 +98,7 @@ Official Seeed sources are used for the reBot Arm B601-DM. No third-party code i
 
 ## pyserial (installed)
 
-- Purpose: USB serial link to the gripper Pico in `muse_qc/gripper.py`
+- Purpose: USB serial link to the gripper Pico in `muse_qc/gripper/gripper.py`
   (115200 baud text protocol; the port is matched by USB ID, and tests
   use a fake serial object, never a real port).
 - Source (PyPI): `pyserial>=3.5` (resolved to 3.5).
@@ -132,10 +132,10 @@ Official Seeed sources are used for the reBot Arm B601-DM. No third-party code i
 - Purpose: touch-sensing gripper fingers reporting grip and contact (4 sensors).
 - Link: https://github.com/StefanRohringer/Touch-Sensing-Fin-Ray-Gripper
 - License: software GPL-3.0-or-later, hardware CERN-OHL-S-2.0.
-- Status: no code is copied into this MIT repository. `muse_qc/gripper.py`
+- Status: no code is copied into this MIT repository. `muse_qc/gripper/gripper.py`
   is newly written and only uses the gripper's documented USB
   serial protocol.
-- The Touch-Sensing Fin-Ray Gripper is an additional open hardware component for the reBot arm, built by the author before the hackathon. It is listed in the official Seeed reBot-DevArm repository under "DIY Soft Finger" (https://github.com/Seeed-Projects/reBot-DevArm). Gripper hardware and firmware are not part of this hackathon submission. New in this hackathon: muse_qc/gripper.py, which reads the sensors over USB, and everything else in this repository.
+- The Touch-Sensing Fin-Ray Gripper is an additional open hardware component for the reBot arm, built by the author before the hackathon. It is listed in the official Seeed reBot-DevArm repository under "DIY Soft Finger" (https://github.com/Seeed-Projects/reBot-DevArm). Gripper hardware and firmware are not part of this hackathon submission. New in this hackathon: muse_qc/gripper/gripper.py, which reads the sensors over USB, and everything else in this repository.
 
 ## arecord / alsa-utils (called system tool, not bundled)
 

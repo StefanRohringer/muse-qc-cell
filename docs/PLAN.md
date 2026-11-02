@@ -15,7 +15,7 @@ The reBot Arm B601-DM sorts them into a good box and a bad box.
 
 - Table camera (overview), depth camera on the arm (close-up).
 - reBot arm with the pre-existing touch-sensing gripper (declared in docs/THIRD_PARTY.md).
-- Models: muse-spark-1.3 (agent), sam-3.1 (detection), Muse Code (builds the code).
+- Models: muse-spark-1.3 (agent), sam-3.1 (detection), muse-voice-transcribe-1.0 (spoken orders), Muse Code (builds the code).
 
 ## Schedule
 
@@ -26,7 +26,7 @@ The reBot Arm B601-DM sorts them into a good box and a bad box.
 | Thu 29.10 | First safe move, SAM 3.1 finds parts and checks levers (done 28.10, early); first pick and sorting into the boxes, first agent runs (done) |
 | Fri 30.10 | Inspect in the gripper, gripper turned to the lever direction, Muse Spark agent continuous run, live page, order by chat, inspection station, rescan after every part (done) |
 | Sat 31.10 | Test series with all 10 parts (done: 10 of 10 sorted correctly, see docs/DEVLOG.md) |
-| Sun 1.11 | Results and fixes from the test series |
-| Mon 2.11 | Demo video |
+| Sun 1.11 | Plan once (sort_in_order), table scan at the inspection station, arm session without returning home (done) |
+| Mon 2.11 | 10-part arm session run 10/10 (done), spoken orders with Muse Voice Transcribe (done), demo video |
 | Tue 3.11 | README and post |
 | Wed 4.11 | Submission |

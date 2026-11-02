@@ -7,7 +7,7 @@
 An AI quality inspection cell for injection-molded parts. A low-cost
 reBot Arm B601-DM picks each part from the table, a Muse Spark agent
 decides every step, SAM 3.1 counts the levers in a close-up, and the
-part goes into the good box or the bad box. Real hardware, no simulation.
+part goes into the good box or the bad box. The order can be typed or spoken. Real hardware, no simulation.
 
 <!-- VIDEO: add the demo video link here on Mon 2 Nov, e.g. "Demo video (3 min): <link>". -->
 
@@ -64,6 +64,8 @@ the agent rescanned and sorted the part at its new place.
 | Lever direction from the table camera (7 parts vs. photo) | 7/7 within about 10 deg with the slot axis (before: 3/7) |
 | Control loop | 100 Hz, cycle period 10.09 ms mean, 10.20 ms max |
 | Grip | touch contact on both fingers before the lift, every grip of run 3 on the first try |
+| Lever count evaluation (10 labeled parts, 31 Oct) | lever count and verdict 10/10 correct (eval/results.md) |
+| Spoken order (Muse Voice Transcribe) | real agent run on 2 Nov sorted 2 parts; sort was heard as short and Muse Spark still read it as a sort order |
 | Offline test suite | 1030 tests, no hardware, camera or network needed |
 
 ## How it works
@@ -166,6 +168,7 @@ Every layer below is in the code and covered by offline tests.
    checked again against fresh joint readings.
 3. **Human gate:** `--execute` needs a typed "yes". Only a human operator
    starts hardware runs, with a hand on the power supply switch.
+   A spoken order only replaces the order text; the yes stays typed and the heard text must be confirmed.
 4. **Limited speed:** motor speed caps, ramps with limited acceleration,
    20 mm/s on the final approach.
 5. **Tracking guard:** if a joint falls too far behind its command, the
@@ -194,8 +197,8 @@ safety concept, risk assessment and certification.
 ## What is new in this hackathon
 
 I started this repository from scratch during the hackathon. Everything
-in `muse_qc/`, `tests/`, `docs/` and `calibration/` was written during the
-event.
+in `muse_qc/`, `tests/`, `docs/`, `calibration/`, `site/`, `eval/` and
+`scripts/` was written during the event, plus the `Dockerfile` and the `Makefile`.
 
 Prior work, declared and not part of this submission: my Touch-Sensing
 Fin-Ray Gripper (hardware and firmware). I built it before the hackathon,
@@ -232,6 +235,8 @@ uv run python -m muse_qc.checks.model_check              # human only: Model API
 uv run python -m muse_qc.vision.find_parts --save-empty  # human only: empty-table reference
 uv run python -m muse_qc.agent                    # real Muse Spark, fake table, no arm
 uv run python -m muse_qc.agent --execute --chat --task "sort all parts"  # human only: real run
+uv run python -m muse_qc.agent --execute --chat --plan-once --scan-at-station --arm-session   # human only: 10-part session run
+uv run python -m muse_qc.agent --execute --chat --plan-once --scan-at-station --arm-session --voice   # human only: spoken order
 ```
 
 Without local setup, the same offline suite runs in Docker:
@@ -261,7 +266,13 @@ with its recorded output.
 | `docs/SETUP.md` | every hand-run step with recorded output |
 | `docs/DEVLOG.md` | dated log of every real hardware and API test |
 | `docs/RESULTS.md` | verified numbers |
+| `docs/META_AI.md` | how each Meta model is called |
+| `docs/THIRD_PARTY.md` | third-party components and licenses |
 | `docs/MUSE_CODE_LOG.md` | what Muse Code built in each task |
+| `eval/` | hand-labeled lever count evaluation |
+| `site/` | demo page |
+| `scripts/` | SDK setup |
+| `calibration/` | table camera calibration |
 
 ## Known limits
 
@@ -279,6 +290,7 @@ with its recorded output.
   while the scans still see a part there; once a scan sees that spot
   empty, the spot is forgotten, and a new chat order starts with a
   clean order memory.
+- Spoken orders: the voice model sometimes mishears a word (sort as short); the heard text is shown and must be confirmed before it is used.
 
 ## Next
 
@@ -299,7 +311,8 @@ Built during the Meta Global AI Developer Hackathon (26 Oct to 4 Nov 2026).
 - **Software (dependencies, not copied in):** Seeed `reBotArm_control_py`
   (MIT), `motorbridge` (MIT), Pinocchio (BSD-2-Clause), OpenCV
   (Apache-2.0), the `openai` Python client for the Meta Model API
-  (Apache-2.0), NumPy (BSD-3-Clause), pySerial (BSD), pytest (MIT), uv.
+  (Apache-2.0), NumPy (BSD-3-Clause), pySerial (BSD), pytest (MIT), uv,
+  arecord (alsa-utils, called as a system tool for spoken orders, not bundled).
   Details and versions: `docs/THIRD_PARTY.md`.
 - **Ideas:** the public Meta workshop repository
   `meta-models/legal-agent-workshop` (checks inside tools, agent loop with

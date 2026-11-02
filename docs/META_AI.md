@@ -29,6 +29,12 @@ reacts to failures and rescans, and writes the summary.
   - `inspect_and_sort` (`part_id`: integer, required): pick the
     part with this scan id, count its levers, drop it into the
     good or bad box.
+  - `sort_in_order` (`part_ids`: part IDs in the order the model
+    picks, only with `--plan-once`; one call sorts all listed
+    parts, with `--arm-session` in one arm session): "Sort the
+    parts with these scan ids in this order; execution stops and
+    reports back at the first deviation. Ids come from the latest
+    list with no duplicates."
   - `write_report` (no arguments): build the HTML report from
     this run's records.
   - `finish` (`summary`: string, required): end the run with a
@@ -52,7 +58,9 @@ reacts to failures and rescans, and writes the summary.
   of 10 run 3 (31 Oct) took about 6.5 min, about 43 s per part;
   its cost was not measured (the credits page did not load). A
   simulate run (29 Oct) used between 830 and 3160 input tokens
-  and 46 to 495 output tokens per call.
+  and 46 to 495 output tokens per call. The 10-part arm session
+  run (2 Nov) took 5 Muse Spark calls, 10840 input and 739 output
+  tokens in total; cost not measured.
 
 ## SAM 3.1 (sam-3.1)
 
