@@ -228,3 +228,18 @@ def test_main_reports_missing_key_without_network(monkeypatch, capsys, tmp_path)
     monkeypatch.setattr(model_check, "read_api_key", lambda: None)
     assert model_check.main([]) != 0
     assert "MODEL_API_KEY" in capsys.readouterr().out
+
+
+def test_client_factory_passes_timeout_and_retries(monkeypatch):
+    import openai
+
+    seen = {}
+
+    class _FakeOpenAI:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+    monkeypatch.setattr(openai, "OpenAI", _FakeOpenAI)
+    model_check._default_client_factory(SECRET)
+    assert seen["timeout"] == model_check.MODEL_CHECK_TIMEOUT_S == 20.0
+    assert seen["max_retries"] == model_check.OPENAI_MAX_RETRIES == 1

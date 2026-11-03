@@ -7,7 +7,7 @@ from consecutive record timestamps when available.
 
 Example:
     uv run python -m muse_qc.inspection.evaluate \\
-        --labels eval/labels.csv --recordings recordings \\
+        --labels eval/labels.csv --recordings eval/records \\
         --out eval/results.md
 
 Offline only: no camera, no arm, no API key, no network. Missing

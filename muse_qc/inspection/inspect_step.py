@@ -99,7 +99,9 @@ def run_inspection(
     0-lever count on a found part is retried through
     count_retry.count_with_retry (fresh frame first, then other
     crop sizes and prompts), printing "inspect retry: N attempts"
-    before the levers line; 1, 2 or 3 levers are never retried.
+    before the levers line; a first count of 1, 2 or 3 levers is
+    never retried, and a retry count of 1 or 2 levers ends the
+    retries at once as bad.
     Any failure (no camera node, no frame, missing key, API
     error, no part found) prints "inspect failed: ..." and
     returns None. The key is never printed. All hardware and API

@@ -323,6 +323,22 @@ def test_plan_two_tries_per_position(tmp_path):
     assert len(sort.seen) == before
 
 
+def test_plan_deviation_keeps_failed_reason():
+    state = RunState()
+    state.new_scan([P0], [None], [None])
+    reason = "REFUSED tool-z (0.001 vs [0.004, 0.45]), holding position"
+    sort = _sort_fn_factory([{"outcome": "refused", "levers": None,
+                              "verdict": None, "box": None, "record": None,
+                              "reason": reason, "lines": [reason]}])
+    scan = _scan_fn_factory([[P0]])
+    result, stop = run_plan(state, [0], sort, scan,
+                           out=lambda line: None)
+    assert stop is False
+    assert result["outcome"] == "plan_deviation"
+    assert result["deviation_outcome"] == "refused"
+    assert result["deviation_reason"] == reason
+
+
 def test_plan_order_validation(tmp_path):
     state = RunState()
     state.new_scan([P0, P1], [None, None], [None, None])

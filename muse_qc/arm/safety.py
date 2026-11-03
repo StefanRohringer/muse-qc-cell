@@ -174,7 +174,9 @@ def check_target(
     z_min_m overrides the tool height floor; None keeps TOOL_Z_MIN_M
     for every existing caller. Only the pick module passes
     GRASP_Z_MIN_M, and only for its lower/grip/lift/put-down
-    waypoints.
+    waypoints. A non-finite z_min_m is refused, and any finite
+    value below GRASP_Z_MIN_M is clamped up to it, so the floor
+    can never sink below the grasp floor.
     """
     if is_stopped():
         return _refuse("stop-latched", _STOP_REASON, None)
@@ -198,7 +200,13 @@ def check_target(
         return _refuse("workspace-x", target.x, [WORK_X_MIN_M, WORK_X_MAX_M])
     if not WORK_Y_MIN_M <= target.y <= WORK_Y_MAX_M:
         return _refuse("workspace-y", target.y, [WORK_Y_MIN_M, WORK_Y_MAX_M])
-    floor_m = TOOL_Z_MIN_M if z_min_m is None else float(z_min_m)
+    if z_min_m is None:
+        floor_m = TOOL_Z_MIN_M
+    else:
+        floor_m = float(z_min_m)
+        if not math.isfinite(floor_m):
+            return _refuse("bad-z-floor", z_min_m, "finite number")
+        floor_m = max(floor_m, GRASP_Z_MIN_M)
     if not floor_m <= target.z <= TOOL_Z_MAX_M:
         return _refuse("tool-z", target.z, [floor_m, TOOL_Z_MAX_M])
     for index, (name, value) in enumerate(zip(JOINT_NAMES, target.joints_deg)):

@@ -187,6 +187,30 @@ def test_all_zero_stops_early(tmp_path):
     )
 
 
+def test_retry_rule_sequences(tmp_path):
+    cases = [
+        # (scripted lever counts, expected levers, expected verdict,
+        #  expected count calls)
+        ([3], 3, "good", 1),
+        ([2], 2, "bad", 1),
+        ([0, 3, 3], 3, "good", 3),
+        ([5, 3, 3], 3, "good", 3),
+        ([0, 3, 2], 2, "bad", 3),
+        ([0, 3, 1, 3], 1, "bad", 3),
+        ([0, 2], 2, "bad", 2),
+    ]
+    for script, levers, verdict, calls in cases:
+        counter = _ScriptedCounter(script)
+        result = count_retry.count_with_retry(
+            object(), _frame(), "brown bar", recordings_dir=tmp_path,
+            grab_frame=lambda: _frame(), count_fn=counter)
+        assert result["levers"] == levers, script
+        assert result["verdict"] == verdict, script
+        assert len(counter.calls) == calls, script
+        assert [entry[3] for entry in result["attempts"]] == \
+            script[:calls], script
+
+
 def test_4_first_is_retried():
     counter = _ScriptedCounter([4, 3, 3])
     result = count_retry.count_with_retry(

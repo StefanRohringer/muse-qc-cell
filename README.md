@@ -4,8 +4,6 @@
 
 Built by [Stefan Rohringer](https://github.com/StefanRohringer) (solo) for the Meta Global AI Developer Hackathon 2026 (26 Oct to 4 Nov 2026), Indie Developer track, theme "Push the Frontier" (robotics and manufacturing).
 
-**Demo page (replay of a real run):** https://stefanrohringer.github.io/muse-qc-cell/
-
 **Quick links:** [Hackathon demo video](https://youtu.be/iBYUEyhkhq8) · [Demo page (replay of a real run)](https://stefanrohringer.github.io/muse-qc-cell/) · [Results](#results-real-hardware-measured) · [Where Meta AI is used](#where-meta-ai-is-used) · [Safety](#safety) · [Known limits](#known-limits) · [Run it](#run-it)
 
 **Docs:** [Results in detail](docs/RESULTS.md) · [Dev log, every human hardware run](docs/DEVLOG.md) · [Meta models](docs/META_AI.md) · [Muse Code log](docs/MUSE_CODE_LOG.md) · [Setup](docs/SETUP.md) · [Third-party code](docs/THIRD_PARTY.md) · [Lever count evaluation](eval/results.md) · [AGENTS.md (rules Muse Code follows)](AGENTS.md) · [Plan](docs/PLAN.md)
@@ -15,7 +13,7 @@ reBot Arm B601-DM picks each part from the table, a Muse Spark agent
 decides every step, SAM 3.1 counts the levers in a close-up, and the
 part goes into the good box or the bad box. The order can be typed or spoken. Real hardware, no simulation.
 
-**Hackathon demo video:** https://youtu.be/iBYUEyhkhq8
+**10/10 sorted correctly in the 2 Nov 10-part session (4 min 39 s), 33/33 lever counts correct in the long run with disturbances (about 19 min, 16:32 to 16:51), no bad part ever in the good box.**
 
 <p align="center">
 <img src="docs/media/table_scan_10_parts.png" width="64%" alt="Table camera view: ten parts found on the table, each with its id and table millimeters, next to the two sorting boxes and the arm">
@@ -43,9 +41,9 @@ cell running over a weekend.
 
 ## Results (real hardware, measured)
 
-**Hackathon demo video:** https://youtu.be/iBYUEyhkhq8
-
 All numbers come from human-run tests, recorded in `docs/DEVLOG.md`.
+The 34-part long run on 2 Nov used the code at tag demo-runs; later
+changes are tested offline only, not yet on the arm.
 
 ### Sorting runs
 
@@ -76,7 +74,7 @@ the agent rescanned and sorted the part at its new place.
 | Lever count evaluation (10 labeled parts, 31 Oct) | lever count and verdict 10/10 correct (eval/results.md) |
 | Spoken order (Muse Voice Transcribe) | real agent run on 2 Nov sorted 2 parts; sort was heard as short and Muse Spark still read it as a sort order |
 | Long run with disturbances (2 Nov) | 34 parts in one spoken order, 33 of 33 lever counts correct, no bad part in the good box; parts added and moved by hand during the run, 1 unverified part sorted into the bad box, last part left after 2 consecutive failures |
-| Offline test suite | 1039 tests, no hardware, camera or network needed |
+| Offline test suite | 1051 tests, no hardware, camera or network needed |
 
 ## How it works
 
@@ -135,6 +133,8 @@ flowchart TD
 | Muse Voice Transcribe (`muse-voice-transcribe-1.0`, Meta Model API) | `muse_qc/agent/voice_order.py` | Turns a spoken order into the chat order text |
 | Muse Code (powered by Muse Spark) | the whole repository | Wrote all the code, logged task by task in `docs/MUSE_CODE_LOG.md` |
 
+What Muse Spark decides, what stays in code: the model only decides which tool comes next - `scan_table`, `inspect_and_sort(part_id)` or, with `--plan-once`, one `sort_in_order` call for the whole order it chose once. On a missed grip or a plan deviation (a part moved or is gone, a new part appeared, a failed sort) the agent rescans and retries the part under its new id or replans; every sorted part is rescanned at once, and the run ends with `write_report` and `finish` with a short summary. The good/bad rule (exactly 3 levers) and the box choice are fixed in Python in `muse_qc/inspection/`, so the model can never send a part to the good box: it only passes part ids from the latest scan, never coordinates or motor commands.
+
 Details and request formats: `docs/META_AI.md`.
 
 ### A real agent run (excerpt)
@@ -180,19 +180,26 @@ Every layer below is in the code and covered by offline tests.
 3. **Human gate:** `--execute` needs a typed "yes". Only a human operator
    starts hardware runs, with a hand on the power supply switch.
    A spoken order only replaces the order text; the yes stays typed and the heard text must be confirmed.
-4. **Limited speed:** motor speed caps, ramps with limited acceleration,
-   20 mm/s on the final approach.
+4. **Limited speed:** the default arm mode mit-ff sets no motor speed
+   cap; speed comes from the planned ramps only, with limited
+   acceleration and 20 mm/s on the final approach.
 5. **Tracking guard:** if a joint falls too far behind its command, the
    move is aborted and the arm ramps back.
 6. **Touch sensing:** unexpected contact while lowering stops the descent
    and the arm moves back up. A part counts as held only with contact on
    both fingers.
-7. **Grasp floor:** only the grasp waypoints may go down to 4 mm above the
-   table; every other waypoint stays at least 30 mm above it.
+7. **Grasp floor:** only the grasp waypoints and the arm-session
+   return-home ramp (`muse_qc/pick/session_loop.py`) may go down to 4 mm
+   above the table; every other waypoint stays at least 30 mm above it.
 8. **Agent limits:** the model passes part IDs only, never coordinates or
-   motor commands. Positions come from our own scan. Hard limits on model
-   calls, tries per part and consecutive failures. Ctrl+C stops the
-   run safely.
+   motor commands. Positions come from our own scan. Hard limits: 40
+   model calls, 2 tries per part position (a third attempt within 15 mm
+   is refused), stop after 2 consecutive failures. Only `error`,
+   `inspect_failed` and `refused` outcomes (of the part or of a plan
+   deviation) count toward the 2; any other outcome (sorted,
+   missed_grip, plan_done) resets the count, while a successful scan
+   (no outcome) keeps it.
+   Ctrl+C aborts the run.
 9. **Devices:** found by USB ID, never by port order.
 
 ### Not certified
@@ -245,8 +252,8 @@ uv run python -m muse_qc.checks.model_check              # human only: Model API
 uv run python -m muse_qc.vision.find_parts --save-empty  # human only: empty-table reference
 uv run python -m muse_qc.agent                    # real Muse Spark, fake table, no arm
 uv run python -m muse_qc.agent --execute --chat --task "sort all parts"  # human only: real run
-uv run python -m muse_qc.agent --execute --chat --plan-once --scan-at-station --arm-session   # human only: 10-part session run
-uv run python -m muse_qc.agent --execute --chat --plan-once --scan-at-station --arm-session --voice   # human only: spoken order
+uv run python -m muse_qc.agent --execute --chat --plan-once --scan-at-station --arm-session   # human only, recommended real run: 10-part session run
+uv run python -m muse_qc.agent --execute --chat --plan-once --scan-at-station --arm-session --voice   # human only, recommended real run: spoken order
 ```
 
 Without local setup, the same offline suite runs in Docker:
@@ -302,6 +309,10 @@ with its recorded output.
   clean order memory.
 - Spoken orders: the voice model sometimes mishears a word (sort as short); the heard text is shown and must be confirmed before it is used.
 - A part that appears while the last planned part is being sorted starts a new plan and a new arm session, so the arm returns to rest once before it is sorted.
+- Without `--arm-session` (one process per part), an abort during the pick follows the planned return path, which starts at the box, so the per-cycle step check refuses it and the motors are disabled above the table. The arm session lifts straight up and ramps home instead. The arm session is the recommended mode.
+- If a return home is refused, the motors are disabled at once. The arm has no brakes, so the operator must support it.
+- The lever count uses box height only, so a half open lever can count as closed. Only fully open and missing levers were tested.
+- The labels in `eval/` were written while looking at crops that already show the model's boxes, so they are not blind. 10 parts, 4 bad, one defect type.
 
 ## Next
 

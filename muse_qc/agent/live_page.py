@@ -195,7 +195,7 @@ class LivePage:
                     shown.add(str(record))
             if result.get("deviation_outcome") in (
                     "missed_grip", "error", "inspect_failed",
-                    "interrupted"):
+                    "interrupted", "refused"):
                 self.sorted(
                     {"outcome": result["deviation_outcome"]})
             if isinstance(result.get("table after sort"), list):

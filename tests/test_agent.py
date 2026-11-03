@@ -586,6 +586,76 @@ def test_parse_pick_lines_inspect_skipped_is_not_sorted():
     assert "inspect skipped" in (alone["reason"] or "")
 
 
+def test_parse_pick_lines_refused():
+    plan = agent_tools.parse_pick_lines(["plan refused: transit blocked"])
+    assert plan["outcome"] == "refused"
+    assert plan["reason"] == "plan refused: transit blocked"
+    waypoint = agent_tools.parse_pick_lines(
+        ["waypoint 3/12 REFUSED tool-z (0.001 vs [0.03, 0.45])"])
+    assert waypoint["outcome"] == "refused"
+    assert waypoint["reason"] == \
+        "waypoint 3/12 REFUSED tool-z (0.001 vs [0.03, 0.45])"
+    per_cycle = agent_tools.parse_pick_lines(
+        ["REFUSED tool-z (0.001 vs [0.004, 0.45]), holding position"])
+    assert per_cycle["outcome"] == "refused"
+    assert per_cycle["reason"] == \
+        "REFUSED tool-z (0.001 vs [0.004, 0.45]), holding position"
+    two = agent_tools.parse_pick_lines(
+        ["REFUSED first reason, holding position",
+         "REFUSED second reason, holding position"])
+    assert two["outcome"] == "refused"
+    assert two["reason"] == "REFUSED first reason, holding position"
+    assert agent_tools.parse_pick_lines(["weird"])["outcome"] == "error"
+
+
+def test_parse_pick_lines_refused_priority():
+    refused = ["REFUSED tool-z (0.001 vs [0.004, 0.45]), holding position"]
+    halted = agent_tools.parse_pick_lines(
+        refused + ["interrupted by human, holding position"])
+    assert halted["outcome"] == "interrupted"
+    boxed = agent_tools.parse_pick_lines(
+        refused + ["dropped into the bad box"])
+    assert boxed["outcome"] == "sorted"
+    missed = agent_tools.parse_pick_lines(refused + ["missed grip"])
+    assert missed["outcome"] == "missed_grip"
+    failed = agent_tools.parse_pick_lines(
+        refused + ["inspect failed: no frame"])
+    assert failed["outcome"] == "refused"
+
+
+def test_two_refused_sorts_stop_loop(tmp_path):
+    scan = _scan_fn_factory([[P0]])
+    refused = {"outcome": "refused", "levers": None, "verdict": None,
+               "box": None, "record": None,
+               "reason": "REFUSED tool-z, holding position",
+               "lines": ["REFUSED tool-z, holding position"]}
+    sort = _sort_fn_factory([refused, refused])
+    script = [
+        [_call("c1", "scan_table", {})],
+        [_call("c2", "inspect_and_sort", {"part_id": 0})],
+        [_call("c3", "inspect_and_sort", {"part_id": 0})],
+    ]
+    result, lines, _ = _run(script, scan, sort,
+                             _report_fn_factory(tmp_path), tmp_path)
+    assert result["finished"] is False
+    assert "agent: 2 consecutive failures, stopping" in "\n".join(lines)
+
+
+def test_agent_client_factory_passes_timeout_and_retries(monkeypatch):
+    import openai
+
+    seen = {}
+
+    class _FakeOpenAI:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+    monkeypatch.setattr(openai, "OpenAI", _FakeOpenAI)
+    agent_mod._default_client_factory(SECRET)
+    assert seen["timeout"] == agent_mod.AGENT_TIMEOUT_S == 60.0
+    assert seen["max_retries"] == agent_mod.OPENAI_MAX_RETRIES == 1
+
+
 def test_find_parts_main_output_unchanged(monkeypatch, tmp_path, capsys):
     import cv2
     import numpy

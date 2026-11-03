@@ -3,9 +3,11 @@
 SAM is not fully deterministic: the same image gave 0 levers
 three times, then 1. So a first count of 0 levers or more than
 3 (a likely SAM miss) is retried, and the part is good only
-when two retry counts each give exactly 3. A first count of 1
-or 2 levers (a plausible bad part) is final and returned at
-once as bad, without retry. The first retry is a fresh camera
+when two retry counts each give exactly 3. A count of 1 or 2
+levers (a plausible bad part) at any attempt ends the retries
+at once as bad: a first count of 1 or 2 is final and returned
+at once without retry, and a retry count of 1 or 2 stops the
+retries with that bad result. The first retry is a fresh camera
 frame (the arm
 may still have moved slightly during the photo), counted with
 the normal prompt, scale and margin and saved as a new
@@ -15,7 +17,8 @@ stands (verdict bad), so an unconfirmed single 3 never turns
 into good. A first count that misses the part (stage no-part)
 is retried on up to PART_MISS_RETRIES fresh frames when
 grab_frame is given; the first successful fresh count
-continues with the rules above, and when every fresh frame
+continues with the rules above (including the at-once stop on
+1 or 2), and when every fresh frame
 also misses the original failure stands. Other failures
 (request errors) are returned unchanged, never retried.
 
@@ -88,8 +91,10 @@ def count_with_retry(
     with the normal prompt, scale and margin, then
     RETRY_VARIANTS on the frame where the part was found. The part is good only
     when two retry counts each give exactly 3 levers; returns
-    that second 3 on arrival, and stops early when the
-    remaining retries can no longer reach two 3s. Otherwise the
+    that second 3 on arrival. A retry count of 1 or 2 levers
+    ends the retries at once with that bad result, and the loop
+    stops early when the remaining retries can no longer reach
+    two 3s. Otherwise the
     first result stands (verdict bad), so an unconfirmed single
     3 never turns into good. Failed retry counts simply count
     as not 3. The returned dict gains "attempts", one (prompt,
@@ -167,6 +172,9 @@ def count_with_retry(
         )
         attempts.append(
             (retry_prompt, scale, margin, result.get("levers")))
+        if result.get("ok") and result.get("levers") in (1, 2):
+            result["attempts"] = attempts
+            return result
         if result.get("ok") and result.get("levers") == 3:
             threes += 1
             if threes == 2:
