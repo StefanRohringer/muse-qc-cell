@@ -27,7 +27,6 @@ from muse_qc.bringup.first_move_plan import real_tip_m
 from muse_qc.gripper.gripper_grip import validate_targets, width_to_deg
 from muse_qc.pick.pick_args import ACCEL_DEG_S2, SPEED_DEG_S
 from muse_qc.pick.pick_plan import (
-    build_inspect_plan,
     build_pick_plan,
     check_pick_plan,
     plan_summary,

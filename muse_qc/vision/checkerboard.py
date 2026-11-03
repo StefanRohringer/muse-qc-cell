@@ -63,7 +63,7 @@ def build_svg() -> str:
         f' {_number(PAGE_HEIGHT_MM)}">',
         f'<rect x="0" y="0" width="{_number(PAGE_WIDTH_MM)}"'
         f' height="{_number(PAGE_HEIGHT_MM)}" fill="white"/>',
-        f'<g id="checkerboard">',
+        '<g id="checkerboard">',
     ]
     for row in range(rows):
         for column in range(columns):

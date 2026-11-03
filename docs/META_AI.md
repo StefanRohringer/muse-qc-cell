@@ -11,9 +11,10 @@ reacts to failures and rescans, and writes the summary.
 
 - Call site: `muse_qc/agent/agent.py`. `_model_call()` sends one
   Responses API call; `run_agent()` executes the returned tool
-  calls in a loop; `main()` is the entry point (`--simulate` by
-  default: the real Muse Spark API with the fake table tools;
-  `--execute` uses the real tools after one typed "yes").
+  calls in a loop; `main()` is the entry point (simulation is
+  the default, no flag: the real Muse Spark API with the fake
+  table tools; `--execute` uses the real tools after one typed
+  "yes").
 - Request: Responses API with tool calling, model `muse-spark-1.3`,
   `instructions` = system prompt, `input` = conversation history,
   `tools` = `TOOL_DEFINITIONS`, `reasoning={"effort": "low"}`,
@@ -143,7 +144,7 @@ text after one Enter confirmation.
 
 Muse Code (powered by Muse Spark) wrote all the code in this
 repository, task by task, logged in `docs/MUSE_CODE_LOG.md`
-(154 entries). Every hardware run in `docs/DEVLOG.md` was
+(175 entries). Every hardware run in `docs/DEVLOG.md` was
 started by the human by hand. Muse Code is a coding tool, not a
 separate model; it ran with "--model muse-spark-1.3" and signs
 in with its own login ("muse login"), not with `MODEL_API_KEY`
@@ -158,8 +159,8 @@ checks below need a key or a camera and are human-run only.
 
 - `uv run python -m muse_qc.checks.model_check --list`: on
   31 Oct 2026 the key listed 9 models; this project uses
-  muse-spark-1.3 and sam-3.1 (the other ids are listed, not
-  used).
+  muse-spark-1.3, sam-3.1 and muse-voice-transcribe-1.0 (the
+  other ids are listed, not used).
 - `uv run python -m muse_qc.vision.vision_sam "<phrase>" --image <path>` on a saved image
 - `make simulate` (agent on the fake table, needs
   `MODEL_API_KEY` in `.env`, see the README Quickstart)

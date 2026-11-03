@@ -135,7 +135,7 @@ Official Seeed sources are used for the reBot Arm B601-DM. No third-party code i
 - Status: no code is copied into this MIT repository. `muse_qc/gripper/gripper.py`
   is newly written and only uses the gripper's documented USB
   serial protocol.
-- The Touch-Sensing Fin-Ray Gripper is an additional open hardware component for the reBot arm, built by the author before the hackathon. It is listed in the official Seeed reBot-DevArm repository under "DIY Soft Finger" (https://github.com/Seeed-Projects/reBot-DevArm). Gripper hardware and firmware are not part of this hackathon submission. New in this hackathon: muse_qc/gripper/gripper.py, which reads the sensors over USB, and everything else in this repository.
+- The Touch-Sensing Fin-Ray Gripper is an additional open hardware component for the reBot arm, built by the author before the hackathon. It is listed with a link to its repository in the "DIY Soft Finger" section of the official Seeed reBot-DevArm README (https://github.com/Seeed-Projects/reBot-DevArm#diy-soft-finger). Gripper hardware and firmware are not part of this hackathon submission. New in this hackathon: muse_qc/gripper/gripper.py, which reads the sensors over USB, and everything else in this repository.
 
 ## arecord / alsa-utils (called system tool, not bundled)
 

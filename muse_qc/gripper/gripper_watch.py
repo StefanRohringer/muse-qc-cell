@@ -11,7 +11,7 @@ import argparse
 import sys
 import time
 
-import serial
+import serial  # noqa: F401  re-exported, used as gripper_watch.serial by tests
 
 from muse_qc.arm import safety
 from muse_qc.gripper.gripper import (

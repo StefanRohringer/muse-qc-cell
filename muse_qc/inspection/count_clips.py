@@ -8,7 +8,7 @@ are kept, overlapping duplicates are merged (IoU above
 IOU_THRESHOLD keeps the higher confidence), and boxes shorter than
 MIN_BAR_PART_FRAC of the enlarged part height or shorter than
 MIN_BAR_TALLEST_FRAC of the tallest confident bar are dropped as
-remnants.
+remnants. The module name says clips; the clips are counted by their levers.
 Prints the part box, one dropped line per remnant, one line per
 kept lever box plus "levers: N" and
 "verdict: good|bad", and saves two annotated copies:

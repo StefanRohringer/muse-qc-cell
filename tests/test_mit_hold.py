@@ -9,7 +9,6 @@ import pytest
 
 from muse_qc.bringup import hold_test, hover_move
 from muse_qc.arm import mit_hold
-from muse_qc.bringup.first_move_plan import LOOP_RATE_HZ
 from muse_qc.arm.mit_hold import (
     MIT_KD,
     MIT_KP,

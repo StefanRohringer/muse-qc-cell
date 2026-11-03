@@ -31,10 +31,9 @@ from muse_qc.vision.parts_image import (
 )
 from muse_qc.vision.known_match import match_known
 from muse_qc.checks.model_check import (
-    KEY_NAME,
     _is_auth_error,
     _is_connection_error,
-    read_api_key,
+    read_api_key,  # noqa: F401  re-exported, used as find_parts.read_api_key by tests
 )
 from muse_qc.vision.table_coords import (
     load_table_calibration,
@@ -42,7 +41,7 @@ from muse_qc.vision.table_coords import (
     table_homography,
 )
 from muse_qc.vision.vision_sam import (
-    _default_client_factory,
+    _default_client_factory,  # noqa: F401  re-exported, used as find_parts._default_client_factory by tests
     fetch_output_text,
     image_to_data_url,
     parse_output_text,

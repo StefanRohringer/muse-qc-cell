@@ -442,8 +442,9 @@ human runs it, never CI and never an agent. `muse_qc/checks/model_check.py`
 reads `MODEL_API_KEY` from `.env` or the environment (the key is never
 printed, not even partly), calls `GET /v1/models` once through the
 `openai` SDK with the base URL `https://api.meta.ai/v1`, prints the
-number of models and one `OK`/`MISSING` line each for `muse-spark-1.3`
-and `sam-3.1`. The exit code is 0 only when both are listed. From the
+number of models and one `OK`/`MISSING` line each for `muse-spark-1.3`,
+`sam-3.1` and `muse-voice-transcribe-1.0`. The exit code is 0 only when
+all are listed. From the
 project root:
 
 ```bash
@@ -479,6 +480,8 @@ models: 9
 muse-spark-1.3: OK
 sam-3.1: OK
 ```
+
+Since 2026-11-03 model_check also expects muse-voice-transcribe-1.0, so a new run prints a third line.
 
 Exit code 0. With an invalid key the same run prints `key rejected`
 with exit 1 (the API answers HTTP 401 invalid_api_key).
@@ -1889,7 +1892,7 @@ uv run python -m muse_qc.pick.pick_test --table-mm 643.9 297.2 --lever-deg 31.9 
 
 ## 36. Live page (run on hardware 2026-10-30)
 
-`muse_qc/agent/live_page.py` (`LivePage`, 256 lines) shows the agent
+`muse_qc/agent/live_page.py` (`LivePage`, 284 lines) shows the agent
 run while it happens, for the human watching and for the demo
 video. It keeps the run state (status, counters, latest table
 image, part list, sorted part cards newest first, last 15
@@ -1903,7 +1906,7 @@ text is html-escaped and image paths are relative to the page
 folder (as in `report.py`); the GOOD/BAD badges reuse
 `report._badge`. A failed write prints one short
 `live page: <error>` line and the run goes on.
-`muse_qc/agent/agent.py` (399 lines) takes `live=None`: when given,
+`muse_qc/agent/agent.py` (374 lines) takes `live=None`: when given,
 every printed line also goes to `live.line`, the status reads
 "scanning the table" / "sorting part N" / "writing the report"
 before each tool call, `live.scan` follows a successful scan,

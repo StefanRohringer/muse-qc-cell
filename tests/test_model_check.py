@@ -50,20 +50,32 @@ def _factory(ids=None, error=None, seen=None):
 
 
 def test_both_models_found_exit_zero(capsys):
-    code = run_check(SECRET, _factory(ids=["muse-spark-1.3", "sam-3.1"]))
+    code = run_check(
+        SECRET,
+        _factory(ids=["muse-spark-1.3", "sam-3.1", "muse-voice-transcribe-1.0"]),
+    )
     assert code == 0
     out = capsys.readouterr().out
-    assert "models: 2" in out
+    assert "models: 3" in out
     assert "muse-spark-1.3: OK" in out
     assert "sam-3.1: OK" in out
+    assert "muse-voice-transcribe-1.0: OK" in out
 
 
 def test_extra_models_are_counted(capsys):
     code = run_check(
-        SECRET, _factory(ids=["muse-spark-1.3", "sam-3.1", "other-1.0"])
+        SECRET,
+        _factory(
+            ids=[
+                "muse-spark-1.3",
+                "sam-3.1",
+                "muse-voice-transcribe-1.0",
+                "other-1.0",
+            ]
+        ),
     )
     assert code == 0
-    assert "models: 3" in capsys.readouterr().out
+    assert "models: 4" in capsys.readouterr().out
 
 
 def test_one_model_missing_exit_nonzero(capsys):
@@ -72,6 +84,7 @@ def test_one_model_missing_exit_nonzero(capsys):
     out = capsys.readouterr().out
     assert "muse-spark-1.3: OK" in out
     assert "sam-3.1: MISSING" in out
+    assert "muse-voice-transcribe-1.0: MISSING" in out
 
 
 def test_no_models_listed_exit_nonzero(capsys):
@@ -146,11 +159,17 @@ def test_extract_model_ids_supports_dicts():
 
 
 def test_evaluate_reports_each_model():
-    assert evaluate(["muse-spark-1.3", "sam-3.1"]) == {
+    assert evaluate(
+        ["muse-spark-1.3", "sam-3.1", "muse-voice-transcribe-1.0"]
+    ) == {
         "muse-spark-1.3": True,
         "sam-3.1": True,
+        "muse-voice-transcribe-1.0": True,
     }
     assert evaluate(["sam-3.1"])["muse-spark-1.3"] is False
+    assert evaluate(["muse-spark-1.3", "sam-3.1"])[
+        "muse-voice-transcribe-1.0"
+    ] is False
 
 
 def test_never_imports_arm_safety_sdk_or_camera_code():
@@ -191,11 +210,14 @@ def test_main_list_flag_reaches_run_check(monkeypatch, capsys):
     monkeypatch.setattr(
         model_check,
         "_default_client_factory",
-        _factory(ids=["sam-3.1", "muse-spark-1.3"]),
+        _factory(
+            ids=["sam-3.1", "muse-spark-1.3", "muse-voice-transcribe-1.0"]
+        ),
     )
     assert model_check.main(["--list"]) == 0
     assert capsys.readouterr().out.splitlines() == [
         "muse-spark-1.3",
+        "muse-voice-transcribe-1.0",
         "sam-3.1",
     ]
 
