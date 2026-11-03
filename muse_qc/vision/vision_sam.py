@@ -41,6 +41,8 @@ from muse_qc.checks.model_check import (
 
 MODEL = "sam-3.1"
 JPEG_QUALITY = 90
+VISION_TIMEOUT_S = 20.0
+OPENAI_MAX_RETRIES = 1
 
 _BOX_RE = re.compile(r"(\d+)\s*<\|\s*box\s*;([^|]*)\|>")
 
@@ -180,7 +182,9 @@ def _default_client_factory(api_key: str) -> object:
     """Build the real client (only called by main, never by tests)."""
     from openai import OpenAI
 
-    return OpenAI(api_key=api_key, base_url=BASE_URL)
+    return OpenAI(api_key=api_key, base_url=BASE_URL,
+                  timeout=VISION_TIMEOUT_S,
+                  max_retries=OPENAI_MAX_RETRIES)
 
 
 def run_detection(

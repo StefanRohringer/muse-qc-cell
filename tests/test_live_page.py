@@ -223,3 +223,14 @@ def test_run_output_unchanged_without_live(tmp_path):
     with_live = run(LivePage(tmp_path / "live.html"))
     assert with_live == plain
     assert "agent finished: ok" in with_live
+
+
+def test_sort_in_order_refused_deviation_counts_failed(tmp_path):
+    page = LivePage(tmp_path / "live.html")
+    page.after_tool("sort_in_order", {
+        "outcome": "plan_deviation",
+        "sorted": [],
+        "deviation": "part 0 refused.",
+        "deviation_outcome": "refused",
+    })
+    assert page._failed == 1

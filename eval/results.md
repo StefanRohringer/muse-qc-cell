@@ -1,7 +1,7 @@
 # Lever count evaluation
 
-Command: `python -m muse_qc.inspection.evaluate --labels eval/labels.csv --recordings recordings`
-Date: 2026-10-31
+Command: `python -m muse_qc.inspection.evaluate --labels eval/labels.csv --recordings eval/records`
+Date: 2026-11-03
 
 | Metric | Value |
 | --- | --- |

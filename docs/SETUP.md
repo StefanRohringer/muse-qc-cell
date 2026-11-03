@@ -2320,14 +2320,14 @@ part, `record` is the `YYYYmmdd_HHMMSS` stamp), then runs from the
 project root:
 
 ```bash
-uv run python -m muse_qc.inspection.evaluate --labels eval/labels.csv --recordings recordings --out eval/results.md
+uv run python -m muse_qc.inspection.evaluate --labels eval/labels.csv --recordings eval/records --out eval/results.md
 ```
 
 The command prints the labeled part count, the lever count accuracy,
 the verdict accuracy, the good/bad confusion matrix, precision and
 recall for "bad", and seconds per part from consecutive record
 timestamps. It writes `eval/results.md` only when `--out` is given.
-Records named in the labels but missing from the recordings folder are
+Records named in the labels but missing from `eval/records` are
 listed as missing, never invented. See `eval/README.md`.
 
 ## Export a run for the demo page

@@ -140,3 +140,29 @@ def test_main_rejects_bad_header(tmp_path, capsys):
     assert main(["--labels", str(labels_path),
                  "--recordings", str(tmp_path)]) == 1
     assert "bad header" in capsys.readouterr().out
+
+
+def _normalize_date(text):
+    """Replace the report Date line (today on rebuild) for comparison."""
+    lines = []
+    for line in text.splitlines():
+        if line.startswith("Date: "):
+            lines.append("Date: <today>")
+        else:
+            lines.append(line)
+    return "\n".join(lines) + "\n"
+
+
+def test_committed_results_rebuild_from_eval_records(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    committed = (root / "eval" / "results.md").read_text(encoding="utf-8")
+    monkeypatch.chdir(root)
+    out = tmp_path / "results.md"
+    code = main(["--labels", "eval/labels.csv",
+                 "--recordings", "eval/records",
+                 "--out", str(out)])
+    assert code == 0
+    rebuilt = out.read_text(encoding="utf-8")
+    assert _normalize_date(rebuilt) == _normalize_date(committed)

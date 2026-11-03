@@ -329,3 +329,21 @@ def test_limit_recovery_refuses_when_too_far_out():
 def test_limit_recovery_allows_move_within_range():
     result = safety.check_target(_recovery_target(-0.5), _recovery_state(-1.0))
     assert result["ok"] is True
+
+
+def test_z_min_below_grasp_floor_still_refuses_low_target():
+    state = make_state(z=0.004)
+    refused = assert_refusal(
+        safety.check_target(make_target(z=0.003), state, z_min_m=-1.0))
+    assert refused["reason"] == "tool-z"
+    assert refused["limit"] == [safety.GRASP_Z_MIN_M, safety.TOOL_Z_MAX_M]
+    at_floor = safety.check_target(
+        make_target(z=0.004), make_state(z=0.004), z_min_m=-1.0)
+    assert at_floor["ok"] is True
+
+
+def test_z_min_nan_is_refused():
+    refused = assert_refusal(
+        safety.check_target(make_target(), make_state(),
+                            z_min_m=float("nan")))
+    assert refused["reason"] == "bad-z-floor"

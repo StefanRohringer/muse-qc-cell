@@ -1,0 +1,45 @@
+{
+  "timestamp": "2026-10-31T00:44:35+00:00",
+  "source_image": "recordings/armcam_20261031_014433.png",
+  "full_image": "recordings/count_20261031_014435.png",
+  "crop_image": "recordings/count_20261031_014435_crop.png",
+  "part_box": {
+    "x1": 323,
+    "y1": 268,
+    "x2": 361,
+    "y2": 317
+  },
+  "part_confidence": 0.5704697966575623,
+  "part_offset_px": 2.5,
+  "lever_prompt": "brown bar",
+  "kept_boxes": [
+    {
+      "id": 2,
+      "x1": 253,
+      "y1": 191,
+      "x2": 303,
+      "y2": 451,
+      "confidence": 0.8987342119216919
+    },
+    {
+      "id": 1,
+      "x1": 175,
+      "y1": 188,
+      "x2": 221,
+      "y2": 450,
+      "confidence": 0.8787879347801208
+    },
+    {
+      "id": 0,
+      "x1": 336,
+      "y1": 194,
+      "x2": 396,
+      "y2": 452,
+      "confidence": 0.8709677457809448
+    }
+  ],
+  "dropped_boxes": [],
+  "levers": 3,
+  "verdict": "good",
+  "expected_levers": 3
+}

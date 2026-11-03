@@ -153,12 +153,19 @@ def _deviation_sentence(part_id, result) -> str:
 
 
 def _report(sorted_entries, sentence, update, outcome=None) -> dict:
-    """Build the plan_deviation result with the current table list."""
+    """Build the plan_deviation result with the current table list.
+
+    The failed result's reason is kept as "deviation_reason" when
+    the update carries one, so the replan sees why the part
+    failed instead of only the one-sentence deviation.
+    """
     result: dict = {"outcome": "plan_deviation",
                     "sorted": sorted_entries,
                     "deviation": sentence}
     if outcome is not None:
         result["deviation_outcome"] = outcome
+    if update.get("reason") is not None:
+        result["deviation_reason"] = update.get("reason")
     for key in ("table after sort", "image after sort", "rescan"):
         if key in update:
             result[key] = update[key]
@@ -261,7 +268,8 @@ def _execute_plan(state, part_ids, sort_fn, scan_fn, out=print,
             out(f"deviation: {sentence}")
             return _report(
                 sorted_entries, sentence,
-                {"rescan": "scan expired, call scan_table"},
+                {"rescan": "scan expired, call scan_table",
+                 "reason": result.get("reason")},
                 result.get("outcome")), False
         sorted_entries.append({
             "part_id": pid,

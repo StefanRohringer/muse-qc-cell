@@ -22,6 +22,8 @@ from pathlib import Path
 BASE_URL = "https://api.meta.ai/v1"
 EXPECTED_MODELS = ("muse-spark-1.3", "sam-3.1", "muse-voice-transcribe-1.0")
 KEY_NAME = "MODEL_API_KEY"
+MODEL_CHECK_TIMEOUT_S = 20.0
+OPENAI_MAX_RETRIES = 1
 
 
 def _parse_dotenv_file(path: Path) -> dict[str, str]:
@@ -160,7 +162,9 @@ def _default_client_factory(api_key: str) -> object:
     """Build the real client (only called by main, never by tests)."""
     from openai import OpenAI
 
-    return OpenAI(api_key=api_key, base_url=BASE_URL)
+    return OpenAI(api_key=api_key, base_url=BASE_URL,
+                  timeout=MODEL_CHECK_TIMEOUT_S,
+                  max_retries=OPENAI_MAX_RETRIES)
 
 
 def main(argv: list[str] | None = None) -> int:

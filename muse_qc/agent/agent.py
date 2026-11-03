@@ -44,6 +44,8 @@ MODEL = "muse-spark-1.3"
 MAX_STEPS = 40
 MAX_PER_POSITION = 2
 FAIL_STOP = 2
+AGENT_TIMEOUT_S = 60.0
+OPENAI_MAX_RETRIES = 1
 
 SYSTEM_PROMPT = (
     "You control a robot quality inspection cell. Parts are "
@@ -66,7 +68,9 @@ CONTINUE_TEXT = "Continue with the next tool call."
 def _default_client_factory(api_key: str) -> object:
     """Build the real client (only called by main, never by tests)."""
     from openai import OpenAI
-    return OpenAI(api_key=api_key, base_url=BASE_URL)
+    return OpenAI(api_key=api_key, base_url=BASE_URL,
+                  timeout=AGENT_TIMEOUT_S,
+                  max_retries=OPENAI_MAX_RETRIES)
 
 
 def _model_call(client, history, tools, instructions):
@@ -218,8 +222,9 @@ def run_agent(client, scan_fn, sort_fn, report_fn, out=print,
             for tool_result in entry["results"]:
                 outcome = tool_result.get("outcome")
                 deviation = tool_result.get("deviation_outcome")
-                if outcome in ("error", "inspect_failed") or \
-                        deviation in ("error", "inspect_failed"):
+                if outcome in ("error", "inspect_failed", "refused") or \
+                        deviation in ("error", "inspect_failed",
+                                      "refused"):
                     fails += 1
                 elif outcome is not None:
                     # A successful scan (no outcome) between two

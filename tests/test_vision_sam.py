@@ -385,3 +385,18 @@ def test_never_imports_arm_safety_or_sdk_code():
             continue
         for name in names:
             assert all(word not in name.lower() for word in forbidden), name
+
+
+def test_client_factory_passes_timeout_and_retries(monkeypatch):
+    import openai
+
+    seen = {}
+
+    class _FakeOpenAI:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+    monkeypatch.setattr(openai, "OpenAI", _FakeOpenAI)
+    vision_sam._default_client_factory(SECRET)
+    assert seen["timeout"] == vision_sam.VISION_TIMEOUT_S == 20.0
+    assert seen["max_retries"] == vision_sam.OPENAI_MAX_RETRIES == 1

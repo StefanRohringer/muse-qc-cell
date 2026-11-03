@@ -5,7 +5,7 @@ verdict of each inspected part against labels written by hand.
 
 ## What is evaluated
 
-Each `recordings/count_<stamp>.json` record holds the counted levers
+Each `eval/records/count_<stamp>.json` record holds the counted levers
 and the verdict (`good` means exactly the expected count, 3 levers for
 the connectors in this demo). The evaluation joins those records with
 `eval/labels.csv` by stamp and reports:
@@ -18,7 +18,11 @@ the connectors in this demo). The evaluation joins those records with
 - seconds per part (mean, p95) from the time between consecutive
   records in a run, when timestamps are available
 
-Records named in the labels but missing from the recordings folder are
+`eval/records/` holds the 10 JSON records named in `eval/labels.csv`,
+copied unchanged from `recordings/` (JSON only, no images), so the
+evaluation runs without the git-ignored `recordings/` folder.
+
+Records named in the labels but missing from `eval/records` are
 listed as missing; nothing is invented for them.
 
 ## How the labels were made
@@ -41,8 +45,8 @@ The `record` column is the `YYYYmmdd_HHMMSS` stamp of the
 `count_<stamp>.json` file name. Then, from the project root:
 
 ```bash
-uv run python -m muse_qc.inspection.evaluate --labels eval/labels.csv --recordings recordings
-uv run python -m muse_qc.inspection.evaluate --labels eval/labels.csv --recordings recordings --out eval/results.md
+uv run python -m muse_qc.inspection.evaluate --labels eval/labels.csv --recordings eval/records
+uv run python -m muse_qc.inspection.evaluate --labels eval/labels.csv --recordings eval/records --out eval/results.md
 ```
 
 The `--out` file (`eval/results.md`) holds a small markdown table plus
