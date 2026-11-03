@@ -246,4 +246,5 @@ Addendum: docs-only parts of the voice confirmation change: README flowchart voi
 
 ## 2026-11-03
 
+- With Muse Code (powered by Muse Spark), documentation only: replaced the demo video link with the re-uploaded video (README.md, site/index.html, pyproject.toml). No code changed, no hardware program run by the agent, no .env, no network, nothing committed.
 - With Muse Code (powered by Muse Spark), applied the human-reviewed cleanup list from an outside review: documentation and metadata wording only (simulation default, confirmed Responses API format, voice model in the expected models, line and entry counts, log paths and labels, pyproject metadata, gripper link, neutral Only-new-code section), removed the unused imports and fixed the f-strings, updated site/index.html and added the missing log date headings. No behaviour change except model_check also expecting muse-voice-transcribe-1.0. No hardware program run by the agent, no .env, no network, nothing committed.

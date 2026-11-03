@@ -1,12 +1,12 @@
 # muse-qc-cell
 
-[![demo video](https://img.shields.io/badge/demo%20video-3%20min-red)](https://youtu.be/AedP_7rSauo) [![demo page](https://img.shields.io/badge/demo%20page-replay%20of%20a%20real%20run-blue)](https://stefanrohringer.github.io/muse-qc-cell/) [![tests](https://github.com/StefanRohringer/muse-qc-cell/actions/workflows/ci.yml/badge.svg)](https://github.com/StefanRohringer/muse-qc-cell/actions/workflows/ci.yml) [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![demo video](https://img.shields.io/badge/demo%20video-3%20min-red)](https://youtu.be/iBYUEyhkhq8) [![demo page](https://img.shields.io/badge/demo%20page-replay%20of%20a%20real%20run-blue)](https://stefanrohringer.github.io/muse-qc-cell/) [![tests](https://github.com/StefanRohringer/muse-qc-cell/actions/workflows/ci.yml/badge.svg)](https://github.com/StefanRohringer/muse-qc-cell/actions/workflows/ci.yml) [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 Built by [Stefan Rohringer](https://github.com/StefanRohringer) (solo) for the Meta Global AI Developer Hackathon 2026 (26 Oct to 4 Nov 2026), Indie Developer track, theme "Push the Frontier" (robotics and manufacturing).
 
 **Demo page (replay of a real run):** https://stefanrohringer.github.io/muse-qc-cell/
 
-**Quick links:** [Hackathon demo video](https://youtu.be/AedP_7rSauo) · [Demo page (replay of a real run)](https://stefanrohringer.github.io/muse-qc-cell/) · [Results](#results-real-hardware-measured) · [Where Meta AI is used](#where-meta-ai-is-used) · [Safety](#safety) · [Known limits](#known-limits) · [Run it](#run-it)
+**Quick links:** [Hackathon demo video](https://youtu.be/iBYUEyhkhq8) · [Demo page (replay of a real run)](https://stefanrohringer.github.io/muse-qc-cell/) · [Results](#results-real-hardware-measured) · [Where Meta AI is used](#where-meta-ai-is-used) · [Safety](#safety) · [Known limits](#known-limits) · [Run it](#run-it)
 
 **Docs:** [Results in detail](docs/RESULTS.md) · [Dev log, every human hardware run](docs/DEVLOG.md) · [Meta models](docs/META_AI.md) · [Muse Code log](docs/MUSE_CODE_LOG.md) · [Setup](docs/SETUP.md) · [Third-party code](docs/THIRD_PARTY.md) · [Lever count evaluation](eval/results.md) · [AGENTS.md (rules Muse Code follows)](AGENTS.md) · [Plan](docs/PLAN.md)
 
@@ -15,7 +15,7 @@ reBot Arm B601-DM picks each part from the table, a Muse Spark agent
 decides every step, SAM 3.1 counts the levers in a close-up, and the
 part goes into the good box or the bad box. The order can be typed or spoken. Real hardware, no simulation.
 
-**Hackathon demo video:** https://youtu.be/AedP_7rSauo
+**Hackathon demo video:** https://youtu.be/iBYUEyhkhq8
 
 <p align="center">
 <img src="docs/media/table_scan_10_parts.png" width="64%" alt="Table camera view: ten parts found on the table, each with its id and table millimeters, next to the two sorting boxes and the arm">
@@ -43,7 +43,7 @@ cell running over a weekend.
 
 ## Results (real hardware, measured)
 
-**Hackathon demo video:** https://youtu.be/AedP_7rSauo
+**Hackathon demo video:** https://youtu.be/iBYUEyhkhq8
 
 All numbers come from human-run tests, recorded in `docs/DEVLOG.md`.
 
