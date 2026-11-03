@@ -29,8 +29,8 @@ The boxes of run 3 were checked by hand.
 
 ## How to run it
 
-The labels file starts with the header only; the human fills in one
-row per inspected part:
+`eval/labels.csv` holds the human labels for the 10 parts (header
+plus 10 rows), one row per inspected part:
 
 ```csv
 record,true_levers

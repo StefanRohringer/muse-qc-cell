@@ -2,21 +2,21 @@
 
 The model (muse-spark-1.3, Responses API, tool calling) decides
 which tool to call next; this module only executes the tools from
-muse_qc.agent.agent_tools and enforces the hard limits. Default is
---simulate: the real Muse Spark API with the fake table tools, so
-the human checks the tool calling without hardware. --execute uses
-the real tools after one typed "yes" (the human keeps a hand on
-the arm power switch). Only the human starts it, never CI.
+muse_qc.agent.agent_tools and enforces the hard limits. Simulation
+is the default (no flag): the real Muse Spark API with the fake
+table tools, so the human checks the tool calling without
+hardware. --execute uses the real tools after one typed "yes"
+(the human keeps a hand on the arm power switch). Only the human
+starts it, never CI.
 
-Responses API assumption (unchecked here, only output_text is
-used so far): create() takes instructions, input, tools,
-reasoning={"effort": "low"}, store=False and
+Request and response formats confirmed by the real runs logged in
+docs/DEVLOG.md since 2026-10-29: create() takes instructions,
+input, tools, reasoning={"effort": "low"}, store=False and
 include=["reasoning.encrypted_content"]; calls arrive as
 {"type": "function_call", ...} with arguments a JSON string and
 return as {"type": "function_call_output", ...} with output a
 JSON string. Reasoning items (with encrypted_content) are
 replayed into the history but never written to the transcript.
-The human checks this in the --simulate run.
 """
 
 from __future__ import annotations
@@ -265,7 +265,7 @@ def run_agent(client, scan_fn, sort_fn, report_fn, out=print,
 
 def main(argv=None, client_factory=None, toolset=None, input_fn=None,
          out=print) -> int:
-    """Entry point: --simulate by default, --execute moves the arm.
+    """Entry point: simulation is the default (no flag); --execute uses the real tools.
 
     Returns 0 only when the agent called finish, else 1 (limit,
     failures, API error, interrupt). Exit 2 means missing key or

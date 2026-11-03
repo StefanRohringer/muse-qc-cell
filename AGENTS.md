@@ -13,7 +13,7 @@ Built during the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026).
 ## Stack
 - Python 3.11, uv, one virtual environment in .venv
 - Hardware only through motorbridge and reBotArm_control_py (official Seeed packages, MIT)
-- AI only through Meta Model API: Muse Spark (muse-spark-1.3) and SAM 3.1. Code is built with Muse Code.
+- AI only through Meta Model API: Muse Spark (muse-spark-1.3), SAM 3.1 (sam-3.1) and Muse Voice Transcribe (muse-voice-transcribe-1.0). Code is built with Muse Code.
 - API key only from .env (MODEL_API_KEY), loaded by the program, never printed
 
 ## Design
@@ -25,7 +25,7 @@ Built during the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026).
 - One tool per file (target design, planned, not built yet: current entry points are main(), run_detection() and run_count()).
 
 ## Agent loop
-- The agent loop has hard limits (40 model calls, 10 sorts, 2 tries per part position, stop after 2 consecutive failures).
+- The agent loop has hard limits (40 model calls, 2 tries per part position, stop after 2 consecutive failures).
 - Every step is printed and saved as a transcript in recordings/.
 - Not built: a cost limit per run and resume after a stop.
 
@@ -64,14 +64,9 @@ bringup/; one tool per file, max 400 lines per module), tests/, docs/
 - Every hardware test run by the human is logged in docs/DEVLOG.md as a 'Human ran ...' entry with date, conditions (for example arm power off, USB only) and result, in the same or the next commit. Never write device serial numbers.
 - Do not commit.
 
-## No legacy system
+## Only new code
 
-Nothing from any earlier private robot-arm system may be used, copied,
-imported, linked, referenced or mentioned in this repository, in commit
-messages, in the README, in the demo video, or in any prompt given to
-Muse Code. This includes workspaces, ROS packages, MCP servers, scripts,
-configuration, calibration data and any knowledge taken from earlier
-projects.
+Everything in this repository was written during the hackathon (26 Oct to 4 Nov 2026). Nothing from any other project of the author may be used, copied, imported, linked or referenced in this repository, in commit messages, in the README, in the demo video or in any prompt given to Muse Code.
 
 Allowed sources only:
 - the official Seeed SDK (reBotArm_control_py) and motorbridge, both
@@ -80,7 +75,6 @@ Allowed sources only:
   docs/THIRD_PARTY.md;
 - everything newly written in this repository during the hackathon.
 
-Muse Code: never mention, search for, open or ask about any earlier
-system. If a file or message appears to refer to one, stop and report it
+Muse Code: never search for, open or ask about code or data from outside this repository and its listed sources. If a file or message appears to come from elsewhere, stop and report it
 to the user instead of using it. Test fixtures and examples must use
 neutral names.

@@ -21,7 +21,7 @@ from muse_qc.pick.drop_plan import (
     TRANSIT_FLOOR_MM,
 )
 from muse_qc.bringup.first_move_plan import LOOP_RATE_HZ
-from muse_qc.gripper.gripper_grip import CLOSED_DEG, width_to_deg
+from muse_qc.gripper.gripper_grip import width_to_deg
 from muse_qc.arm.target_pose import table_to_base_mm
 
 TABLE = (495.9, 322.7)

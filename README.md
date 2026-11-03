@@ -2,13 +2,13 @@
 
 [![demo video](https://img.shields.io/badge/demo%20video-3%20min-red)](https://youtu.be/AedP_7rSauo) [![demo page](https://img.shields.io/badge/demo%20page-replay%20of%20a%20real%20run-blue)](https://stefanrohringer.github.io/muse-qc-cell/) [![tests](https://github.com/StefanRohringer/muse-qc-cell/actions/workflows/ci.yml/badge.svg)](https://github.com/StefanRohringer/muse-qc-cell/actions/workflows/ci.yml) [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-Built for the Meta Global AI Developer Hackathon 2026 (26 Oct to 4 Nov 2026), Indie Developer track.
+Built by [Stefan Rohringer](https://github.com/StefanRohringer) (solo) for the Meta Global AI Developer Hackathon 2026 (26 Oct to 4 Nov 2026), Indie Developer track, theme "Push the Frontier" (robotics and manufacturing).
 
 **Demo page (replay of a real run):** https://stefanrohringer.github.io/muse-qc-cell/
 
 **Quick links:** [Hackathon demo video](https://youtu.be/AedP_7rSauo) · [Demo page (replay of a real run)](https://stefanrohringer.github.io/muse-qc-cell/) · [Results](#results-real-hardware-measured) · [Where Meta AI is used](#where-meta-ai-is-used) · [Safety](#safety) · [Known limits](#known-limits) · [Run it](#run-it)
 
-**Docs:** [Results in detail](docs/RESULTS.md) · [Dev log, every human hardware run](docs/DEVLOG.md) · [Meta models](docs/META_AI.md) · [Muse Code log](docs/MUSE_CODE_LOG.md) · [Setup](docs/SETUP.md) · [Third-party code](docs/THIRD_PARTY.md) · [Lever count evaluation](eval/results.md)
+**Docs:** [Results in detail](docs/RESULTS.md) · [Dev log, every human hardware run](docs/DEVLOG.md) · [Meta models](docs/META_AI.md) · [Muse Code log](docs/MUSE_CODE_LOG.md) · [Setup](docs/SETUP.md) · [Third-party code](docs/THIRD_PARTY.md) · [Lever count evaluation](eval/results.md) · [AGENTS.md (rules Muse Code follows)](AGENTS.md) · [Plan](docs/PLAN.md)
 
 An AI quality inspection cell for injection-molded parts. A low-cost
 reBot Arm B601-DM picks each part from the table, a Muse Spark agent
@@ -213,8 +213,7 @@ in `muse_qc/`, `tests/`, `docs/`, `calibration/`, `site/`, `eval/` and
 
 Prior work, declared and not part of this submission: my Touch-Sensing
 Fin-Ray Gripper (hardware and firmware). I built it before the hackathon,
-and it is listed in the official Seeed reBot-DevArm repository under
-"DIY Soft Finger". New in this hackathon: `muse_qc/gripper/gripper.py`, which reads
+and it is listed with a link to its repository in the "DIY Soft Finger" section of the official Seeed reBot-DevArm README (https://github.com/Seeed-Projects/reBot-DevArm#diy-soft-finger). New in this hackathon: `muse_qc/gripper/gripper.py`, which reads
 the gripper sensors over USB. See `docs/THIRD_PARTY.md`.
 
 ## Quickstart

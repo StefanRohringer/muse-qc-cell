@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from muse_qc.inspection.record import write_record
 from muse_qc.inspection.report import main
 

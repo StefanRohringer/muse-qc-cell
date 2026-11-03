@@ -31,7 +31,7 @@ def _recordings(target, stamps, verdicts):
         _crop(target / f"count_{stamp}_crop.png")
         (target / f"count_{stamp}.png").write_bytes(b"full")
         record = {
-            "timestamp": f"2026-10-31T00:00:00+00:00",
+            "timestamp": "2026-10-31T00:00:00+00:00",
             "source_image": f"recordings/armcam_{stamp}.png",
             "full_image": f"recordings/count_{stamp}.png",
             "crop_image": f"recordings/count_{stamp}_crop.png",

@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 
-import muse_qc.gripper.gripper as gripper
 import muse_qc.gripper.gripper_watch as gripper_watch
 from muse_qc.gripper.gripper import (
     COMMANDS,
@@ -328,7 +327,7 @@ def test_read_returns_newest_within_timeout_on_endless_stream():
     [
         (["# firmware 2"], 2),
         (["junk", GOOD, "# firmware 3"], 3),
-        (["# Ausgabe: Rohwerte"], None),
+        (["# Ausgabe: Rohwerte"], None),  # firmware message, German for 'output: raw values'
         ([GOOD.replace("D,1234", "D,2")], None),
         ([], None),
     ],

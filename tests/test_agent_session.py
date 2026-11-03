@@ -13,7 +13,7 @@ import threading
 
 import pytest
 
-from muse_qc.agent import agent_plan, agent_session
+from muse_qc.agent import agent_session
 from muse_qc.agent.agent import main as agent_main
 from muse_qc.agent.agent_plan import run_plan
 from muse_qc.agent.agent_state import RunState

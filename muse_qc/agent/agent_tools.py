@@ -4,11 +4,13 @@ scan_table, inspect_and_sort and write_report run as plain Python
 functions; muse_qc.agent exposes them to the model as Responses API
 function tools and executes them in order. Positions always come
 from our own latest scan: the model only passes part ids, never
-coordinates. The --simulate fakes (FakeTable, fake_report) run the
-same tool surface without hardware, camera or network for tools.
+coordinates. The simulation fakes (FakeTable, fake_report) run the
+same tool surface without hardware, camera or network for tools;
+simulation is the default (no flag) and --execute uses the real
+tools.
 
-Responses API assumption (unchecked against this repository, which
-only uses output_text so far): function tools are passed as
+Request and response formats confirmed by the real runs logged in
+docs/DEVLOG.md since 2026-10-29: function tools are passed as
 {"type": "function", "name", "description", "parameters", "strict"}
 inside tools=[...], a call arrives as an output item with
 {"type": "function_call", "call_id", "name", "arguments"} where
@@ -16,8 +18,7 @@ arguments is a JSON string, and the result goes back as an input
 item {"type": "function_call_output", "call_id": ..., "output": ...}
 with output a JSON string. Reasoning is requested with
 reasoning={"effort": "low"}, stateless replay with store=False and
-include=["reasoning.encrypted_content"]. The human checks this in
-the --simulate run.
+include=["reasoning.encrypted_content"].
 """
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ from muse_qc.agent.agent_rescan import (
 from muse_qc.agent.agent_rescan import store_scan as store_scan
 from muse_qc.agent.agent_state import (
     SAME_PART_MM,
-    RunState,
+    RunState,  # noqa: F401  re-exported, used as agent_tools.RunState by tests
     _dist,
 )
 
@@ -107,7 +108,7 @@ TOOL_DEFINITIONS = [
 ]
 
 class FakeTable:
-    """Fake table for --simulate: 3 parts, two good, one bad.
+    """Fake table for simulation (the default, no flag): 3 parts, two good, one bad.
 
     No camera, no arm, no API. rescans list the parts still on the
     table; the second part misses the grip on its first try, then

@@ -19,7 +19,10 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from muse_qc.arm.safety_limits import JOINT_LIMITS_DEG, _load_joint_limits_from_sdk
+from muse_qc.arm.safety_limits import (
+    JOINT_LIMITS_DEG,
+    _load_joint_limits_from_sdk,  # noqa: F401  re-exported, used as safety._load_joint_limits_from_sdk by tests
+)
 
 # All limits live here, in meters and degrees.
 TABLE_FRONT_M = 0.545  # Front table edge from base center (+x).

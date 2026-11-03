@@ -4,8 +4,9 @@ Reads MODEL_API_KEY from the environment or a .env file (the key is
 never printed, logged or written, not even partly), calls GET
 /v1/models once through the openai SDK with base URL
 https://api.meta.ai/v1, prints the number of models and one OK/MISSING
-line each for muse-spark-1.3 and sam-3.1. Exit code 0 only when both
-are listed. With --list it prints every returned model id instead,
+line each for muse-spark-1.3, sam-3.1 and muse-voice-transcribe-1.0.
+Exit code 0 only when all are listed. With --list it prints every
+returned model id instead,
 one per line, sorted. Only the human runs it, never CI and never an
 agent, since it contacts the network. Imports no arm, safety, SDK or
 camera code.
@@ -19,7 +20,7 @@ from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 
 BASE_URL = "https://api.meta.ai/v1"
-EXPECTED_MODELS = ("muse-spark-1.3", "sam-3.1")
+EXPECTED_MODELS = ("muse-spark-1.3", "sam-3.1", "muse-voice-transcribe-1.0")
 KEY_NAME = "MODEL_API_KEY"
 
 
@@ -123,7 +124,7 @@ def run_check(
     make_client receives the key and returns a client with
     models.list(). With list_ids False (default) print the model
     count plus one OK/MISSING line per expected model and return 0
-    only when both expected models are listed. With list_ids True
+    only when all expected models are listed. With list_ids True
     print every returned model id, one per line, sorted, and return
     0. Returns 2 when the key is missing, 1 otherwise. Errors print
     a short message without a stack trace and never include the key.

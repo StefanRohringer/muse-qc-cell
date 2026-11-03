@@ -27,11 +27,10 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
-import cv2
 import numpy
 import pytest
 
-from muse_qc.bringup.first_move_plan import LOOP_RATE_HZ, SETTLE_HOLD_CYCLES
+from muse_qc.bringup.first_move_plan import SETTLE_HOLD_CYCLES
 from muse_qc.inspection import count_clips
 from muse_qc.pick import box_transit, pick_session, session_driver
 from muse_qc.pick.session_protocol import FakeClock, parse_session_line

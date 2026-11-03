@@ -40,7 +40,6 @@ from muse_qc.pick.pick_args import (
     POSVEL_SPEED_MAX_DEG_S,
     SPEED_DEG_S,
     _accel_type,
-    _create_sdk,
     _grip_z_type,
     _hold_s_type,
     _lever_deg_type,

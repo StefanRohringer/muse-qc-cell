@@ -8,7 +8,7 @@ with fake limits and a fake tip.
 from __future__ import annotations
 
 from muse_qc.arm import safety
-from muse_qc.pick import box_transit, pick_plan
+from muse_qc.pick import pick_plan
 from muse_qc.pick.box_transit import build_box_transit, splice_hover
 from muse_qc.pick.pick_plan import check_pick_plan
 
